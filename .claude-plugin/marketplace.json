@@ -1,0 +1,37 @@
+{
+  "$schema": "https://platform.claude.com/schemas/marketplace.json",
+  "name": "krmrn-skills",
+  "description": "A community-friendly marketplace of Claude Code skills and plugins — opinionated, evidence-based, and progressively-disclosed. Contributions welcome.",
+  "owner": {
+    "name": "krmrn42"
+  },
+  "metadata": {
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "skill-linting",
+      "source": "./plugins/skill-linting",
+      "description": "Hard structural lint for Claude Code skills. Zero-deps Python script (scripts/lint.py) reports tier-1 errors (frontmatter validity, name/description length caps, name format, parent-dir match, body line cap, manifest version-sync, plugin registration) and tier-2 warnings (third-person heuristic, exclusion clause, reference TOC threshold, reference depth, orphan references). Three output formats: human, GitHub Actions annotations, json. Honors per-line noqa comments and a .skill-lint.toml config for repo-wide and per-skill disables (with a reason convention). Slash command /skill-linting:lint, Makefile target make lint-skills, pre-commit hook. Not for general markdown linting, code formatting, or content review.",
+      "version": "0.1.0",
+      "author": {
+        "name": "krmrn42"
+      },
+      "category": "engineering",
+      "keywords": [
+        "skill-linting",
+        "lint",
+        "validation",
+        "ci",
+        "pre-commit",
+        "python",
+        "skills",
+        "plugins",
+        "marketplace",
+        "claude-code",
+        "frontmatter",
+        "structural-checks"
+      ]
+    }
+  ]
+}

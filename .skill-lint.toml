@@ -1,0 +1,37 @@
+# skill-lint configuration for krmrn-skills.
+#
+# Three tiers of suppression, in order of preference (specific over broad):
+#   [disable]                    repo-wide rule disables — broadest
+#   [per_skill."<path>"]         skill-or-plugin-scoped disables
+#   [[allow."<rule.id>"]]        per-instance allowlist (file/target/reason)
+#
+# Use the most precise tier that covers your case. Every entry should ship
+# with a `reason`. Reviewers should question PRs that add suppressions
+# without one. See:
+#   plugins/skill-linting/skills/skill-linting/references/disabling-checks.md
+
+# ----------------------------------------------------------------------
+# Tier 1: repo-wide disables — leave empty by default.
+# ----------------------------------------------------------------------
+
+[disable]
+rules = []
+
+# ----------------------------------------------------------------------
+# Tier 2: per-skill / per-plugin disables — populate as needed.
+# ----------------------------------------------------------------------
+
+# Example:
+# [per_skill."plugins/example/skills/example"]
+# rules = ["reference.toc"]
+# reason = "Small reference set; TOC is overhead not navigation."
+
+# ----------------------------------------------------------------------
+# Tier 3: per-instance allowlist — populate as needed.
+# ----------------------------------------------------------------------
+
+# Example:
+# [[allow."reference.depth"]]
+# file = "plugins/example/skills/example/references/foo.md"
+# target = "bar.md"
+# reason = "Justification for the cross-reference."

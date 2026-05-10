@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: skill-lint
+        name: Skill structural lint
+        entry: python3 plugins/skill-linting/scripts/lint.py
+        language: system
+        files: '^(plugins/.*\.md|plugins/.*/\.claude-plugin/plugin\.json|\.claude-plugin/marketplace\.json)$'
+        pass_filenames: false

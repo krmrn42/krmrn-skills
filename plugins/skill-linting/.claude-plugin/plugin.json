@@ -1,0 +1,9 @@
+{
+  "name": "skill-linting",
+  "description": "Hard structural checks for skills in this marketplace. Zero-deps Python script (scripts/lint.py) that enforces what skill-authoring states — frontmatter validity, name/description length caps, body line cap, manifest version-sync, reference depth, TOC threshold, exclusion-clause and third-person heuristics. Two tiers: errors (block CI / pre-commit) and warnings (surface, opt-out via .skill-lint.toml or per-line noqa). Runs from a slash command (/skill-linting:lint), as a Makefile target (make lint-skills), and from .pre-commit-config.yaml.",
+  "version": "0.1.0",
+  "author": {
+    "name": "krmrn42"
+  },
+  "license": "MIT"
+}
