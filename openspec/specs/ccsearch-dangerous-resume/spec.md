@@ -68,17 +68,17 @@ The picker SHALL also wire Shift+Enter to the dangerous-resume action when the t
 
 ### Requirement: Armed state is visible in the picker
 
-When the dangerous-resume capability is armed, the picker's footer help line SHALL include a new entry `Alt-Enter dangerous` rendered in yellow (using the existing `ansi.fgYellow` style helper). When the capability is not armed, the help line MUST be unchanged from the pre-change rendering.
+When the dangerous-resume capability is armed, the picker's status bar SHALL include an entry for the Alt-Enter / Shift-Enter binding rendered in yellow (using the existing `ansi.fgYellow` style). When the capability is not armed, the entry MUST NOT appear in the status bar. This requirement is now satisfied via the BINDINGS table's `visible: (deps) => !!deps.dangerouslySkipPermissions` predicate and the `category: "dangerous"` yellow styling, rather than via an inline yellow string in `render`.
 
-#### Scenario: Help line shows yellow danger entry when armed
+#### Scenario: Status bar shows yellow danger entry when armed
 
 - **WHEN** the picker is open and `args.dangerouslySkipPermissions === true`
-- **THEN** the help line includes `Alt-Enter dangerous` styled in yellow, alongside the existing `Enter resume`, `Ctrl-F fork`, etc.
+- **THEN** the status bar includes an "Alt-Enter dangerous" entry (also showing Shift-Enter as a fallback key spelling) in yellow
 
-#### Scenario: Help line is unchanged when not armed
+#### Scenario: Status bar omits danger entry when not armed
 
 - **WHEN** the picker is open and `args.dangerouslySkipPermissions === false`
-- **THEN** the help line is byte-for-byte the existing pre-change rendering
+- **THEN** the status bar does NOT include any Alt-Enter / Shift-Enter entry
 
 ### Requirement: `--help` documents the flag
 

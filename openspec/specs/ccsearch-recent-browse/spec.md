@@ -5,53 +5,70 @@ TBD - created by archiving change browse-recent-on-empty-query. Update Purpose a
 ## Requirements
 ### Requirement: Empty query opens a recent-conversations browser
 
-When the picker is rendered and the current query string is empty (after `.trim()`), `ccsearch` SHALL populate the result list with the N most recent conversations across all indexed projects, ordered by the timestamp of each conversation's most recent message (DESC). N MUST equal `args.limit` (default `20`, overridable via `--limit`).
+When the picker is rendered and the current query string is empty (after `.trim()`), `ccsearch` SHALL populate the result list with the N most recent conversations across all indexed projects. Within that result set, pinned rows (per `sessions.json.pins`) MUST render first (in pin-order, most-recently-pinned first), followed by a dim divider `── recent ──`, followed by the remaining conversations ordered by the timestamp of each conversation's most recent message (DESC). The combined count of pinned + non-pinned rows MUST NOT exceed `args.limit` (default `20`, overridable via `--limit`).
 
-#### Scenario: Bare ccsearch on a TTY shows recent conversations
+#### Scenario: No pins — original recent-browse behavior
 
-- **WHEN** the user runs `ccsearch` on an interactive TTY and no conversation has been typed
-- **THEN** the picker body shows up to 20 rows, each representing one conversation, sorted by most-recent activity
-- **AND** the placeholder text `"Type to search…"` does NOT appear in place of the result list
-- **AND** the footer reflects the row count (e.g., `"20 results"`)
+- **WHEN** the user has no pinned rows and runs `ccsearch` on a TTY
+- **THEN** the picker shows up to 20 rows ordered most-recent-first, identical to pre-change behavior
 
-#### Scenario: --limit changes the recent count
+#### Scenario: Pinned rows surface in recent-browse
+
+- **WHEN** the user has pinned 2 rows and runs `ccsearch` on a TTY with `--limit 10`
+- **THEN** the picker shows the 2 pinned rows at the top (newest pin first), then the divider, then up to 8 most-recent non-pinned rows
+
+#### Scenario: Empty index still shows guidance
+
+- **WHEN** the index contains zero conversations and the user runs `ccsearch`
+- **THEN** the picker shows the existing "no conversations indexed yet" message
+- **AND** no divider is rendered
+
+#### Scenario: --limit changes the recent count (unchanged)
 
 - **WHEN** the user runs `ccsearch --limit 5` on an interactive TTY
-- **THEN** the picker shows up to 5 recent conversations, not 20
-
-#### Scenario: Empty index shows guidance, not a hang
-
-- **WHEN** the index contains zero conversations and the user runs `ccsearch` on a TTY
-- **THEN** the picker body shows a single message such as `"no conversations indexed yet — run a Claude Code session, then ccsearch"`
-- **AND** the picker remains responsive to Esc / arrow keys / typing
+- **THEN** the total visible row count (pins + recents) is capped at 5
 
 ### Requirement: Each recent row shows a synthesized title plus tail snippet
 
 Each row in the recent-browse view SHALL show two visual lines:
 
-- **Line 1** (header): a synthesized **title** for the conversation (first non-wrapper user message, truncated to a sensible width — see Decision 2 in design), followed by a metadata suffix containing project name, date, message count, and short session id, in that order. When the line would overflow the available width, the title is truncated with `…` and the metadata suffix is preserved.
-- **Line 2** (snippet): the **tail snippet** — the last 1-2 visual lines of the most recent user-or-assistant message of the conversation, plain-text (no FTS highlighting), dimmed with the same styling the existing FTS snippet uses.
+- **Line 1** (header): The **display title** for the conversation, followed by a metadata suffix containing project name, date, message count, and short session id. The display title precedence is: (1) saved name from `sessions.json` if present; (2) the synthesized title from the first non-wrapper user message, truncated to 80 chars; (3) if neither exists, no leading title and line 1 starts with the metadata.
+- **Line 2** (snippet): The **tail snippet** — the last 1-2 visual lines of the most recent user-or-assistant message of the conversation, plain-text (no FTS highlighting), dimmed with the same styling the existing FTS snippet uses.
 
 If the most recent message is empty or contains only wrapper content, the next-most-recent user/assistant message is used. If no usable message exists, line 2 MUST be omitted (single-line row) rather than displaying a blank line.
 
-#### Scenario: Title comes from first user message
+#### Scenario: Saved name takes precedence over synthesized title
 
-- **WHEN** a conversation's first user message is `"How do I write a custom Claude Code skill?"` and the user opens the picker (empty query)
+- **WHEN** a conversation has both a synthesized title and a saved name in `sessions.json`
+- **THEN** line 1 leads with the saved name
+- **AND** the synthesized title is not shown anywhere on the row
+
+#### Scenario: Synthesized title used when no saved name
+
+- **WHEN** a conversation has no entry in `sessions.json` but has a usable first user message
+- **THEN** line 1 leads with the synthesized title (current pre-change behavior)
+
+#### Scenario: Metadata-only row when neither exists
+
+- **WHEN** a conversation has no saved name and no usable user message for synthesis
+- **THEN** line 1 starts with the metadata suffix (`<proj>  <date>  <N> msgs  <short-id>`), no leading title
+
+#### Scenario: Title comes from first user message (unchanged)
+
+- **WHEN** a conversation has no saved name, and its first user message is `"How do I write a custom Claude Code skill?"`
 - **THEN** the row's line 1 begins with `"How do I write a custom Claude Code skill?"` (possibly truncated with `…`), followed by ` · <project> · <date> · <N> msgs · <short-id>`
 
-#### Scenario: Wrapper messages skipped during title synthesis
+#### Scenario: Wrapper messages skipped during title synthesis (unchanged)
 
-- **WHEN** a conversation's first user message content starts with one of the recognized wrapper markers (e.g., `<command-name>`, `<command-message>`, `<local-command-stdout>`, `<stdin>`)
+- **WHEN** a conversation has no saved name and its first user message content starts with a recognized wrapper marker
 - **THEN** the synthesized title comes from the next user message that is not a wrapper
-- **AND** the row's line 1 does NOT begin with `<`
 
-#### Scenario: Tail snippet shows last conversation content
+#### Scenario: Tail snippet shows last conversation content (unchanged)
 
 - **WHEN** the user views the recent-browse list
-- **THEN** each row's line 2 is the last 1-2 visual lines of the most recent user-or-assistant message in that conversation, truncated to fit width, with line breaks normalized to spaces
-- **AND** the snippet does NOT contain ANSI color codes from any search-match highlighting (there is no query)
+- **THEN** each row's line 2 is the last 1-2 visual lines of the most recent user-or-assistant message in that conversation
 
-#### Scenario: Empty tail collapses to one-line row
+#### Scenario: Empty tail collapses to one-line row (unchanged)
 
 - **WHEN** a conversation's most recent message has empty content and no earlier user/assistant message has usable text
 - **THEN** the row renders as a single header line (no blank snippet line beneath it)
