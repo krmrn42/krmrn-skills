@@ -140,6 +140,7 @@ And since Claude Code stores sessions per project (under `~/.claude/projects/<en
 | `--limit N` | max conversations returned | 20 |
 | `--format text\|tsv` | output format | `text` on TTY, `tsv` when piped |
 | `--db-path PATH` | override `~/.claude/conversation-search.db` | — |
+| `--dangerously-skip-permissions` | arm the picker's Alt+Enter keybinding to resume with `claude --dangerously-skip-permissions` (see "Skip permissions on resume" below) | off |
 
 `--regex` uses the Node [`RegExp`](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp) flavor compiled with the `m` (multiline) flag. Named groups syntax differs from Python's `re` module (`(?<name>…)` rather than `(?P<name>…)`); other common features (character classes, alternation, anchors, quantifiers, lookaround, backreferences) are the same.
 
@@ -152,6 +153,14 @@ Mutually exclusive flags:
 ### Dispatch (picker vs one-shot)
 
 On an interactive TTY, `ccsearch` opens the TUI picker by default. Any of these explicitly opts out and uses one-shot ranked text/TSV instead: `--list` / `-l`, `--format=text|tsv`, `--regex`, `--preview`, `--reindex`, `--index-status`, or stdout being redirected/piped. The `-i` flag forces the picker even when those signals would otherwise dispatch to one-shot. Migrating from the previous default: `ccsearch <query> --list` or `ccsearch <query> --format=text` reproduces the old behavior on a TTY.
+
+### Skip permissions on resume (`--dangerously-skip-permissions`)
+
+Pass `--dangerously-skip-permissions` to arm a new picker keybinding: **Alt+Enter** on a selected row resumes the conversation with `claude --dangerously-skip-permissions --resume <id>` — skipping every permission prompt in the resumed session. Plain Enter remains safe; the flag mirrors Claude Code's own `--dangerously-skip-permissions`. When armed, the picker's help line shows a yellow `Alt-Enter dangerous` entry so the armed state is always visible. The flag has no effect on one-shot text output.
+
+**Shift+Enter** is wired as a best-effort secondary binding for the same action. It works on terminals that distinguish Shift+Enter from plain Enter via CSI-u / kitty keyboard protocol — Kitty, WezTerm, iTerm2 with the report-modifiers preference, Windows Terminal with enhanced keyboard. On terminals that send `\r` for both (xterm, GNOME Terminal, macOS Terminal.app default, tmux without passthrough), Shift+Enter is indistinguishable from Enter and falls through to plain resume — no silent injection of the dangerous flag.
+
+Two-layer opt-in: the CLI flag must be set AND the user must press Alt+Enter (not plain Enter). Accidental invocation requires both.
 
 ## Exit codes
 

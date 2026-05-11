@@ -133,7 +133,7 @@ function runPicker(deps) {
   let lastRenderTimer = null;
   let previewCache = new Map(); // sessionId -> rendered preview lines
   let lastDims = { rows: 0, cols: 0 };
-  let exitReason = null; // { type: "resume"|"fork"|"print-id"|"print-path"|"cancel", row }
+  let exitReason = null; // { type: "resume"|"fork"|"resume-dangerous"|"print-id"|"print-path"|"cancel", row }
   // Recent-browse cache: populated on the first empty-query render, reused on
   // backspace-to-empty. Picker-session-scoped — not invalidated mid-session.
   let recentCache = null;
@@ -287,12 +287,21 @@ function runPicker(deps) {
       ansi.fgCyan + "ccsearch> " + ansi.reset + query + (searchPending ? " " + ansi.dim + "…" + ansi.reset : "");
     stdout.write(truncateToWidth(promptLine, cols));
 
-    // Help line
+    // Help line — adds a yellow "Alt-Enter dangerous" entry when the
+    // dangerous-resume capability is armed (CLI flag set). The reset inside
+    // dangerEntry closes the yellow before the line continues, then we
+    // re-apply dim for the rest of the line (truncateToWidth correctly
+    // counts only visible characters when budgeting).
     stdout.write(ansi.moveTo(2, 1));
+    const dangerEntry = deps.dangerouslySkipPermissions
+      ? "   " + ansi.fgYellow + "Alt-Enter dangerous" + ansi.reset + ansi.dim
+      : "";
     stdout.write(
       ansi.dim +
         truncateToWidth(
-          "Enter resume   Ctrl-F fork   Ctrl-O print id   Ctrl-D print path   Esc cancel",
+          "Enter resume" +
+            dangerEntry +
+            "   Ctrl-F fork   Ctrl-O print id   Ctrl-D print path   Esc cancel",
           cols
         ) +
         ansi.reset
@@ -406,10 +415,14 @@ function runPicker(deps) {
           "resuming in current cwd. claude --resume may fail.\n"
       );
     }
-    const claudeArgs =
-      action === "fork"
-        ? ["--fork-session", "--resume", row.sessionId]
-        : ["--resume", row.sessionId];
+    let claudeArgs;
+    if (action === "fork") {
+      claudeArgs = ["--fork-session", "--resume", row.sessionId];
+    } else if (action === "resume-dangerous") {
+      claudeArgs = ["--dangerously-skip-permissions", "--resume", row.sessionId];
+    } else {
+      claudeArgs = ["--resume", row.sessionId];
+    }
     const result = childProc.spawnSync("claude", claudeArgs, {
       stdio: "inherit",
       cwd,
@@ -439,6 +452,7 @@ function runPicker(deps) {
       return deps.EXIT_OK;
     }
     if (reason === "resume") return spawnClaude("resume", row);
+    if (reason === "resume-dangerous") return spawnClaude("resume-dangerous", row);
     if (reason === "fork") return spawnClaude("fork", row);
     if (reason === "print-id") {
       teardown();
@@ -472,6 +486,17 @@ function runPicker(deps) {
       if (key.ctrl && key.name === "d") return finish("print-path");
       if (key.ctrl && key.name === "o") return finish("print-id");
       if (key.ctrl && key.name === "f") return finish("fork");
+      // Alt+Enter (key.meta) and Shift+Enter (key.shift, CSI-u terminals only)
+      // route to the dangerous-resume action when armed. On terminals that do
+      // not distinguish Shift+Enter from Enter, key.shift is false for plain
+      // Enter, so this branch is correctly bypassed.
+      if ((key.meta || key.shift) && key.name === "return") {
+        if (deps.dangerouslySkipPermissions) return finish("resume-dangerous");
+        // Not armed: fall through to plain resume so Alt/Shift+Enter still
+        // does the expected "resume this row" thing rather than being a
+        // silent no-op surprise.
+        return finish("resume");
+      }
       if (key.name === "return") return finish("resume");
       if (key.name === "up" || (key.ctrl && key.name === "k")) return move(-1);
       if (key.name === "down" || (key.ctrl && key.name === "j")) return move(1);

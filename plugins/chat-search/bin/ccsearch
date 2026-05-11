@@ -803,6 +803,20 @@ const OPTIONS = [
       "Print index DB path, size, message and conversation counts, last-refresh " +
       "time, and any pending files. Applies only to the plugin-owned index.",
   },
+
+  // Dangerous
+  {
+    flags: ["--dangerously-skip-permissions"],
+    group: "Dangerous",
+    description:
+      "Arm an Alt+Enter binding in the picker that resumes the selected " +
+      "conversation with `claude --dangerously-skip-permissions`, skipping " +
+      "every permission prompt in the resumed session. Plain Enter remains " +
+      "safe. Shift+Enter works on CSI-u-aware terminals (Kitty, WezTerm, " +
+      "iTerm2 with CSI-u, Windows Terminal w/ enhanced kb); on terminals " +
+      "that send `\\r` for both Enter and Shift+Enter, Shift+Enter behaves " +
+      "as plain Enter. No effect on one-shot text output.",
+  },
 ];
 
 const HELP_WIDTH = 80;
@@ -937,6 +951,7 @@ function parseArgs(argv) {
     help: false,
     reindex: false,
     indexStatus: false,
+    dangerouslySkipPermissions: false,
   };
   const rest = [];
   // Accept both `--flag value` (space-separated) and `--flag=value` (equals form).
@@ -1019,6 +1034,9 @@ function parseArgs(argv) {
         break;
       case "--index-status":
         args.indexStatus = true;
+        break;
+      case "--dangerously-skip-permissions":
+        args.dangerouslySkipPermissions = true;
         break;
       default:
         if (a.startsWith("--")) {
@@ -1201,6 +1219,7 @@ async function main(argv) {
       ANSI_RESET,
       EXIT_OK,
       EXIT_ENV,
+      dangerouslySkipPermissions: args.dangerouslySkipPermissions,
     });
     return result;
   }

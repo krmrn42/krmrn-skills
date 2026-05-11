@@ -681,6 +681,37 @@ else
 fi
 
 echo
+echo "Test 35: --dangerously-skip-permissions parses + --help mentions it"
+out_help="$("$CCSEARCH" --help 2>&1)"
+assert_contains "T35.help_mentions_flag" "--dangerously-skip-permissions" "$out_help"
+assert_contains "T35.help_mentions_alt_enter" "Alt+Enter" "$out_help"
+
+# parseArgs flips the bool
+PARSE_OUT="$(CCSEARCH_TEST=1 node -e '
+const { parseArgs } = require(process.argv[1]);
+const on  = parseArgs(["--dangerously-skip-permissions"]);
+const off = parseArgs([]);
+console.log("on", on.dangerouslySkipPermissions);
+console.log("off", off.dangerouslySkipPermissions);
+' "$CCSEARCH" 2>&1)"
+case "$PARSE_OUT" in
+  *"on true"*"off false"*) PASS=$((PASS+1)); echo "  PASS  T35.parser_branch" ;;
+  *)                       FAIL=$((FAIL+1)); echo "  FAIL  T35.parser_branch — got: $PARSE_OUT" >&2 ;;
+esac
+
+echo
+echo "Test 36: --dangerously-skip-permissions is silently ignored in one-shot output"
+# Force text format so resumeOneLiner shows up (without --format the piped capture defaults to tsv).
+out_oneshot="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color --format=text --dangerously-skip-permissions 'session timeout' </dev/null 2>&1)"
+case "$out_oneshot" in
+  *"--dangerously-skip-permissions"*)
+                                FAIL=$((FAIL+1)); echo "  FAIL  T36.flag_not_in_oneshot — leaked into output" >&2 ;;
+  *"claude --resume conv-aaaa"*)
+                                PASS=$((PASS+1)); echo "  PASS  T36.flag_not_in_oneshot" ;;
+  *)                            FAIL=$((FAIL+1)); echo "  FAIL  T36.flag_not_in_oneshot — unexpected output: $out_oneshot" >&2 ;;
+esac
+
+echo
 echo "Test 26: drift guard — every parser flag appears in --help"
 # Extract long-form flags from source: lines like `case "--something":`. Strip
 # line-comment lines first so `case "--flag":` appearing inside a // comment
