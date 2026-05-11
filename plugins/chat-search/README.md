@@ -10,9 +10,9 @@ Claude Code's built-in `/resume` picker (with `Ctrl+A`) only filters by chat **t
 - Aggregates per-conversation: one row per chat, with the highest-scoring matched message's snippet.
 - Ranks by FTS5 BM25 across the full set — projects compete on the same scoreboard.
 - Three surfaces, one binary:
-  - `ccsearch <query>` — pipe-friendly ranked output (`text` on TTY, `tsv` when piped). Each text row carries a copy-paste resume one-liner.
-  - `ccsearch -i [<query>]` — built-in TUI picker. Enter resumes in the conversation's original project directory; Ctrl-F forks; Ctrl-O prints session id; Ctrl-D prints project path.
-  - `/chat-search:find` — slash command that renders the top 10 results inline in a Claude Code session, each with the same copy-paste resume one-liner.
+  - `ccsearch [<query>]` (on a TTY) — opens the built-in TUI picker by default. Enter resumes in the conversation's original project directory; Ctrl-F forks; Ctrl-O prints session id; Ctrl-D prints project path. `-i` / `--interactive` forces the picker explicitly (default kept for backward-compat scripts).
+  - `ccsearch <query>` (piped or with `--list` / `--format=text|tsv` / `--regex`) — one-shot ranked output (`text` on TTY when `--list`/`--format=text`, `tsv` when piped). Each text row carries a copy-paste resume one-liner.
+  - `/chat-search:find` — slash command that renders the top 10 results inline in a Claude Code session, each with the same copy-paste resume one-liner. (Unaffected by the picker default: passes `--format=text` explicitly.)
 - Indexer maintenance:
   - First invocation: full build of all on-disk conversations. Expect ~30–90 seconds for several hundred sessions.
   - Subsequent invocations: incremental refresh only — files whose mtime hasn't changed are skipped (sub-second).
@@ -128,8 +128,9 @@ And since Claude Code stores sessions per project (under `~/.claude/projects/<en
 
 | Flag | Effect | Default |
 |---|---|---|
-| `<query>` (positional) | FTS5 query syntax (phrases `"…"`, prefix `term*`, NEAR, AND/OR/NOT) | required unless `--regex --scan` |
-| `-i`, `--interactive` | open the built-in TUI picker | off |
+| `<query>` (positional) | FTS5 query syntax (phrases `"…"`, prefix `term*`, NEAR, AND/OR/NOT) | optional on TTY (picker opens with the query pre-filled or empty) |
+| `-i`, `--interactive` | open the built-in TUI picker | default on a TTY; flag kept for explicit invocation and backward compatibility |
+| `-l`, `--list` | force one-shot ranked text output (the pre-default behavior) on a TTY | off; mutually exclusive with `-i` |
 | `--regex <pat>` | post-filter results with this regex (Node `RegExp` flavor, `m` flag) | — |
 | `--scan` | with `--regex`, skip FTS and full-scan `messages` | off |
 | `--include-tools` | also search `tool_use` / `tool_result` rows | off |
@@ -145,7 +146,12 @@ And since Claude Code stores sessions per project (under `~/.claude/projects/<en
 Mutually exclusive flags:
 
 - `--only-user` and `--include-tools` cannot be combined.
+- `-i` / `--interactive` and `-l` / `--list` cannot be combined.
 - `--regex` without a positional query requires `--scan` — refusing to silently full-scan a 30k+ row table is intentional.
+
+### Dispatch (picker vs one-shot)
+
+On an interactive TTY, `ccsearch` opens the TUI picker by default. Any of these explicitly opts out and uses one-shot ranked text/TSV instead: `--list` / `-l`, `--format=text|tsv`, `--regex`, `--preview`, `--reindex`, `--index-status`, or stdout being redirected/piped. The `-i` flag forces the picker even when those signals would otherwise dispatch to one-shot. Migrating from the previous default: `ccsearch <query> --list` or `ccsearch <query> --format=text` reproduces the old behavior on a TTY.
 
 ## Exit codes
 

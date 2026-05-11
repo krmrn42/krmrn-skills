@@ -462,6 +462,76 @@ assert_eq        "T25.exit_0_override" "0" "$code"
 assert_contains  "T25.help_printed"    "usage:" "$out"
 
 echo
+echo "Test 27: selectMode dispatch matrix (unit-style, via CCSEARCH_TEST export)"
+SELECT_MODE_OUT="$(CCSEARCH_TEST=1 node -e '
+const { selectMode } = require(process.argv[1]);
+function check(label, expected, actual) {
+  if (expected === actual) {
+    console.log("OK", label);
+  } else {
+    console.log("FAIL", label, "expected", expected, "got", actual);
+    process.exitCode = 1;
+  }
+}
+// New default: bare invocation on a TTY → picker
+check("bare-tty",            "picker",   selectMode({interactive:false,list:false,format:null,regex:null},{stdinTTY:true,stdoutTTY:true}));
+// Pipe (stdout not a TTY) forces one-shot
+check("stdout-piped",        "one-shot", selectMode({interactive:false,list:false,format:null,regex:null},{stdinTTY:true,stdoutTTY:false}));
+// Non-TTY stdin (e.g., heredoc, command substitution) forces one-shot
+check("stdin-piped",         "one-shot", selectMode({interactive:false,list:false,format:null,regex:null},{stdinTTY:false,stdoutTTY:true}));
+// --list always forces one-shot on TTY
+check("list-on-tty",         "one-shot", selectMode({interactive:false,list:true, format:null,regex:null},{stdinTTY:true,stdoutTTY:true}));
+// --format=text forces one-shot on TTY
+check("format-text",         "one-shot", selectMode({interactive:false,list:false,format:"text",regex:null},{stdinTTY:true,stdoutTTY:true}));
+// --format=tsv forces one-shot on TTY
+check("format-tsv",          "one-shot", selectMode({interactive:false,list:false,format:"tsv", regex:null},{stdinTTY:true,stdoutTTY:true}));
+// --regex forces one-shot on TTY
+check("regex-on-tty",        "one-shot", selectMode({interactive:false,list:false,format:null,regex:"foo"},{stdinTTY:true,stdoutTTY:true}));
+// -i forces picker even when nothing else would
+check("dash-i-on-tty",       "picker",   selectMode({interactive:true, list:false,format:null,regex:null},{stdinTTY:true,stdoutTTY:true}));
+// -i forces picker even on non-TTY (picker itself will then EXIT_ENV; the dispatch correctly chooses picker)
+check("dash-i-non-tty",      "picker",   selectMode({interactive:true, list:false,format:null,regex:null},{stdinTTY:false,stdoutTTY:false}));
+' "$CCSEARCH" 2>&1)"
+if echo "$SELECT_MODE_OUT" | grep -q '^FAIL'; then
+  FAIL=$((FAIL+1))
+  echo "  FAIL  T27.selectMode_matrix"
+  echo "$SELECT_MODE_OUT" | sed 's/^/         /'
+else
+  PASS=$((PASS+1))
+  echo "  PASS  T27.selectMode_matrix ($(echo "$SELECT_MODE_OUT" | grep -c '^OK') cases ok)"
+fi
+
+echo
+echo "Test 28: --list forces text output (one-shot) on a TTY-like invocation"
+# Force non-TTY stdin so the picker can't engage; --list is the explicit signal.
+out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color --list 'session timeout' </dev/null 2>&1)"
+code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color --list 'session timeout' >/dev/null </dev/null 2>&1; echo $?)"
+assert_eq        "T28.exit_0" "0" "$code"
+assert_contains  "T28.text_output_present" "alpha" "$out"
+
+echo
+echo "Test 29: --list -i exits 1 (mutex)"
+out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --list -i 2>&1)"
+code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --list -i >/dev/null 2>&1; echo $?)"
+assert_eq        "T29.exit_1" "1" "$code"
+assert_contains  "T29.mutex_message" "mutually exclusive" "$out"
+
+echo
+echo "Test 30: slash-command shape (--format=text --no-color --limit=10) still works"
+out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --format=text --no-color --limit=10 'session timeout' </dev/null 2>&1)"
+code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --format=text --no-color --limit=10 'session timeout' >/dev/null </dev/null 2>&1; echo $?)"
+assert_eq        "T30.exit_0" "0" "$code"
+assert_contains  "T30.row_present" "alpha" "$out"
+
+echo
+echo "Test 31: piped query produces TSV (stdout not a TTY → one-shot, default tsv)"
+first_line="$(CCSEARCH_DB="$DB" "$CCSEARCH" 'session timeout' 2>/dev/null | head -1)"
+case "$first_line" in
+  *$'\t'*)  PASS=$((PASS+1)); echo "  PASS  T31.tsv_when_piped" ;;
+  *)        FAIL=$((FAIL+1)); echo "  FAIL  T31.tsv_when_piped — first line missing tab: $first_line" >&2 ;;
+esac
+
+echo
 echo "Test 26: drift guard — every parser flag appears in --help"
 # Extract long-form flags from source: lines like `case "--something":`. Strip
 # line-comment lines first so `case "--flag":` appearing inside a // comment

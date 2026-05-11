@@ -568,9 +568,18 @@ const OPTIONS = [
     flags: ["-i", "--interactive"],
     group: "Options",
     description:
-      "Open the built-in TUI picker. Inside it: Enter resumes the selected " +
-      "conversation, Ctrl-F forks it, Ctrl-O prints the session id, Ctrl-D " +
-      "prints the project path, arrow keys / PgUp / PgDn navigate, Esc cancels.",
+      "Open the built-in TUI picker. Default on a TTY; this flag forces the " +
+      "picker even when other inference would dispatch to one-shot. Inside the " +
+      "picker: Enter resumes, Ctrl-F forks, Ctrl-O prints session id, Ctrl-D " +
+      "prints project path, arrow keys / PgUp / PgDn navigate, Esc cancels.",
+  },
+  {
+    flags: ["-l", "--list"],
+    group: "Options",
+    description:
+      "Force one-shot ranked text output (the pre-default behavior). Useful on " +
+      "a TTY when you want a printable list instead of the picker. Mutually " +
+      "exclusive with -i.",
   },
 
   // Filters
@@ -696,7 +705,7 @@ function formatOptionEntry(entry) {
 
 function buildHelp() {
   const synopsis = [
-    "usage: ccsearch [-h] [-i] [--regex PAT] [--scan]",
+    "usage: ccsearch [-h] [-i | -l] [--regex PAT] [--scan]",
     "                [--include-tools | --only-user]",
     "                [--project SUBSTR] [--since YYYY-MM-DD] [--limit N]",
     "                [--format text|tsv] [--no-color]",
@@ -784,6 +793,7 @@ function parseArgs(argv) {
   const args = {
     query: "",
     interactive: false,
+    list: false,
     regex: null,
     scan: false,
     includeTools: false,
@@ -828,6 +838,10 @@ function parseArgs(argv) {
       case "-i":
       case "--interactive":
         args.interactive = true;
+        break;
+      case "-l":
+      case "--list":
+        args.list = true;
         break;
       case "--regex":
         args.regex = expanded[++i];
@@ -889,6 +903,9 @@ function parseArgs(argv) {
     process.stdout.write(buildHelp() + "\n");
     process.exit(EXIT_OK);
   }
+  if (args.list && args.interactive) {
+    dieUser("--list and -i are mutually exclusive");
+  }
   if (rest.length > 1) {
     args.query = rest.join(" ");
   } else if (rest.length === 1) {
@@ -918,9 +935,23 @@ function validateArgs(args) {
     args.regexCompiled = null;
   }
   args.sinceTs = args.since ? parseSince(args.since) : 0;
-  if (args.format === null) {
-    args.format = process.stdout.isTTY ? "text" : "tsv";
-  }
+  // args.format is intentionally NOT resolved here. selectMode reads
+  // `args.format !== null` as the "user explicitly set --format" signal,
+  // which must remain falsy when the user did not pass --format. The
+  // one-shot branch in main() resolves the default before rendering.
+}
+
+// selectMode decides whether to dispatch to the TUI picker or one-shot
+// rendering. Pure function; stdio is injected so it's unit-testable.
+// Special short-circuits (--preview / --reindex / --index-status) are
+// handled by main() before this function is called.
+function selectMode(args, stdio) {
+  if (args.list) return "one-shot";
+  if (args.format !== null) return "one-shot";
+  if (args.regex) return "one-shot";
+  if (args.interactive) return "picker";
+  if (!stdio.stdinTTY || !stdio.stdoutTTY) return "one-shot";
+  return "picker";
 }
 
 // --- Main ----------------------------------------------------------------
@@ -936,7 +967,7 @@ function runOneShot(db, args) {
     if (!args.query) {
       dieUser(
         "no query provided.\n" +
-          'Try: ccsearch "some keyword"   or   ccsearch -i\n' +
+          'Try: ccsearch "some keyword"   (on a TTY, bare `ccsearch` opens the picker)\n' +
           "Run `ccsearch --help` for the full flag reference."
       );
     }
@@ -1018,7 +1049,12 @@ async function main(argv) {
     return EXIT_OK;
   }
 
-  if (args.interactive) {
+  const mode = selectMode(args, {
+    stdinTTY: !!process.stdin.isTTY,
+    stdoutTTY: !!process.stdout.isTTY,
+  });
+
+  if (mode === "picker") {
     const runPicker = require("./picker.js");
     const result = await runPicker({
       db,
@@ -1040,6 +1076,10 @@ async function main(argv) {
     return result;
   }
 
+  // One-shot: resolve default format now if the user didn't explicitly set it.
+  if (args.format === null) {
+    args.format = process.stdout.isTTY ? "text" : "tsv";
+  }
   runOneShot(db, args);
   return EXIT_OK;
 }
@@ -1057,4 +1097,10 @@ if (require.main === module) {
       );
       process.exit(EXIT_INTERNAL);
     });
+}
+
+// Test-only exports. Guarded so production behavior is unaffected; the tests
+// in bin/ccsearch.test.sh set CCSEARCH_TEST=1 before requiring this file.
+if (process.env.CCSEARCH_TEST) {
+  module.exports = { parseArgs, selectMode };
 }
