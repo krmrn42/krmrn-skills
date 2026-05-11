@@ -182,6 +182,161 @@ function buildClaudeArgs(action, row, savedName) {
   return [...namePart, "--resume", id];
 }
 
+// --- BINDINGS table ------------------------------------------------------
+//
+// Single source of truth for picker keybindings. The status bar renders
+// from this table and a drift-guard test asserts that every entry has a
+// corresponding handler in onKeypress (and vice versa for entries that
+// claim user-invocable keystrokes). Adding a new picker binding is a
+// one-line append here + a one-branch addition in onKeypress.
+//
+// Categories drive the status-bar styling:
+//   resume      → default (high prominence — the primary action)
+//   action      → cyan
+//   dangerous   → yellow
+//   navigation  → dim
+//
+// `visible(deps)` controls whether the entry renders. Use it to gate
+// bindings on runtime predicates (e.g., $TMUX present, --dangerously-
+// skip-permissions armed).
+const BINDINGS = [
+  {
+    keys: ["Enter"],
+    label: "resume",
+    category: "resume",
+    visible: () => true,
+    longHelp: "Spawn `claude --resume <session-id>` in the row's project directory.",
+  },
+  {
+    keys: ["Alt-Enter", "Shift-Enter"],
+    label: "dangerous",
+    category: "dangerous",
+    visible: (deps) => !!deps.dangerouslySkipPermissions,
+    longHelp: "Spawn `claude --dangerously-skip-permissions --resume <id>` — skips all permission prompts.",
+  },
+  {
+    keys: ["Ctrl-T"],
+    label: "remote-control",
+    category: "action",
+    visible: () => true,
+    longHelp: "Spawn `claude --remote-control [name] --resume <id>` for the selected row.",
+  },
+  {
+    keys: ["Ctrl-W"],
+    label: "tmux-window",
+    category: "action",
+    visible: (deps) => !!deps.tmuxAvailable,
+    longHelp: "Open the resumed session in a new tmux window named after the conversation.",
+  },
+  {
+    keys: ["Ctrl-R"],
+    label: "rename",
+    category: "action",
+    visible: () => true,
+    longHelp: "Rename the selected conversation. Saved in ~/.config/krmrn42-skills/chat-search/sessions.json.",
+  },
+  {
+    keys: ["Ctrl-P"],
+    label: "pin",
+    category: "action",
+    visible: () => true,
+    longHelp: "Pin/unpin the selected conversation to the top of the picker list.",
+  },
+  {
+    keys: ["Ctrl-F"],
+    label: "fork",
+    category: "action",
+    visible: () => true,
+    longHelp: "Spawn `claude --fork-session --resume <id>` to create a new session id from this one.",
+  },
+  {
+    keys: ["Ctrl-O"],
+    label: "print id",
+    category: "action",
+    visible: () => true,
+    longHelp: "Print the row's session id to stdout and exit. Useful for piping.",
+  },
+  {
+    keys: ["Ctrl-D"],
+    label: "print path",
+    category: "action",
+    visible: () => true,
+    longHelp: "Print the row's project path to stdout and exit.",
+  },
+  {
+    keys: ["Up/Down"],
+    label: "nav",
+    category: "navigation",
+    visible: () => true,
+    longHelp: "Move cursor up/down (also Ctrl-K / Ctrl-J).",
+  },
+  {
+    keys: ["?"],
+    label: "help",
+    category: "navigation",
+    visible: () => true,
+    longHelp: "Toggle this binding reference overlay. Press any key to dismiss.",
+  },
+  {
+    keys: ["Esc"],
+    label: "cancel",
+    category: "navigation",
+    visible: () => true,
+    longHelp: "Cancel the picker (exit 0 without resuming).",
+  },
+];
+
+const CATEGORY_ORDER = ["resume", "action", "dangerous", "navigation"];
+
+function groupByCategory(entries) {
+  const out = { resume: [], action: [], dangerous: [], navigation: [] };
+  for (const b of entries) {
+    if (out[b.category]) out[b.category].push(b);
+  }
+  return out;
+}
+
+function colorForCategory(cat, text) {
+  if (cat === "resume") return text;
+  if (cat === "action") return ansi.fgCyan + text + ansi.reset;
+  if (cat === "dangerous") return ansi.fgYellow + text + ansi.reset;
+  if (cat === "navigation") return ansi.dim + text + ansi.reset;
+  return text;
+}
+
+function formatCategoryEntries(entries) {
+  // Each entry renders as "<keys> <label>". Two spaces between entries in
+  // the same category.
+  return entries.map((b) => b.keys.join("/") + " " + b.label).join("  ");
+}
+
+function formatBar(grouped, omit) {
+  const omitSet = new Set(omit || []);
+  const parts = [];
+  for (const cat of CATEGORY_ORDER) {
+    if (omitSet.has(cat)) continue;
+    const entries = grouped[cat];
+    if (!entries || entries.length === 0) continue;
+    parts.push(colorForCategory(cat, formatCategoryEntries(entries)));
+  }
+  return parts.join("   "); // 3 spaces between categories
+}
+
+// buildStatusBar returns the status-bar lines to render. Always returns 1
+// or 2 lines: a single fitted line when bindings fit, or main+nav split
+// when narrow. The picker's existing cols<40 "terminal too small" fallback
+// handles truly degenerate widths.
+function buildStatusBar(deps, cols) {
+  const visible = BINDINGS.filter((b) => b.visible(deps));
+  const grouped = groupByCategory(visible);
+  const oneLine = formatBar(grouped, []);
+  if (visibleLen(oneLine) <= cols) return [oneLine];
+  // Drop navigation to line 2.
+  const mainLine = formatBar(grouped, ["navigation"]);
+  const navLine = formatBar(grouped, ["resume", "action", "dangerous"]);
+  return [mainLine, navLine];
+}
+
 // --- Picker --------------------------------------------------------------
 
 function runPicker(deps) {
@@ -214,7 +369,9 @@ function runPicker(deps) {
   let recentCache = null;
   // Picker mode. "browse" is the default; "rename" repurposes the prompt
   // line and result-list keystrokes for inline name editing on the selected
-  // row. See picker-rename-session/design.md §Decision 2.
+  // row. "help" shows a BINDINGS reference overlay; any key returns to
+  // browse. See picker-rename-session/design.md §Decision 2 and
+  // picker-status-bar/design.md §Decision 4.
   let mode = "browse";
   let renameBuffer = "";
 
@@ -383,6 +540,10 @@ function runPicker(deps) {
       // buffer with a trailing cursor block (the cursor is hidden globally).
       promptLine =
         ansi.fgCyan + "rename> " + ansi.reset + renameBuffer + ansi.reverse + " " + ansi.reset;
+    } else if (mode === "help") {
+      promptLine =
+        ansi.fgCyan + "help> " + ansi.reset +
+        ansi.dim + "press any key to dismiss" + ansi.reset;
     } else {
       promptLine =
         ansi.fgCyan + "ccsearch> " + ansi.reset + query +
@@ -390,9 +551,12 @@ function runPicker(deps) {
     }
     stdout.write(truncateToWidth(promptLine, cols));
 
-    // Help line — content depends on the mode.
-    stdout.write(ansi.moveTo(2, 1));
+    // Status bar — 1 or 2 lines depending on terminal width and mode.
+    // Rename mode shows its own narrow help; browse and help modes use
+    // the BINDINGS-driven status bar.
+    let statusLineCount = 1;
     if (mode === "rename") {
+      stdout.write(ansi.moveTo(2, 1));
       stdout.write(
         ansi.dim +
           truncateToWidth(
@@ -402,33 +566,41 @@ function runPicker(deps) {
           ansi.reset
       );
     } else {
-      // Adds a yellow "Alt-Enter dangerous" entry when the dangerous-resume
-      // capability is armed (CLI flag set). The reset inside dangerEntry
-      // closes the yellow before the line continues, then we re-apply dim
-      // for the rest of the line (truncateToWidth correctly counts only
-      // visible characters when budgeting).
-      const dangerEntry = deps.dangerouslySkipPermissions
-        ? "   " + ansi.fgYellow + "Alt-Enter dangerous" + ansi.reset + ansi.dim
-        : "";
-      const tmuxEntry = deps.tmuxAvailable ? "   Ctrl-W tmux-window" : "";
-      stdout.write(
-        ansi.dim +
-          truncateToWidth(
-            "Enter resume" +
-              dangerEntry +
-              "   Ctrl-F fork   Ctrl-R rename   Ctrl-P pin   Ctrl-T remote-control" +
-              tmuxEntry +
-              "   Ctrl-O print id   Ctrl-D print path   Esc cancel",
-            cols
-          ) +
-          ansi.reset
-      );
+      const statusLines = buildStatusBar(deps, cols);
+      statusLineCount = statusLines.length;
+      for (let i = 0; i < statusLines.length; i++) {
+        stdout.write(ansi.moveTo(2 + i, 1));
+        stdout.write(truncateToWidth(statusLines[i], cols));
+      }
     }
 
-    // Body region: rows 4..rows-2 (1-indexed)
-    const bodyTop = 4;
+    // Body region: rows after the status bar + 1 blank row, through rows-1.
+    const bodyTop = 2 + statusLineCount + 1;
     const bodyBottom = rows - 1;
-    const bodyHeight = bodyBottom - bodyTop + 1;
+    const bodyHeight = Math.max(1, bodyBottom - bodyTop + 1);
+
+    // Help-mode overlay: list every BINDINGS entry with its longHelp.
+    // Renders into the body region; the result list is hidden temporarily.
+    // Any key press exits help mode and returns to browse.
+    if (mode === "help") {
+      let line = bodyTop;
+      for (const b of BINDINGS) {
+        if (line > bodyBottom) break;
+        const keyStr = b.keys.join(" / ").padEnd(16);
+        const text = keyStr + "  " + b.longHelp;
+        stdout.write(ansi.moveTo(line, 1));
+        stdout.write(colorForCategory(b.category, truncateToWidth(keyStr, 16)));
+        stdout.write("  ");
+        stdout.write(truncateToWidth(b.longHelp, cols - 18));
+        line++;
+      }
+      // Footer (overwrite the default later in render path).
+      stdout.write(ansi.moveTo(rows, 1));
+      stdout.write(
+        ansi.dim + truncateToWidth(`${BINDINGS.length} bindings — any key to return`, cols) + ansi.reset
+      );
+      return;
+    }
 
     // Locate the pinned/unpinned partition for the divider. firstUnpinnedIdx
     // is the index of the first non-pinned row, or -1 if all rows are
@@ -741,7 +913,15 @@ function runPicker(deps) {
       if (!key) return;
 
       // Top-level mode switch. Rename mode steals all keystrokes for inline
-      // editing of the selected row's name; browse mode is the default.
+      // editing of the selected row's name; help mode dismisses on any key;
+      // browse mode is the default.
+      if (mode === "help") {
+        // Any key dismisses help, except Ctrl-C which exits the picker.
+        if (key.ctrl && key.name === "c") return finish("cancel");
+        mode = "browse";
+        render();
+        return;
+      }
       if (mode === "rename") {
         // Ctrl-C exits the picker entirely, matching browse-mode behavior.
         if (key.ctrl && key.name === "c") return finish("cancel");
@@ -816,6 +996,15 @@ function runPicker(deps) {
         }
         return finish("resume-tmux-window");
       }
+      // `?` (printable) opens the help overlay when the query is empty.
+      // Gated on empty-query so users can still type `?` as a literal
+      // character mid-search (FTS5 doesn't treat it specially but the
+      // convention keeps the binding from being a footgun).
+      if (str === "?" && query.trim() === "") {
+        mode = "help";
+        render();
+        return;
+      }
       // Alt+Enter (key.meta) and Shift+Enter (key.shift, CSI-u terminals only)
       // route to the dangerous-resume action when armed. On terminals that do
       // not distinguish Shift+Enter from Enter, key.shift is false for plain
@@ -883,5 +1072,9 @@ if (process.env.CCSEARCH_TEST) {
     buildTmuxNewWindowCommand,
     sanitizeTmuxName,
     shellSingleQuote,
+    BINDINGS,
+    buildStatusBar,
+    groupByCategory,
+    formatBar,
   };
 }

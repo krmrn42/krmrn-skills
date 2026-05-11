@@ -114,6 +114,7 @@ ccsearch "deploy" --format tsv | head -3
 | `Ctrl-P` | Pin / unpin the selected row (pinned rows sort to the top with a `📌` indicator) |
 | `Ctrl-T` | Resume with `claude --remote-control [name] --resume <id>` (uses saved name when set) |
 | `Ctrl-W` | Resume in a new tmux window (requires running inside tmux; `--no-tmux` disables) |
+| `?` | Open the keybinding help overlay (only when query is empty); any key dismisses |
 | `Ctrl-O` | Print the session id and exit |
 | `Ctrl-D` | Print the original project path and exit |
 | `Backspace` | Delete the last query character |
@@ -121,6 +122,8 @@ ccsearch "deploy" --format tsv | head -3
 | `Esc` / `Ctrl-C` | Cancel cleanly (exit 0) |
 
 After `claude` exits (Enter / Ctrl-F), your parent shell's working directory is unchanged — the resume's `cd` only affects the spawned `claude` process.
+
+The picker's status bar (the line under the prompt) reflects the keybindings available **right now** — dangerous-resume only appears when `--dangerously-skip-permissions` is armed, and tmux-window only inside `$TMUX`. On narrow terminals the bar wraps to a second line with navigation bindings moving to the bottom. Press `?` (with an empty query) for a full overlay listing each binding with its description.
 
 ## Why this exists
 

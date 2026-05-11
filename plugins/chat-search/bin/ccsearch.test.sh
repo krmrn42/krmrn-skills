@@ -905,6 +905,106 @@ assert_contains "T44.help_mentions_ctrl_t" "Ctrl-T" "$help_out"
 assert_contains "T44.help_mentions_remote_control" "remote-control" "$help_out"
 
 echo
+echo "Test 48: buildStatusBar — wrapping, gating, category coloring"
+SB_OUT="$(CCSEARCH_TEST=1 node -e '
+const { buildStatusBar, BINDINGS } = require(process.argv[1])._test;
+function check(label, cond) {
+  if (cond) console.log("OK", label);
+  else { console.log("FAIL", label); process.exitCode = 1; }
+}
+const wide  = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true }, 1000);
+const mid   = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true }, 60);
+const lean  = buildStatusBar({}, 1000);
+const armed = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: false }, 1000);
+const tmuxed = buildStatusBar({ tmuxAvailable: true }, 1000);
+// Visibility gating
+check("wide_has_alt",    wide.join(" ").includes("Alt-Enter"));
+check("wide_has_ctrlw",  wide.join(" ").includes("Ctrl-W"));
+check("lean_no_alt",     !lean.join(" ").includes("Alt-Enter"));
+check("lean_no_ctrlw",   !lean.join(" ").includes("Ctrl-W"));
+check("armed_has_alt",   armed.join(" ").includes("Alt-Enter"));
+check("armed_no_ctrlw",  !armed.join(" ").includes("Ctrl-W"));
+check("tmuxed_has_ctrlw", tmuxed.join(" ").includes("Ctrl-W"));
+check("tmuxed_no_alt",   !tmuxed.join(" ").includes("Alt-Enter"));
+// Always-present
+check("has_enter",       wide.join(" ").includes("Enter resume"));
+check("has_ctrl_f",      wide.join(" ").includes("Ctrl-F"));
+check("has_help_marker", wide.join(" ").includes("? help"));
+// Wrapping
+check("wide_one_line",   lean.length === 1);
+check("mid_two_lines",   mid.length === 2);
+// Category styling — yellow ANSI for dangerous when armed
+check("dangerous_yellow", wide.join(" ").includes("\x1b[33m") && armed.join(" ").includes("\x1b[33m"));
+// Action category cyan
+check("action_cyan",     wide.join(" ").includes("\x1b[36m"));
+// Navigation dim — check on the wrapped variant where nav is on line 2.
+check("nav_dim",         mid.length === 2 && mid[1].includes("\x1b[2m"));
+' "$HERE/picker.js" 2>&1)"
+if echo "$SB_OUT" | grep -q '^FAIL'; then
+  FAIL=$((FAIL+1))
+  echo "  FAIL  T48.buildStatusBar"
+  echo "$SB_OUT" | sed 's/^/         /'
+else
+  PASS=$((PASS+1))
+  echo "  PASS  T48.buildStatusBar ($(echo "$SB_OUT" | grep -c '^OK') cases ok)"
+fi
+
+echo
+echo "Test 49: drift guard — every BINDINGS keystroke has an onKeypress handler"
+DRIFT_OUT="$(CCSEARCH_TEST=1 node -e '
+const fs = require("node:fs");
+const { BINDINGS } = require(process.argv[1])._test;
+const src = fs.readFileSync(process.argv[1], "utf8");
+// Mapping: BINDINGS key string → source pattern that onKeypress uses.
+// The drift guard is one-directional: every BINDINGS keystroke must have
+// a corresponding source pattern. The reverse (every source pattern in
+// BINDINGS) is intentionally relaxed — internal handlers (Ctrl-C, Ctrl-K,
+// Ctrl-J, Ctrl-U, Backspace) are not user-facing actions and don'\''t
+// belong in BINDINGS.
+const PATTERNS = {
+  "Enter":       /key\.name === "return"/,
+  "Esc":         /key\.name === "escape"/,
+  "Alt-Enter":   /key\.meta.*key\.name === "return"|key\.meta \|\| key\.shift/,
+  "Shift-Enter": /key\.shift.*key\.name === "return"|key\.meta \|\| key\.shift/,
+  "Ctrl-F":      /key\.ctrl && key\.name === "f"/,
+  "Ctrl-R":      /key\.ctrl && key\.name === "r"/,
+  "Ctrl-P":      /key\.ctrl && key\.name === "p"/,
+  "Ctrl-T":      /key\.ctrl && key\.name === "t"/,
+  "Ctrl-W":      /key\.ctrl && key\.name === "w"/,
+  "Ctrl-O":      /key\.ctrl && key\.name === "o"/,
+  "Ctrl-D":      /key\.ctrl && key\.name === "d"/,
+  "Up/Down":     /key\.name === "up"|key\.name === "down"/,
+  "?":           /str === "\?"/,
+};
+let ok = true;
+for (const b of BINDINGS) {
+  for (const k of b.keys) {
+    const pat = PATTERNS[k];
+    if (!pat) {
+      console.log("FAIL unknown_key_pattern", k);
+      ok = false;
+      continue;
+    }
+    if (!pat.test(src)) {
+      console.log("FAIL no_handler_for", k, "(", b.label, ")");
+      ok = false;
+    } else {
+      console.log("OK", k);
+    }
+  }
+}
+if (!ok) process.exitCode = 1;
+' "$HERE/picker.js" 2>&1)"
+if echo "$DRIFT_OUT" | grep -q '^FAIL'; then
+  FAIL=$((FAIL+1))
+  echo "  FAIL  T49.BINDINGS_drift_guard"
+  echo "$DRIFT_OUT" | sed 's/^/         /'
+else
+  PASS=$((PASS+1))
+  echo "  PASS  T49.BINDINGS_drift_guard ($(echo "$DRIFT_OUT" | grep -c '^OK') keys checked)"
+fi
+
+echo
 echo "Test 41: applyPinOrdering — partition, pin-order, limit, FTS-mode no-inject"
 APO_OUT="$(CCSEARCH_TEST=1 node -e '
 const { applyPinOrdering } = require(process.argv[1]);
