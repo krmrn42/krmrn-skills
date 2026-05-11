@@ -34,17 +34,12 @@ These plugins are *not* shipped here, but they're what most contributors will wa
 | Plugin | Source | Why it's useful |
 |---|---|---|
 | `plugin-dev` | Anthropic (official) | Bundles `plugin-structure`, `skill-development`, `command-development`, `agent-development`, `hook-development`, `mcp-integration`, `plugin-settings`, and a guided `create-plugin` workflow. The reference for *how* to lay out a Claude Code plugin. |
-| `skill-creator` | Anthropic (official) | Anthropic's iteration loop for authoring and evaluating skills — covers description-optimization, eval harness, and benchmarking. Pair it with `skill-authoring` (below) for opinionated rules + Anthropic's measurement tools. |
-| `authoring` | [`krmrn42/skills`](https://github.com/krmrn42/skills) — install as `authoring@krmrn42-skills` | Opinionated rules for authoring skills: description-as-trigger-surface, ≤500-line bodies, reference depth = 1, the pushy-description pattern with exclusion clauses. Companion to `skill-linting` here. |
 
 A typical author's install set:
 
 ```bash
 /plugin marketplace add krmrn42/krmrn-skills
 /plugin install skill-linting@krmrn-skills
-
-/plugin marketplace add krmrn42/skills
-/plugin install authoring@krmrn42-skills
 
 # Plus Anthropic's official skill-creator and plugin-dev — see Claude Code's
 # /plugin marketplace browse output for current sources.
