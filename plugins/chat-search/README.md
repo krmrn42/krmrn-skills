@@ -110,6 +110,7 @@ ccsearch "deploy" --format tsv | head -3
 | `PgUp` / `PgDn` | Page through results |
 | `Enter` | `cd <project> && claude --resume <id>` for the selected row |
 | `Ctrl-F` | `cd <project> && claude --fork-session --resume <id>` |
+| `Ctrl-R` | Rename the selected row (saved name persists, passed to `claude --name`) |
 | `Ctrl-O` | Print the session id and exit |
 | `Ctrl-D` | Print the original project path and exit |
 | `Backspace` | Delete the last query character |
@@ -141,6 +142,7 @@ And since Claude Code stores sessions per project (under `~/.claude/projects/<en
 | `--format text\|tsv` | output format | `text` on TTY, `tsv` when piped |
 | `--db-path PATH` | override `~/.claude/conversation-search.db` | — |
 | `--dangerously-skip-permissions` | arm the picker's Alt+Enter keybinding to resume with `claude --dangerously-skip-permissions` (see "Skip permissions on resume" below) | off |
+| `--print-names` | print the saved-session-names config (`sessions.json`) to stdout and exit | — |
 
 `--regex` uses the Node [`RegExp`](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp) flavor compiled with the `m` (multiline) flag. Named groups syntax differs from Python's `re` module (`(?<name>…)` rather than `(?P<name>…)`); other common features (character classes, alternation, anchors, quantifiers, lookaround, backreferences) are the same.
 
@@ -161,6 +163,14 @@ Pass `--dangerously-skip-permissions` to arm a new picker keybinding: **Alt+Ente
 **Shift+Enter** is wired as a best-effort secondary binding for the same action. It works on terminals that distinguish Shift+Enter from plain Enter via CSI-u / kitty keyboard protocol — Kitty, WezTerm, iTerm2 with the report-modifiers preference, Windows Terminal with enhanced keyboard. On terminals that send `\r` for both (xterm, GNOME Terminal, macOS Terminal.app default, tmux without passthrough), Shift+Enter is indistinguishable from Enter and falls through to plain resume — no silent injection of the dangerous flag.
 
 Two-layer opt-in: the CLI flag must be set AND the user must press Alt+Enter (not plain Enter). Accidental invocation requires both.
+
+### Rename a session (Ctrl-R)
+
+Press **Ctrl-R** on any picker row to assign a memorable name. The prompt line switches to `rename> <buffer>`; type a name, hit Enter to save, or Esc to cancel. Empty + Enter clears the saved name (reverts to the synthesized title on the next picker open).
+
+Saved names persist in `$XDG_CONFIG_HOME/krmrn42-skills/chat-search/sessions.json` (default `~/.config/...`). The file is human-editable JSON and safe to back up or sync via dotfiles. View it with `ccsearch --print-names`.
+
+On resume, the saved name flows through to `claude --name <name>` so the resumed session opens with the familiar label. This applies to plain resume (Enter), fork (Ctrl-F), and dangerous resume (Alt+Enter) — every resume action threads the name through automatically.
 
 ## Exit codes
 

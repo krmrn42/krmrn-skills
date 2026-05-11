@@ -107,6 +107,37 @@ function wrapToWidth(s, width) {
   return lines;
 }
 
+// --- Claude argv builder -------------------------------------------------
+
+// buildClaudeArgs is the single source of truth for the argv passed to
+// `claude` when the picker spawns it. Action-aware: savedName lands in
+// different positions depending on `action`. A naive "if savedName, prepend
+// --name" helper would produce the wrong shape for resume-remote-control,
+// which consumes the name via its own positional argument.
+//
+// Actions:
+//   - "resume"               → ["--resume", id] (+ --name when set)
+//   - "fork"                 → ["--fork-session", "--resume", id] (+ --name)
+//   - "resume-dangerous"     → ["--dangerously-skip-permissions", "--resume", id] (+ --name)
+//   - "resume-remote-control"→ ["--remote-control", name?, "--resume", id]  (NO --name)
+function buildClaudeArgs(action, row, savedName) {
+  const id = row.sessionId;
+  const name = typeof savedName === "string" && savedName.length > 0 ? savedName : null;
+  if (action === "resume-remote-control") {
+    // --remote-control consumes the name semantically; --name is suppressed.
+    return name
+      ? ["--remote-control", name, "--resume", id]
+      : ["--remote-control", "--resume", id];
+  }
+  const namePart = name ? ["--name", name] : [];
+  if (action === "fork") return ["--fork-session", ...namePart, "--resume", id];
+  if (action === "resume-dangerous") {
+    return ["--dangerously-skip-permissions", ...namePart, "--resume", id];
+  }
+  // Default action: plain "resume".
+  return [...namePart, "--resume", id];
+}
+
 // --- Picker --------------------------------------------------------------
 
 function runPicker(deps) {
@@ -137,6 +168,11 @@ function runPicker(deps) {
   // Recent-browse cache: populated on the first empty-query render, reused on
   // backspace-to-empty. Picker-session-scoped — not invalidated mid-session.
   let recentCache = null;
+  // Picker mode. "browse" is the default; "rename" repurposes the prompt
+  // line and result-list keystrokes for inline name editing on the selected
+  // row. See picker-rename-session/design.md §Decision 2.
+  let mode = "browse";
+  let renameBuffer = "";
 
   function clearTimers() {
     if (pendingTimer) clearTimeout(pendingTimer);
@@ -172,6 +208,7 @@ function runPicker(deps) {
           recentCache = deps.recentConversations(db, {
             limit: args.limit,
             projectFilter: args.project,
+            sessionStore: deps.sessionStore,
           });
         } catch (e) {
           recentCache = [];
@@ -214,7 +251,7 @@ function runPicker(deps) {
     return lastDims;
   }
 
-  function buildResultLine(r, width, selected) {
+  function buildResultLine(r, width, selected, dim) {
     const proj = deps.projectDisplay(r.projectPath, r.projectName);
     const date = deps.fmtDate(r.lastActivity);
     const sid = deps.shortSession(r.sessionId);
@@ -229,9 +266,16 @@ function runPicker(deps) {
     const snipTrunc = snippet ? truncateToWidth(snippet, width - 4) : "";
 
     const prefix = selected ? "▌ " : "  ";
-    const styledHead = selected
-      ? deps.ANSI_BOLD + headTrunc + deps.ANSI_RESET
-      : headTrunc;
+    // In rename mode, dim every row uniformly to signal the list isn't the
+    // active focus. Selection bold is also suppressed for the same reason.
+    let styledHead;
+    if (dim) {
+      styledHead = deps.ANSI_DIM + headTrunc + deps.ANSI_RESET;
+    } else if (selected) {
+      styledHead = deps.ANSI_BOLD + headTrunc + deps.ANSI_RESET;
+    } else {
+      styledHead = headTrunc;
+    }
     const styledSnip = snipTrunc
       ? deps.ANSI_DIM + snipTrunc + deps.ANSI_RESET
       : "";
@@ -283,29 +327,50 @@ function runPicker(deps) {
     // Header
     stdout.write(ansi.clearScreen);
     stdout.write(ansi.moveTo(1, 1));
-    const promptLine =
-      ansi.fgCyan + "ccsearch> " + ansi.reset + query + (searchPending ? " " + ansi.dim + "…" + ansi.reset : "");
+    let promptLine;
+    if (mode === "rename") {
+      // Rename mode: prompt switches color + label and shows the rename
+      // buffer with a trailing cursor block (the cursor is hidden globally).
+      promptLine =
+        ansi.fgCyan + "rename> " + ansi.reset + renameBuffer + ansi.reverse + " " + ansi.reset;
+    } else {
+      promptLine =
+        ansi.fgCyan + "ccsearch> " + ansi.reset + query +
+        (searchPending ? " " + ansi.dim + "…" + ansi.reset : "");
+    }
     stdout.write(truncateToWidth(promptLine, cols));
 
-    // Help line — adds a yellow "Alt-Enter dangerous" entry when the
-    // dangerous-resume capability is armed (CLI flag set). The reset inside
-    // dangerEntry closes the yellow before the line continues, then we
-    // re-apply dim for the rest of the line (truncateToWidth correctly
-    // counts only visible characters when budgeting).
+    // Help line — content depends on the mode.
     stdout.write(ansi.moveTo(2, 1));
-    const dangerEntry = deps.dangerouslySkipPermissions
-      ? "   " + ansi.fgYellow + "Alt-Enter dangerous" + ansi.reset + ansi.dim
-      : "";
-    stdout.write(
-      ansi.dim +
-        truncateToWidth(
-          "Enter resume" +
-            dangerEntry +
-            "   Ctrl-F fork   Ctrl-O print id   Ctrl-D print path   Esc cancel",
-          cols
-        ) +
-        ansi.reset
-    );
+    if (mode === "rename") {
+      stdout.write(
+        ansi.dim +
+          truncateToWidth(
+            "Enter save   Esc cancel   (empty + Enter clears the saved name)",
+            cols
+          ) +
+          ansi.reset
+      );
+    } else {
+      // Adds a yellow "Alt-Enter dangerous" entry when the dangerous-resume
+      // capability is armed (CLI flag set). The reset inside dangerEntry
+      // closes the yellow before the line continues, then we re-apply dim
+      // for the rest of the line (truncateToWidth correctly counts only
+      // visible characters when budgeting).
+      const dangerEntry = deps.dangerouslySkipPermissions
+        ? "   " + ansi.fgYellow + "Alt-Enter dangerous" + ansi.reset + ansi.dim
+        : "";
+      stdout.write(
+        ansi.dim +
+          truncateToWidth(
+            "Enter resume" +
+              dangerEntry +
+              "   Ctrl-F fork   Ctrl-R rename   Ctrl-O print id   Ctrl-D print path   Esc cancel",
+            cols
+          ) +
+          ansi.reset
+      );
+    }
 
     // Body region: rows 4..rows-2 (1-indexed)
     const bodyTop = 4;
@@ -340,11 +405,12 @@ function runPicker(deps) {
       }
     } else {
       const visible = results.slice(scrollOffset, scrollOffset + maxVisible);
+      const dimBody = mode === "rename";
       for (let i = 0; i < visible.length; i++) {
         const idx = scrollOffset + i;
         const r = visible[i];
         const selected = idx === cursor;
-        const { line1, line2 } = buildResultLine(r, listWidth, selected);
+        const { line1, line2 } = buildResultLine(r, listWidth, selected, dimBody);
         if (line > bodyBottom) break;
         stdout.write(ansi.moveTo(line, 1));
         stdout.write(line1);
@@ -415,14 +481,12 @@ function runPicker(deps) {
           "resuming in current cwd. claude --resume may fail.\n"
       );
     }
-    let claudeArgs;
-    if (action === "fork") {
-      claudeArgs = ["--fork-session", "--resume", row.sessionId];
-    } else if (action === "resume-dangerous") {
-      claudeArgs = ["--dangerously-skip-permissions", "--resume", row.sessionId];
-    } else {
-      claudeArgs = ["--resume", row.sessionId];
-    }
+    // Look up the saved name for this row (if any). The sessionStore is
+    // loaded once at picker startup and mutated in-memory on rename / clear.
+    const savedName =
+      (deps.sessionStore && deps.sessionStore.names && deps.sessionStore.names[row.sessionId]) ||
+      null;
+    const claudeArgs = buildClaudeArgs(action, row, savedName);
     const result = childProc.spawnSync("claude", claudeArgs, {
       stdio: "inherit",
       cwd,
@@ -478,14 +542,104 @@ function runPicker(deps) {
     };
     stdout.on("resize", onResize);
 
+    function commitRename() {
+      const row = results[cursor];
+      // No selected row → silently bail back to browse mode. The Ctrl-R
+      // entry guard also checks this; defensive double-check.
+      if (!row) {
+        mode = "browse";
+        renameBuffer = "";
+        render();
+        return;
+      }
+      const trimmed = renameBuffer.trim();
+      const store = deps.sessionStore;
+      if (store) {
+        store.names = store.names || {};
+        if (trimmed === "") {
+          delete store.names[row.sessionId];
+        } else {
+          store.names[row.sessionId] = trimmed;
+        }
+        if (typeof deps.saveSessionStore === "function") {
+          try {
+            deps.saveSessionStore(store);
+          } catch (e) {
+            // Persistence failure is non-fatal — the in-memory state still
+            // reflects the user's intent for the rest of the session.
+            process.stderr.write(`ccsearch: could not save sessions.json: ${e.message}\n`);
+          }
+        }
+      }
+      // Update the in-memory row so the next render shows the change without
+      // a DB requery. When cleared, fall back to the previously-synthesized
+      // title if we still have one (we don't — the synthesized title was
+      // discarded when the saved name took precedence in recentConversations).
+      // The simplest correct behavior: set to null, accept that the row reads
+      // as "<no title>" until the next picker session re-synthesizes.
+      row.title = trimmed === "" ? null : trimmed;
+      mode = "browse";
+      renameBuffer = "";
+      render();
+    }
+
     function onKeypress(str, key) {
       if (!key) return;
+
+      // Top-level mode switch. Rename mode steals all keystrokes for inline
+      // editing of the selected row's name; browse mode is the default.
+      if (mode === "rename") {
+        // Ctrl-C exits the picker entirely, matching browse-mode behavior.
+        if (key.ctrl && key.name === "c") return finish("cancel");
+        // Esc cancels rename without writing.
+        if (key.name === "escape") {
+          mode = "browse";
+          renameBuffer = "";
+          render();
+          return;
+        }
+        // Enter commits.
+        if (key.name === "return") return commitRename();
+        // Ctrl-U clears the buffer.
+        if (key.ctrl && key.name === "u") {
+          renameBuffer = "";
+          render();
+          return;
+        }
+        // Backspace pops one character.
+        if (key.name === "backspace") {
+          if (renameBuffer.length > 0) {
+            renameBuffer = renameBuffer.slice(0, -1);
+            render();
+          }
+          return;
+        }
+        // Printable characters append to the buffer.
+        if (str && str.length === 1 && str >= " ") {
+          renameBuffer += str;
+          render();
+        }
+        return;
+      }
+
+      // --- Browse mode ---
+
       // Ctrl-C / Esc cancel
       if (key.ctrl && key.name === "c") return finish("cancel");
       if (key.name === "escape") return finish("cancel");
       if (key.ctrl && key.name === "d") return finish("print-path");
       if (key.ctrl && key.name === "o") return finish("print-id");
       if (key.ctrl && key.name === "f") return finish("fork");
+      // Ctrl-R: enter rename mode on the selected row. No-op when no row is
+      // selected (empty result set or empty-on-fresh-index).
+      if (key.ctrl && key.name === "r") {
+        const row = results[cursor];
+        if (!row) return;
+        mode = "rename";
+        renameBuffer = row.title || "";
+        render();
+        return;
+      }
       // Alt+Enter (key.meta) and Shift+Enter (key.shift, CSI-u terminals only)
       // route to the dangerous-resume action when armed. On terminals that do
       // not distinguish Shift+Enter from Enter, key.shift is false for plain
@@ -514,6 +668,11 @@ function runPicker(deps) {
         scheduleSearch();
         return;
       }
+      // ---- catch-all: no new ctrl bindings below this line ----
+      // The picker-status-bar drift-guard test (when it lands) will catch
+      // BINDINGS-vs-onKeypress mismatches automatically; until then, any new
+      // ctrl/meta keystroke handler must land ABOVE this guard or it will be
+      // silently swallowed.
       if (key.ctrl || key.meta) return; // ignore other modifier keys
       if (str && str.length === 1 && str >= " ") {
         query += str;
@@ -539,3 +698,9 @@ function runPicker(deps) {
 }
 
 module.exports = runPicker;
+
+// Test-only exports. Guarded so production behavior is unaffected; the tests
+// in bin/ccsearch.test.sh set CCSEARCH_TEST=1 before requiring this file.
+if (process.env.CCSEARCH_TEST) {
+  module.exports._test = { buildClaudeArgs };
+}

@@ -712,6 +712,111 @@ case "$out_oneshot" in
 esac
 
 echo
+echo "Test 37: buildClaudeArgs — all action shapes (without + with saved name)"
+BCA_OUT="$(CCSEARCH_TEST=1 node -e '
+const { buildClaudeArgs } = require(process.argv[1])._test;
+const row = { sessionId: "abc" };
+function check(label, expected, actual) {
+  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  if (a === e) console.log("OK", label);
+  else { console.log("FAIL", label, "expected", e, "got", a); process.exitCode = 1; }
+}
+check("resume_no_name",          ["--resume","abc"],                               buildClaudeArgs("resume", row, null));
+check("resume_with_name",        ["--name","my chat","--resume","abc"],            buildClaudeArgs("resume", row, "my chat"));
+check("fork_no_name",            ["--fork-session","--resume","abc"],              buildClaudeArgs("fork", row, null));
+check("fork_with_name",          ["--fork-session","--name","f","--resume","abc"], buildClaudeArgs("fork", row, "f"));
+check("dangerous_no_name",       ["--dangerously-skip-permissions","--resume","abc"], buildClaudeArgs("resume-dangerous", row, null));
+check("dangerous_with_name",     ["--dangerously-skip-permissions","--name","d","--resume","abc"], buildClaudeArgs("resume-dangerous", row, "d"));
+check("remote_no_name",          ["--remote-control","--resume","abc"],            buildClaudeArgs("resume-remote-control", row, null));
+check("remote_with_name",        ["--remote-control","rc","--resume","abc"],       buildClaudeArgs("resume-remote-control", row, "rc"));
+check("remote_suppresses_name",  true, !buildClaudeArgs("resume-remote-control", row, "x").includes("--name"));
+check("empty_name_treated_null", ["--resume","abc"],                               buildClaudeArgs("resume", row, ""));
+' "$HERE/picker.js" 2>&1)"
+if echo "$BCA_OUT" | grep -q '^FAIL'; then
+  FAIL=$((FAIL+1))
+  echo "  FAIL  T37.buildClaudeArgs"
+  echo "$BCA_OUT" | sed 's/^/         /'
+else
+  PASS=$((PASS+1))
+  echo "  PASS  T37.buildClaudeArgs ($(echo "$BCA_OUT" | grep -c '^OK') cases ok)"
+fi
+
+echo
+echo "Test 38: sessions.json — load/save round-trip + corrupt-file recovery"
+TMPCFG="$(mktemp -d -t ccsearch-cfg.XXXXXX)"
+SES_OUT="$(CCSEARCH_TEST=1 node -e '
+const { loadSessionStore, saveSessionStore, emptySessionStore } = require(process.argv[1]);
+const fs = require("node:fs"); const p = process.argv[2];
+// load on missing file
+let s = loadSessionStore(p);
+console.log("EMPTY", s.version, Object.keys(s.names).length, s.pins.length);
+// round-trip
+s.names["conv-a"] = "alpha"; s.names["conv-b"] = "beta"; s.pins.push("conv-a");
+saveSessionStore(s, p);
+console.log("EXISTS", fs.existsSync(p) ? "yes" : "no");
+console.log("NO_TMP", fs.existsSync(p + ".tmp") ? "yes" : "no");
+const reloaded = loadSessionStore(p);
+console.log("RELOADED", reloaded.names["conv-a"], reloaded.names["conv-b"], reloaded.pins[0]);
+// corrupt-file recovery
+fs.writeFileSync(p, "{not valid");
+const rec = loadSessionStore(p);
+console.log("RECOVERED", rec.version, Object.keys(rec.names).length, rec.pins.length);
+// type-defensive: non-string name values must be filtered
+fs.writeFileSync(p, JSON.stringify({ version: 1, names: { a: "ok", b: 42, c: "" }, pins: ["x", null] }));
+const filt = loadSessionStore(p);
+console.log("FILTERED", filt.names.a, filt.names.b, filt.names.c, filt.pins.join(","));
+' "$CCSEARCH" "$TMPCFG/sessions.json" 2>&1)"
+case "$SES_OUT" in
+  *"EMPTY 1 0 0"*"EXISTS yes"*"NO_TMP no"*"RELOADED alpha beta conv-a"*"RECOVERED 1 0 0"*"FILTERED ok undefined undefined x"*)
+    PASS=$((PASS+1)); echo "  PASS  T38.sessions_json_round_trip" ;;
+  *)
+    FAIL=$((FAIL+1)); echo "  FAIL  T38.sessions_json_round_trip — got:" >&2
+    echo "$SES_OUT" | sed 's/^/         /' >&2 ;;
+esac
+rm -rf "$TMPCFG"
+
+echo
+echo "Test 39: --print-names — empty config + populated config"
+TMPCFG="$(mktemp -d -t ccsearch-cfg.XXXXXX)"
+PN_EMPTY="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --print-names 2>&1)"
+assert_eq "T39.empty_prints_braces" "{}" "$PN_EMPTY"
+mkdir -p "$TMPCFG/krmrn42-skills/chat-search"
+echo '{"version":1,"names":{"conv-xyz":"named one"},"pins":[]}' > "$TMPCFG/krmrn42-skills/chat-search/sessions.json"
+PN_FULL="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --print-names 2>&1)"
+assert_contains "T39.populated_prints_content" "named one" "$PN_FULL"
+assert_contains "T39.populated_prints_session_id" "conv-xyz" "$PN_FULL"
+# --print-names short-circuits before any DB work — should succeed even without
+# a usable index. Use a non-existent --db-path to confirm.
+PN_NODB="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --db-path "/nonexistent/path.db" --print-names 2>&1)"
+assert_contains "T39.short_circuits_before_db" "named one" "$PN_NODB"
+rm -rf "$TMPCFG"
+
+echo
+echo "Test 40: recentConversations — saved-name overlay overrides synthesized title"
+RC_NAME_OUT="$(CCSEARCH_TEST=1 node -e '
+const { recentConversations } = require(process.argv[1]);
+const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(process.argv[2], { readOnly: true });
+const store = { version: 1, names: { "conv-aaaa-1111-1111-1111-111111111111": "my custom name" }, pins: [] };
+const rows = recentConversations(db, { limit: 10, projectFilter: null, sessionStore: store });
+const named = rows.find(r => r.sessionId === "conv-aaaa-1111-1111-1111-111111111111");
+const other = rows.find(r => r.sessionId !== "conv-aaaa-1111-1111-1111-111111111111");
+console.log("NAMED", named ? named.title : "missing");
+console.log("OTHER_NOT_OVERRIDDEN", other && other.title && other.title !== "my custom name" ? "yes" : "no");
+// Without the store, synthesized title runs (regression check)
+const rowsNoStore = recentConversations(db, { limit: 10, projectFilter: null });
+const sameRow = rowsNoStore.find(r => r.sessionId === "conv-aaaa-1111-1111-1111-111111111111");
+console.log("NO_STORE_SYNTHESIZED", sameRow && sameRow.title && sameRow.title !== "my custom name" ? "yes" : "no");
+' "$CCSEARCH" "$DB" 2>&1)"
+case "$RC_NAME_OUT" in
+  *"NAMED my custom name"*"OTHER_NOT_OVERRIDDEN yes"*"NO_STORE_SYNTHESIZED yes"*)
+    PASS=$((PASS+1)); echo "  PASS  T40.recent_conv_name_overlay" ;;
+  *)
+    FAIL=$((FAIL+1)); echo "  FAIL  T40.recent_conv_name_overlay — got:" >&2
+    echo "$RC_NAME_OUT" | sed 's/^/         /' >&2 ;;
+esac
+
+echo
 echo "Test 26: drift guard — every parser flag appears in --help"
 # Extract long-form flags from source: lines like `case "--something":`. Strip
 # line-comment lines first so `case "--flag":` appearing inside a // comment

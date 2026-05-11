@@ -85,6 +85,68 @@ function defaultIndexPath() {
   return path.join(base, "krmrn42-skills", "chat-search", "index.db");
 }
 
+// sessions.json holds picker-side per-session metadata (saved names, pins).
+// Schema: { version: 1, names: { <session-id>: <string> }, pins: [<session-id>, ...] }
+// Lives under XDG_CONFIG_HOME because it's user-edited config, not regenerable cache.
+function sessionsConfigPath() {
+  const xdg = process.env.XDG_CONFIG_HOME && process.env.XDG_CONFIG_HOME.trim();
+  const base = xdg && xdg.length > 0 ? xdg : path.join(os.homedir(), ".config");
+  return path.join(base, "krmrn42-skills", "chat-search", "sessions.json");
+}
+
+function emptySessionStore() {
+  return { version: 1, names: {}, pins: [] };
+}
+
+// Load sessions.json. Returns the empty default on missing file or parse error.
+// On parse error, writes a one-line warning to stderr — corrupt config should
+// surface visibly without blocking the picker.
+function loadSessionStore(configPath) {
+  const p = configPath || sessionsConfigPath();
+  let raw;
+  try {
+    raw = fs.readFileSync(p, "utf8");
+  } catch (e) {
+    if (e && e.code === "ENOENT") return emptySessionStore();
+    process.stderr.write(`ccsearch: could not read ${p}: ${e.message}\n`);
+    return emptySessionStore();
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    process.stderr.write(`ccsearch: ${p} is not valid JSON (${e.message}); using empty config\n`);
+    return emptySessionStore();
+  }
+  // Defensive normalization. We tolerate missing fields rather than rejecting
+  // a partially-shaped file — preserves forward-compat with future fields.
+  const store = emptySessionStore();
+  if (parsed && typeof parsed === "object") {
+    if (typeof parsed.version === "number") store.version = parsed.version;
+    if (parsed.names && typeof parsed.names === "object" && !Array.isArray(parsed.names)) {
+      for (const [k, v] of Object.entries(parsed.names)) {
+        if (typeof v === "string" && v.length > 0) store.names[k] = v;
+      }
+    }
+    if (Array.isArray(parsed.pins)) {
+      for (const p of parsed.pins) if (typeof p === "string" && p.length > 0) store.pins.push(p);
+    }
+  }
+  return store;
+}
+
+// Atomic write: serialize, write to .tmp, then rename. Failure leaves the
+// previous file intact. Creates parent directories on demand.
+function saveSessionStore(store, configPath) {
+  const p = configPath || sessionsConfigPath();
+  const dir = path.dirname(p);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = p + ".tmp";
+  const body = JSON.stringify(store, null, 2) + "\n";
+  fs.writeFileSync(tmp, body, "utf8");
+  fs.renameSync(tmp, p);
+}
+
 const PLUGIN_DEFAULT_DB = defaultIndexPath();
 const DEFAULT_DB = process.env.CCSEARCH_DB || PLUGIN_DEFAULT_DB;
 // True when ccsearch is using the plugin-owned index (the path nobody overrode).
@@ -523,7 +585,7 @@ function normalizeTailContent(rawContent) {
   return s;
 }
 
-function recentConversations(db, { limit, projectFilter }) {
+function recentConversations(db, { limit, projectFilter, sessionStore }) {
   // Step 1: most recent conversations across all (or one) projects.
   const projectExtra = projectFilter
     ? "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)"
@@ -567,15 +629,25 @@ LIMIT ?
       "ORDER BY timestamp DESC LIMIT 1"
   );
 
+  // Saved-name overlay: when a sessionStore is passed and has a name for
+  // this conversation_id, it overrides the synthesized title. Synthesis still
+  // runs for rows without a saved name (existing recent-browse behavior).
+  const namesMap = (sessionStore && sessionStore.names) || {};
+
   const results = [];
   for (const conv of recent) {
-    const candidates = titleStmt.all(conv.conversation_id);
     let title = null;
-    for (const c of candidates) {
-      if (!c.content) continue;
-      if (isWrapperContent(c.content)) continue;
-      title = synthesizeTitle(c.content);
-      if (title) break;
+    const saved = namesMap[conv.conversation_id];
+    if (typeof saved === "string" && saved.length > 0) {
+      title = saved;
+    } else {
+      const candidates = titleStmt.all(conv.conversation_id);
+      for (const c of candidates) {
+        if (!c.content) continue;
+        if (isWrapperContent(c.content)) continue;
+        title = synthesizeTitle(c.content);
+        if (title) break;
+      }
     }
     const tailRow = tailStmt.get(conv.conversation_id);
     const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
@@ -804,6 +876,15 @@ const OPTIONS = [
       "time, and any pending files. Applies only to the plugin-owned index.",
   },
 
+  {
+    flags: ["--print-names"],
+    group: "Index management",
+    description:
+      "Print the saved-session-names config file (sessions.json) to stdout and exit. " +
+      "Read-only; emits `{}` when no config has been written yet. Useful for backups " +
+      "or shell pipelines (e.g., `ccsearch --print-names | jq '.names'`).",
+  },
+
   // Dangerous
   {
     flags: ["--dangerously-skip-permissions"],
@@ -952,6 +1033,7 @@ function parseArgs(argv) {
     reindex: false,
     indexStatus: false,
     dangerouslySkipPermissions: false,
+    printNames: false,
   };
   const rest = [];
   // Accept both `--flag value` (space-separated) and `--flag=value` (equals form).
@@ -1037,6 +1119,9 @@ function parseArgs(argv) {
         break;
       case "--dangerously-skip-permissions":
         args.dangerouslySkipPermissions = true;
+        break;
+      case "--print-names":
+        args.printNames = true;
         break;
       default:
         if (a.startsWith("--")) {
@@ -1131,6 +1216,25 @@ async function main(argv) {
   const args = parseArgs(argv);
   validateArgs(args);
 
+  // --print-names is a read-only short-circuit. No DB, no index work; just
+  // dump the JSON file (or `{}` when none exists) and exit 0.
+  if (args.printNames) {
+    const p = sessionsConfigPath();
+    let body;
+    try {
+      body = fs.readFileSync(p, "utf8");
+    } catch (e) {
+      if (e && e.code === "ENOENT") {
+        process.stdout.write("{}\n");
+        return EXIT_OK;
+      }
+      throw e;
+    }
+    if (!body.endsWith("\n")) body += "\n";
+    process.stdout.write(body);
+    return EXIT_OK;
+  }
+
   const usingPluginOwned = isPluginOwnedDb(args.dbPath);
   // Plugin-owned DB needs write access for the indexer pass that runs on every startup.
   const db = openDb(args.dbPath, { readWrite: usingPluginOwned });
@@ -1201,6 +1305,10 @@ async function main(argv) {
   });
 
   if (mode === "picker") {
+    // Load sessions.json once at picker startup. The picker mutates this
+    // in-memory copy on rename / clear, and persists via saveSessionStore.
+    // Picker-session-scoped: not re-read mid-session.
+    const sessionStore = loadSessionStore();
     const runPicker = require("./picker.js");
     const result = await runPicker({
       db,
@@ -1220,6 +1328,8 @@ async function main(argv) {
       EXIT_OK,
       EXIT_ENV,
       dangerouslySkipPermissions: args.dangerouslySkipPermissions,
+      sessionStore,
+      saveSessionStore,
     });
     return result;
   }
@@ -1258,5 +1368,9 @@ if (process.env.CCSEARCH_TEST) {
     synthesizeTitle,
     normalizeTailContent,
     WRAPPER_TAGS,
+    sessionsConfigPath,
+    loadSessionStore,
+    saveSessionStore,
+    emptySessionStore,
   };
 }
