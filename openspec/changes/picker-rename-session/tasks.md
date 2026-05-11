@@ -1,3 +1,11 @@
+## 0. Pre-work: extract buildClaudeArgs (folded into this change)
+
+- [ ] 0.1 In `bin/picker.js`, extract argv construction from `spawnClaude` (currently inline at `picker.js:418–425`) into a pure function `buildClaudeArgs(action, row, savedName) → string[]`. Action enum at this point: `"resume" | "fork" | "resume-dangerous"`. The `savedName` parameter is threaded in but unused by §0; §4 wires the rename usage.
+- [ ] 0.2 Refactor `spawnClaude` to call `const claudeArgs = buildClaudeArgs(action, row, savedName); childProc.spawnSync("claude", claudeArgs, ...)`. No behavior change.
+- [ ] 0.3 Add a `CCSEARCH_TEST` export block to `picker.js` (does not exist yet). Pattern: `if (process.env.CCSEARCH_TEST) { module.exports._test = { buildClaudeArgs }; }`. This unblocks unit-testing in this change and the next two proposals.
+- [ ] 0.4 Add unit tests for `buildClaudeArgs` covering the three current actions (`resume`, `fork`, `resume-dangerous`) with `savedName=null` — establishes the baseline contract. §5 extends these with `savedName="my chat"` cases once §4 wires the `--name` passthrough.
+- [ ] 0.5 Add a one-line comment immediately above the catch-all guard at `picker.js:517` (the `if (key.ctrl || key.meta) return` line): `// ---- catch-all: no new ctrl bindings below this line ----`. Cheap insurance until `picker-status-bar` lands the BINDINGS-vs-onKeypress drift-guard test.
+
 ## 1. Config-file infrastructure
 
 - [ ] 1.1 In `plugins/chat-search/bin/ccsearch`, add `sessionsConfigPath()` (mirroring `defaultIndexPath` shape): returns `$XDG_CONFIG_HOME/krmrn42-skills/chat-search/sessions.json` with `~/.config/...` fallback.

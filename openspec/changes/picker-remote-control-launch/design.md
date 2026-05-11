@@ -36,6 +36,8 @@ When the row has `sessions.json.names[<id>]`, the argv becomes `["--remote-contr
 
 **Critical detail**: we do NOT also pass `--name <name>` for remote-control launches. `--remote-control <name>` already consumes the name semantically; adding `--name` is redundant and might double-display. This is a deliberate departure from the `picker-rename-session` requirement "saved names propagate to all `claude` resume actions" — remote-control specifically consumes the name via its own arg.
 
+**Implementation contract**: this means `buildClaudeArgs(action, row, savedName)` (extracted as pre-work in `picker-rename-session`) MUST be action-aware — `savedName` flows into different argv positions depending on `action`. For `action === "resume-remote-control"`, `savedName` becomes the positional arg to `--remote-control` and `--name` is suppressed; for `"resume" | "resume-dangerous" | "fork"`, `savedName` becomes `["--name", savedName]`. A naive "if savedName, prepend `--name`" helper would produce the wrong shape here and is wrong by construction — the test suite added with this change must cover the `--name`-suppression case explicitly.
+
 ### Decision 3: No opt-in flag
 
 `--remote-control` doesn't have the blast-radius profile of `--dangerously-skip-permissions`. It's just "start a session that's remote-controllable" — opt-in upstream by virtue of having set up Remote Control at all. We don't add a `--allow-remote-control` CLI flag.

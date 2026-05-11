@@ -19,6 +19,20 @@ Recent-browse already synthesizes a title from the first non-wrapper user messag
 - Round-tripping the name back into the JSONL or the Claude Code session-search DB. The name lives in `sessions.json` only; Claude Code's own naming UI (if any future version adds one) is orthogonal.
 - A rename-on-resume confirmation. The user gets to back out via Esc.
 
+## Pre-work (folded into this change)
+
+Rename is the first change to add a new claude-spawn shape (`--name` passthrough). The picker's `spawnClaude` (`bin/picker.js:399`) currently builds argv inline as a 3-way conditional (`fork` / `resume-dangerous` / default-resume). Five proposals across this batch (this one, remote-control, tmux-new-window, plus their combinations) extend that shape; without an extraction, each will pile another conditional onto `spawnClaude` and the combination cases (dangerous+rename, tmux+rename, tmux+remote-control) end up scattered.
+
+Three small refactors land in this change **before** the rename feature itself, because rename is where the spawn point first gains complexity:
+
+1. **Extract `buildClaudeArgs(action, row, savedName) → string[]`** from the inline block at `picker.js:418–425`. `spawnClaude` becomes a thin wrapper around it. The signature is action-aware on purpose: see `picker-remote-control-launch` Decision 2 — `savedName` flows into different argv positions depending on `action`, and a non-action-aware "always prepend `--name`" helper would produce the wrong shape for remote-control.
+
+2. **Add a `CCSEARCH_TEST` export block to `picker.js`**. The file currently exports only `module.exports = runPicker` (no test-export pattern at all). The new block: `if (process.env.CCSEARCH_TEST) module.exports._test = { buildClaudeArgs };`. This unblocks unit-testing the builder across this change and the next two (`picker-remote-control-launch`, `picker-tmux-new-window`).
+
+3. **One-line ordering comment at `picker.js:517`**: the catch-all `if (key.ctrl || key.meta) return` consumes any unhandled ctrl/meta keystroke. New ctrl bindings (this change's Ctrl+R, plus Ctrl+P/T/W in the four following changes) must land *above* this guard. A simple comment — `// ---- catch-all: no new ctrl bindings below this line ----` — prevents silent dead-code bugs. The proper enforcement (a drift-guard test) arrives with `picker-status-bar`'s BINDINGS-vs-onKeypress check; the comment is the stopgap until then.
+
+**Invariant worth recording**: there are two independent claude-argv formats in the codebase — the spawn array (`picker.js`, consumed by `spawnSync`) and the shell string (`ccsearch:resumeOneLiner`, displayed in one-shot text output). They serve different consumers and must stay independent. A well-meaning future "DRY them up" refactor would break the text-mode resume hint. `buildClaudeArgs` is the spawn-array builder only.
+
 ## Decisions
 
 ### Decision 1: One config file, atomic write, JSON
