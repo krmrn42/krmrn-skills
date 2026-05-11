@@ -4,6 +4,8 @@ Cross-project full-text search across all locally stored Claude Code conversatio
 
 Claude Code's built-in `/resume` picker (with `Ctrl+A`) only filters by chat **title**. This plugin maintains its own SQLite FTS5 index, built from the raw conversation JSONL files under `~/.claude/projects/`, and exposes it as a relevance-ranked search across **message bodies**, across all projects on the machine. Pick a result, hit Enter, and you land in that resumed session — automatically in the right project directory.
 
+**Looking for the user guide?** See [MANUAL.md](./MANUAL.md) — a workflow-oriented walkthrough of the picker, its keybindings (rename, pin, remote-control, tmux-window, fork), one-shot mode, the slash command, and the index. This README is the project overview and contributor reference.
+
 ## What it does
 
 - Maintains a plugin-owned FTS5 index at `$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db` (default: `~/.local/share/krmrn42-skills/chat-search/index.db`), populated from `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. The JSONL tree is what Claude Code keeps current; our index lives separately and is refreshed lazily on every `ccsearch` invocation.
