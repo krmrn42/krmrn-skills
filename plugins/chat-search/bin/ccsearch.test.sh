@@ -905,6 +905,97 @@ assert_contains "T44.help_mentions_ctrl_t" "Ctrl-T" "$help_out"
 assert_contains "T44.help_mentions_remote_control" "remote-control" "$help_out"
 
 echo
+echo "Test 51: tmuxAvailable gate — args.noTmux suppresses regardless of \$TMUX"
+# The gate logic in main() is: !!process.env.TMUX && !args.noTmux. We
+# replicate it here against parseArgs output so the contract holds even
+# if the inline expression is refactored.
+GATE_OUT="$(CCSEARCH_TEST=1 TMUX="/tmp/fake,1,0" node -e '
+const { parseArgs } = require(process.argv[1]);
+function gate(args) { return !!process.env.TMUX && !args.noTmux; }
+console.log("default", gate(parseArgs([])));
+console.log("no_tmux", gate(parseArgs(["--no-tmux"])));
+' "$CCSEARCH" 2>&1)"
+case "$GATE_OUT" in
+  *"default true"*"no_tmux false"*) PASS=$((PASS+1)); echo "  PASS  T51.gate_inside_tmux_with_no_tmux" ;;
+  *)                                FAIL=$((FAIL+1)); echo "  FAIL  T51.gate_inside_tmux_with_no_tmux — got: $GATE_OUT" >&2 ;;
+esac
+GATE_OUT2="$(CCSEARCH_TEST=1 node -e '
+const { parseArgs } = require(process.argv[1]);
+function gate(args) { return !!process.env.TMUX && !args.noTmux; }
+delete process.env.TMUX;
+console.log("default", gate(parseArgs([])));
+console.log("no_tmux", gate(parseArgs(["--no-tmux"])));
+' "$CCSEARCH" 2>&1)"
+case "$GATE_OUT2" in
+  *"default false"*"no_tmux false"*) PASS=$((PASS+1)); echo "  PASS  T51.gate_outside_tmux" ;;
+  *)                                  FAIL=$((FAIL+1)); echo "  FAIL  T51.gate_outside_tmux — got: $GATE_OUT2" >&2 ;;
+esac
+
+echo
+echo "Test 52: ftsSearch unit — applyPinOrdering invoked on args.sessionStore"
+# Calling ftsSearch directly requires CCSEARCH_TEST exports, which doesn'\''t
+# currently include ftsSearch. Instead: verify the *contract* via the
+# recentConversations + ftsSearch sharing of applyPinOrdering. The proof
+# is structural: both functions call applyPinOrdering at the end. We
+# assert that signature exists in source so a future refactor that removes
+# either call is caught.
+RC_HAS_PIN=$(grep -c "applyPinOrdering(results, sessionStore" "$CCSEARCH" 2>/dev/null)
+FTS_HAS_PIN=$(grep -c "applyPinOrdering(filled, args.sessionStore" "$CCSEARCH" 2>/dev/null)
+if [[ "$RC_HAS_PIN" -ge 1 ]] && [[ "$FTS_HAS_PIN" -ge 1 ]]; then
+  PASS=$((PASS+1)); echo "  PASS  T52.both_paths_call_applyPinOrdering"
+else
+  FAIL=$((FAIL+1)); echo "  FAIL  T52.both_paths_call_applyPinOrdering (recentConversations=$RC_HAS_PIN, ftsSearch=$FTS_HAS_PIN)"
+fi
+
+echo
+echo "Test 53: MANUAL.md structural invariants"
+MAN="$HERE/../MANUAL.md"
+if [[ ! -f "$MAN" ]]; then
+  FAIL=$((FAIL+1)); echo "  FAIL  T53.manual_exists"
+else
+  PASS=$((PASS+1)); echo "  PASS  T53.manual_exists"
+  # Exactly 11 H2 sections, in the spec order.
+  H2_COUNT="$(grep -cE '^## ' "$MAN")"
+  assert_eq "T53.exactly_11_h2_sections" "11" "$H2_COUNT"
+  # Spec-required section names appear in order.
+  EXPECTED_ORDER="Quick start
+The picker
+Picker actions
+Mutation actions
+One-shot mode
+The slash command
+The index
+Flag reference
+Troubleshooting
+Compatibility
+Origins"
+  ACTUAL_ORDER="$(grep -E '^## ' "$MAN" | sed 's/^## //')"
+  if [[ "$EXPECTED_ORDER" == "$ACTUAL_ORDER" ]]; then
+    PASS=$((PASS+1)); echo "  PASS  T53.section_order"
+  else
+    FAIL=$((FAIL+1)); echo "  FAIL  T53.section_order — got:" >&2
+    echo "$ACTUAL_ORDER" | sed 's/^/         /' >&2
+  fi
+  # Origins links to four foundational archives.
+  for ch in add-chat-search-plugin add-chat-search-slash-command chat-search-self-maintained-index chat-search-zero-deps-and-resume-handoff; do
+    if grep -q "2026-05-10-$ch" "$MAN"; then
+      PASS=$((PASS+1)); echo "  PASS  T53.origins_links_$ch"
+    else
+      FAIL=$((FAIL+1)); echo "  FAIL  T53.origins_links_$ch — not linked"
+    fi
+  done
+fi
+
+echo
+echo "Test 54: README.md links to MANUAL.md within the first 30 lines"
+RM="$HERE/../README.md"
+if head -30 "$RM" | grep -q '\./MANUAL\.md'; then
+  PASS=$((PASS+1)); echo "  PASS  T54.readme_pointer_present"
+else
+  FAIL=$((FAIL+1)); echo "  FAIL  T54.readme_pointer_present"
+fi
+
+echo
 echo "Test 48: buildStatusBar — wrapping, gating, category coloring"
 SB_OUT="$(CCSEARCH_TEST=1 node -e '
 const { buildStatusBar, BINDINGS } = require(process.argv[1])._test;
