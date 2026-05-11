@@ -134,6 +134,9 @@ function runPicker(deps) {
   let previewCache = new Map(); // sessionId -> rendered preview lines
   let lastDims = { rows: 0, cols: 0 };
   let exitReason = null; // { type: "resume"|"fork"|"print-id"|"print-path"|"cancel", row }
+  // Recent-browse cache: populated on the first empty-query render, reused on
+  // backspace-to-empty. Picker-session-scoped — not invalidated mid-session.
+  let recentCache = null;
 
   function clearTimers() {
     if (pendingTimer) clearTimeout(pendingTimer);
@@ -162,7 +165,20 @@ function runPicker(deps) {
   function doSearch() {
     searchPending = false;
     if (!query.trim()) {
-      results = [];
+      // Empty query → recent-conversations browse. Cache the list so
+      // backspace-to-empty doesn't re-query the DB.
+      if (recentCache === null && typeof deps.recentConversations === "function") {
+        try {
+          recentCache = deps.recentConversations(db, {
+            limit: args.limit,
+            projectFilter: args.project,
+          });
+        } catch (e) {
+          recentCache = [];
+          recentCache.error = e.message || String(e);
+        }
+      }
+      results = recentCache || [];
       cursor = 0;
       scrollOffset = 0;
       render();
@@ -203,7 +219,11 @@ function runPicker(deps) {
     const date = deps.fmtDate(r.lastActivity);
     const sid = deps.shortSession(r.sessionId);
     const msgs = String(r.msgCount).padStart(4);
-    const head = `${proj}  ${date}  ${msgs} msgs  ${sid}`;
+    // Recent-browse rows carry a synthesized title; lead with it when present.
+    // FTS rows have r.title === undefined and fall back to the original layout.
+    const head = r.title
+      ? `${r.title} · ${proj}  ${date}  ${msgs} msgs  ${sid}`
+      : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
     const snippet = deps.colorizeSnippet(r.snippet, false);
     const headTrunc = truncateToWidth(head, width - 2);
     const snipTrunc = snippet ? truncateToWidth(snippet, width - 4) : "";
@@ -298,7 +318,12 @@ function runPicker(deps) {
     } else if (results.length === 0) {
       stdout.write(ansi.moveTo(line, 1));
       if (!query.trim()) {
-        stdout.write(ansi.dim + "Type to search…" + ansi.reset);
+        // Empty query AND no recent conversations to show → fresh / empty index.
+        stdout.write(
+          ansi.dim +
+            "no conversations indexed yet — run a Claude Code session, then ccsearch" +
+            ansi.reset
+        );
       } else if (searchPending) {
         stdout.write(ansi.dim + "Searching…" + ansi.reset);
       } else {
@@ -481,12 +506,10 @@ function runPicker(deps) {
 
     stdin.on("keypress", onKeypress);
 
-    // Initial search if a query was provided.
-    if (query.trim()) {
-      doSearch();
-    } else {
-      render();
-    }
+    // Initial render. doSearch handles both branches:
+    //  - non-empty query → run FTS
+    //  - empty query     → populate recentCache and render the recent list
+    doSearch();
   });
 }
 

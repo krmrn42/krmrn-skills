@@ -532,6 +532,155 @@ case "$first_line" in
 esac
 
 echo
+echo "Test 32: recentConversations — ordering, title synthesis, tail snippet, wrapper-skip"
+# Build a minimal fixture with three conversations whose first-user-message and
+# tail messages exercise the spec.
+DB_REC="$(mktemp -t ccsearch-recent.XXXXXX.db)"
+sqlite3 "$DB_REC" <<'SQL'
+CREATE TABLE messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  project_path TEXT NOT NULL,
+  project_name TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  content TEXT,
+  raw_content TEXT,
+  tool_operations TEXT,
+  message_uuid TEXT NOT NULL,
+  parent_uuid TEXT,
+  created_at INTEGER DEFAULT (unixepoch())
+);
+CREATE INDEX idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX idx_messages_project ON messages(project_path);
+CREATE INDEX idx_messages_timestamp ON messages(timestamp);
+CREATE INDEX idx_messages_type ON messages(type);
+CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
+CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(id, searchable_text)
+  VALUES (new.id, new.content || ' ' || COALESCE(new.tool_operations, ''));
+END;
+
+-- Conversation A (oldest): simple first-user-message
+INSERT INTO messages VALUES
+  ('rA1', 'conv-A', '/p/a', 'a', 1000000, 'user',
+   'how do I write a custom Claude Code skill?', NULL, NULL, 'uA1', NULL, 0),
+  ('rA2', 'conv-A', '/p/a', 'a', 1000010, 'assistant',
+   'create a SKILL.md file…', NULL, NULL, 'aA1', 'uA1', 0);
+
+-- Conversation B (newest): first user message is a wrapper, second is real
+INSERT INTO messages VALUES
+  ('rB1', 'conv-B', '/p/b', 'b', 2000000, 'user',
+   '<command-name>opsx:propose</command-name>', NULL, NULL, 'uB1', NULL, 0),
+  ('rB2', 'conv-B', '/p/b', 'b', 2000005, 'user',
+   'actual user question about something', NULL, NULL, 'uB2', 'uB1', 0),
+  ('rB3', 'conv-B', '/p/b', 'b', 2000010, 'assistant',
+   'last assistant message in B with some content', NULL, NULL, 'aB1', 'uB2', 0);
+
+-- Conversation C (middle age): first user message is 200+ chars of x
+INSERT INTO messages VALUES
+  ('rC1', 'conv-C', '/p/c', 'c', 1500000, 'user',
+   'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+   NULL, NULL, 'uC1', NULL, 0),
+  ('rC2', 'conv-C', '/p/c', 'c', 1500010, 'assistant',
+   'reply', NULL, NULL, 'aC1', 'uC1', 0);
+SQL
+
+OUT="$(CCSEARCH_TEST=1 node -e '
+const { recentConversations } = require(process.argv[1]);
+const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(process.argv[2], { readOnly: true });
+const rows = recentConversations(db, { limit: 10, projectFilter: null });
+console.log("LEN", rows.length);
+for (let i = 0; i < rows.length; i++) {
+  const r = rows[i];
+  console.log(i, "sid=" + r.sessionId, "title=" + (r.title === null ? "<null>" : JSON.stringify(r.title)), "tail=" + JSON.stringify((r.snippet || "").slice(0,60)));
+}
+' "$CCSEARCH" "$DB_REC" 2>&1)"
+# Order: B (2M ts) → C (1.5M ts) → A (1M ts)
+case "$OUT" in
+  *"LEN 3"*)            PASS=$((PASS+1)); echo "  PASS  T32.three_rows" ;;
+  *)                    FAIL=$((FAIL+1)); echo "  FAIL  T32.three_rows — got: $OUT" >&2 ;;
+esac
+case "$OUT" in
+  *"0 sid=conv-B"*)     PASS=$((PASS+1)); echo "  PASS  T32.order_newest_first" ;;
+  *)                    FAIL=$((FAIL+1)); echo "  FAIL  T32.order_newest_first — got: $OUT" >&2 ;;
+esac
+case "$OUT" in
+  *"2 sid=conv-A"*)     PASS=$((PASS+1)); echo "  PASS  T32.order_oldest_last" ;;
+  *)                    FAIL=$((FAIL+1)); echo "  FAIL  T32.order_oldest_last — got: $OUT" >&2 ;;
+esac
+# B's title: wrapper-skipped → "actual user question about something"
+case "$OUT" in
+  *'title="actual user question about something"'*) PASS=$((PASS+1)); echo "  PASS  T32.wrapper_skipped" ;;
+  *)                    FAIL=$((FAIL+1)); echo "  FAIL  T32.wrapper_skipped — got: $OUT" >&2 ;;
+esac
+# C's title: 200+ x's, capped at 80 chars + "…"
+case "$OUT" in
+  *'title="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"'*)
+                        PASS=$((PASS+1)); echo "  PASS  T32.title_capped_at_80" ;;
+  *)                    FAIL=$((FAIL+1)); echo "  FAIL  T32.title_capped_at_80 — got: $OUT" >&2 ;;
+esac
+# B's tail: most recent message = "last assistant message in B with some content"
+case "$OUT" in
+  *'tail="last assistant message in B with some content"'*)
+                        PASS=$((PASS+1)); echo "  PASS  T32.tail_from_latest_message" ;;
+  *)                    FAIL=$((FAIL+1)); echo "  FAIL  T32.tail_from_latest_message — got: $OUT" >&2 ;;
+esac
+rm -f "$DB_REC"
+
+echo
+echo "Test 33: recentConversations — empty index returns []"
+DB_EMPTY="$(mktemp -t ccsearch-empty.XXXXXX.db)"
+sqlite3 "$DB_EMPTY" <<'SQL'
+CREATE TABLE messages (
+  id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, project_path TEXT NOT NULL,
+  project_name TEXT NOT NULL, timestamp INTEGER NOT NULL, type TEXT NOT NULL,
+  content TEXT, raw_content TEXT, tool_operations TEXT,
+  message_uuid TEXT NOT NULL, parent_uuid TEXT, created_at INTEGER DEFAULT (unixepoch())
+);
+CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
+SQL
+OUT_EMPTY="$(CCSEARCH_TEST=1 node -e '
+const { recentConversations } = require(process.argv[1]);
+const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(process.argv[2], { readOnly: true });
+const rows = recentConversations(db, { limit: 10, projectFilter: null });
+console.log("LEN", rows.length);
+' "$CCSEARCH" "$DB_EMPTY" 2>&1)"
+case "$OUT_EMPTY" in
+  *"LEN 0"*)            PASS=$((PASS+1)); echo "  PASS  T33.empty_returns_empty_array" ;;
+  *)                    FAIL=$((FAIL+1)); echo "  FAIL  T33.empty_returns_empty_array — got: $OUT_EMPTY" >&2 ;;
+esac
+rm -f "$DB_EMPTY"
+
+echo
+echo "Test 34: isWrapperContent — unit tests for the wrapper-detection helper"
+WRAP_OUT="$(CCSEARCH_TEST=1 node -e '
+const { isWrapperContent } = require(process.argv[1]);
+function check(label, expected, actual) {
+  if (expected === actual) console.log("OK", label);
+  else { console.log("FAIL", label, "expected", expected, "got", actual); process.exitCode = 1; }
+}
+check("command-name",         true,  isWrapperContent("<command-name>opsx:propose</command-name>"));
+check("local-command-caveat", true,  isWrapperContent("<local-command-caveat>blah</local-command-caveat>"));
+check("task-notification",    true,  isWrapperContent("<task-notification>x</task-notification>"));
+check("leading-whitespace",   true,  isWrapperContent("   <command-name>x"));
+check("real-user",            false, isWrapperContent("how do I write a skill"));
+check("empty",                true,  isWrapperContent(""));
+check("null",                 true,  isWrapperContent(null));
+check("not-wrapper-but-tag",  false, isWrapperContent("<html>not one of ours</html>"));
+' "$CCSEARCH" 2>&1)"
+if echo "$WRAP_OUT" | grep -q '^FAIL'; then
+  FAIL=$((FAIL+1))
+  echo "  FAIL  T34.isWrapperContent_cases"
+  echo "$WRAP_OUT" | sed 's/^/         /'
+else
+  PASS=$((PASS+1))
+  echo "  PASS  T34.isWrapperContent_cases ($(echo "$WRAP_OUT" | grep -c '^OK') cases ok)"
+fi
+
+echo
 echo "Test 26: drift guard — every parser flag appears in --help"
 # Extract long-form flags from source: lines like `case "--something":`. Strip
 # line-comment lines first so `case "--flag":` appearing inside a // comment

@@ -466,6 +466,134 @@ function fillMeta(db, results) {
   return results;
 }
 
+// --- Recent-conversations browse (empty-query picker mode) ---------------
+
+// Wrapper tags Claude Code uses to embed non-user content inside a
+// `type: 'user'` JSONL row. When synthesizing a conversation title we skip
+// over these to find the real first user message. Tail snippets (the "where
+// did I leave off" line) intentionally do NOT strip wrappers — see
+// design.md §Decision 3.
+//
+// Validated by scanning ~412 real user messages across recent JSONL fixtures.
+// Most common: <local-command-caveat>, <command-name>, <local-command-stdout>.
+const WRAPPER_TAGS = new Set([
+  "command-name",
+  "command-message",
+  "command-args",
+  "local-command-stdout",
+  "local-command-stderr",
+  "local-command-caveat",
+  "stdin",
+  "bash-input",
+  "bash-stdout",
+  "bash-stderr",
+  "task-notification",
+  "system-reminder",
+]);
+
+function isWrapperContent(s) {
+  if (!s) return true;
+  const trimmed = s.replace(/^\s+/, "");
+  const m = trimmed.match(/^<([a-zA-Z0-9_-]+)>/);
+  if (!m) return false;
+  return WRAPPER_TAGS.has(m[1]);
+}
+
+function synthesizeTitle(rawContent) {
+  if (!rawContent) return null;
+  const firstLine = rawContent.split("\n", 1)[0].replace(/\s+/g, " ").trim();
+  if (firstLine.length === 0) return null;
+  const CAP = 80;
+  return firstLine.length > CAP ? firstLine.slice(0, CAP) + "…" : firstLine;
+}
+
+function normalizeTailContent(rawContent) {
+  if (!rawContent) return "";
+  // Strip ANSI escapes (defensive — JSONL content shouldn't contain them,
+  // but indexed content has surprised us before). Constructed char class to
+  // avoid embedding a literal ESC byte in the source.
+  const ESC = String.fromCharCode(0x1b);
+  const ansiRe = new RegExp(ESC + "\\[[0-?]*[ -/]*[@-~]", "g");
+  let s = rawContent.replace(ansiRe, "");
+  // Collapse all whitespace runs to single spaces (the picker renders this
+  // as a single line; the spec calls for 1-2 visual lines, which
+  // truncateToWidth handles based on display width).
+  s = s.replace(/\s+/g, " ").trim();
+  if (s.length > 240) s = s.slice(0, 240);
+  return s;
+}
+
+function recentConversations(db, { limit, projectFilter }) {
+  // Step 1: most recent conversations across all (or one) projects.
+  const projectExtra = projectFilter
+    ? "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)"
+    : "";
+  const projectParams = projectFilter
+    ? [
+        "%" + String(projectFilter).toLowerCase() + "%",
+        "%" + String(projectFilter).toLowerCase() + "%",
+      ]
+    : [];
+  const recentSql = `
+SELECT
+  conversation_id AS conversation_id,
+  MAX(project_path) AS project_path,
+  MAX(project_name) AS project_name,
+  MAX(timestamp) AS last_ts,
+  COUNT(*) AS msg_count
+FROM messages
+WHERE type IN ('user', 'assistant')
+${projectExtra}
+GROUP BY conversation_id
+ORDER BY last_ts DESC
+LIMIT ?
+`;
+  const recent = db
+    .prepare(recentSql)
+    .all(...projectParams, Math.max(1, limit | 0));
+
+  if (!recent.length) return [];
+
+  // Step 2: title source (up to 5 candidate user messages per conversation).
+  const titleStmt = db.prepare(
+    "SELECT content FROM messages " +
+      "WHERE conversation_id = ? AND type = 'user' " +
+      "ORDER BY timestamp ASC LIMIT 5"
+  );
+  // Step 3: tail message (most recent user/assistant).
+  const tailStmt = db.prepare(
+    "SELECT content FROM messages " +
+      "WHERE conversation_id = ? AND type IN ('user', 'assistant') " +
+      "ORDER BY timestamp DESC LIMIT 1"
+  );
+
+  const results = [];
+  for (const conv of recent) {
+    const candidates = titleStmt.all(conv.conversation_id);
+    let title = null;
+    for (const c of candidates) {
+      if (!c.content) continue;
+      if (isWrapperContent(c.content)) continue;
+      title = synthesizeTitle(c.content);
+      if (title) break;
+    }
+    const tailRow = tailStmt.get(conv.conversation_id);
+    const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
+
+    results.push({
+      sessionId: conv.conversation_id,
+      projectPath: conv.project_path || "",
+      projectName: conv.project_name || "",
+      lastActivity: conv.last_ts || 0,
+      msgCount: conv.msg_count || 0,
+      snippet: tail,
+      score: 0,
+      title,
+    });
+  }
+  return results;
+}
+
 // --- Output --------------------------------------------------------------
 
 function renderText(results, useColor) {
@@ -1060,6 +1188,7 @@ async function main(argv) {
       db,
       args,
       ftsSearch,
+      recentConversations,
       projectDisplay,
       shortSession,
       fmtDate,
@@ -1102,5 +1231,13 @@ if (require.main === module) {
 // Test-only exports. Guarded so production behavior is unaffected; the tests
 // in bin/ccsearch.test.sh set CCSEARCH_TEST=1 before requiring this file.
 if (process.env.CCSEARCH_TEST) {
-  module.exports = { parseArgs, selectMode };
+  module.exports = {
+    parseArgs,
+    selectMode,
+    recentConversations,
+    isWrapperContent,
+    synthesizeTitle,
+    normalizeTailContent,
+    WRAPPER_TAGS,
+  };
 }

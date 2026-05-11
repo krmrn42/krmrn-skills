@@ -10,7 +10,7 @@ Claude Code's built-in `/resume` picker (with `Ctrl+A`) only filters by chat **t
 - Aggregates per-conversation: one row per chat, with the highest-scoring matched message's snippet.
 - Ranks by FTS5 BM25 across the full set — projects compete on the same scoreboard.
 - Three surfaces, one binary:
-  - `ccsearch [<query>]` (on a TTY) — opens the built-in TUI picker by default. Enter resumes in the conversation's original project directory; Ctrl-F forks; Ctrl-O prints session id; Ctrl-D prints project path. `-i` / `--interactive` forces the picker explicitly (default kept for backward-compat scripts).
+  - `ccsearch [<query>]` (on a TTY) — opens the built-in TUI picker by default. Enter resumes in the conversation's original project directory; Ctrl-F forks; Ctrl-O prints session id; Ctrl-D prints project path. With an empty query, the picker shows your most recent conversations across all projects — each row shows a synthesized title (first non-wrapper user message) plus the tail of the last message, so `ccsearch` becomes a recognize-and-resume entry point. `-i` / `--interactive` forces the picker explicitly (default kept for backward-compat scripts).
   - `ccsearch <query>` (piped or with `--list` / `--format=text|tsv` / `--regex`) — one-shot ranked output (`text` on TTY when `--list`/`--format=text`, `tsv` when piped). Each text row carries a copy-paste resume one-liner.
   - `/chat-search:find` — slash command that renders the top 10 results inline in a Claude Code session, each with the same copy-paste resume one-liner. (Unaffected by the picker default: passes `--format=text` explicitly.)
 - Indexer maintenance:
