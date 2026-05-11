@@ -6,9 +6,10 @@ This file guides Claude Code (claude.ai/code) when working in this repository.
 
 The **public** Claude Code plugin marketplace `krmrn-skills`. No application code, no build, no test suite — every artifact is markdown that Claude reads at runtime via the `/plugin` system. Companion to the private marketplace at [`krmrn42/skills`](https://github.com/krmrn42/skills); skills graduate here when they're stable and generally useful.
 
-Currently ships one plugin:
+Currently ships these plugins:
 
 - `skill-linting` (skill: `skill-linting`) — zero-deps structural lint for Claude Code skills.
+- `chat-search` (slash commands `chat-search:find`, `chat-search:setup`; CLI `ccsearch`) — cross-project full-text search across local Claude Code conversations. Maintains its own SQLite FTS5 index from `~/.claude/projects/**/*.jsonl`; built-in TUI picker; resume drops you in the conversation's original project directory.
 
 ## Authoring rules
 

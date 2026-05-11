@@ -1,0 +1,445 @@
+#!/usr/bin/env bash
+# ccsearch.test.sh — fixture-DB smoke test for ccsearch.
+#
+# Builds a temporary SQLite database matching the live Claude Code FTS5 schema,
+# populates 5 fake conversations across 2 fake projects, and asserts on row
+# counts and exit codes for several invocations. Does NOT touch the user's
+# real ~/.claude/conversation-search.db.
+#
+# Usage:
+#   bash plugins/chat-search/bin/ccsearch.test.sh [--keep]
+#
+# --keep leaves the fixture DB on disk (printed at the end) for manual probing.
+
+set -u  # NB: -e is intentionally OFF — we test exit codes explicitly.
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+CCSEARCH="$HERE/ccsearch"
+
+# Resolve sqlite3 once (some installs have it bundled with Python only)
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  echo "ccsearch.test.sh: sqlite3 binary required for the test (used to build the fixture)" >&2
+  exit 2
+fi
+
+DB="$(mktemp -t ccsearch-fixture.XXXXXX.db)"
+KEEP=0
+[[ "${1-}" == "--keep" ]] && KEEP=1
+
+cleanup() {
+  if [[ "$KEEP" == "1" ]]; then
+    echo
+    echo "fixture DB kept at: $DB"
+  else
+    rm -f "$DB"
+  fi
+}
+trap cleanup EXIT
+
+PASS=0
+FAIL=0
+
+assert_eq() {
+  local name="$1" expected="$2" actual="$3"
+  if [[ "$expected" == "$actual" ]]; then
+    printf '  PASS  %s\n' "$name"
+    PASS=$((PASS+1))
+  else
+    printf '  FAIL  %s — expected %s, got %s\n' "$name" "$expected" "$actual" >&2
+    FAIL=$((FAIL+1))
+  fi
+}
+
+assert_contains() {
+  local name="$1" needle="$2" haystack="$3"
+  if [[ "$haystack" == *"$needle"* ]]; then
+    printf '  PASS  %s\n' "$name"
+    PASS=$((PASS+1))
+  else
+    printf '  FAIL  %s — expected substring %q in output\n' "$name" "$needle" >&2
+    printf '         got: %q\n' "$haystack" >&2
+    FAIL=$((FAIL+1))
+  fi
+}
+
+# --- Build the fixture --------------------------------------------------
+
+echo "Building fixture DB at $DB"
+
+sqlite3 "$DB" <<'SQL'
+CREATE TABLE messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  project_path TEXT NOT NULL,
+  project_name TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  content TEXT,
+  raw_content TEXT,
+  tool_operations TEXT,
+  message_uuid TEXT NOT NULL,
+  parent_uuid TEXT,
+  created_at INTEGER DEFAULT (unixepoch())
+);
+CREATE INDEX idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX idx_messages_project ON messages(project_path);
+CREATE INDEX idx_messages_timestamp ON messages(timestamp);
+CREATE INDEX idx_messages_type ON messages(type);
+CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
+
+CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(id, searchable_text)
+  VALUES (new.id, new.content || ' ' || COALESCE(new.tool_operations, ''));
+END;
+CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+  DELETE FROM messages_fts WHERE id = old.id;
+END;
+CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+  DELETE FROM messages_fts WHERE id = old.id;
+  INSERT INTO messages_fts(id, searchable_text)
+  VALUES (new.id, new.content || ' ' || COALESCE(new.tool_operations, ''));
+END;
+
+-- Conversation A: in project alpha, talks about "session timeout"
+INSERT INTO messages VALUES
+  ('m1', 'conv-aaaa-1111-1111-1111-111111111111', '/home/u/projects/alpha', 'alpha',
+   1735689600000, 'user', 'how do I configure session timeout for the auth service', NULL, NULL, 'u1', NULL, 0),
+  ('m2', 'conv-aaaa-1111-1111-1111-111111111111', '/home/u/projects/alpha', 'alpha',
+   1735689610000, 'assistant', 'set SESSION_TIMEOUT_SECONDS in your env. there is no timeout for refresh tokens.', NULL, NULL, 'a1', 'u1', 0),
+  ('m3', 'conv-aaaa-1111-1111-1111-111111111111', '/home/u/projects/alpha', 'alpha',
+   1735689620000, 'tool_use', NULL, NULL, '{"command":"grep -r SESSION_TIMEOUT_SECONDS"}', 't1', 'a1', 0);
+
+-- Conversation B: in project alpha, talks about regex parsing — has a TOKEN_DEADBEEF marker
+INSERT INTO messages VALUES
+  ('m4', 'conv-bbbb-2222-2222-2222-222222222222', '/home/u/projects/alpha', 'alpha',
+   1735776000000, 'user', 'I need to write a regex to parse log timestamps', NULL, NULL, 'u2', NULL, 0),
+  ('m5', 'conv-bbbb-2222-2222-2222-222222222222', '/home/u/projects/alpha', 'alpha',
+   1735776010000, 'assistant', 'try this regex ^[A-Z]{3} and validate with TOKEN_DEADBEEF as a sentinel', NULL, NULL, 'a2', 'u2', 0);
+
+-- Conversation C: in project beta, talks about session timeout (different project)
+INSERT INTO messages VALUES
+  ('m6', 'conv-cccc-3333-3333-3333-333333333333', '/home/u/projects/beta', 'beta',
+   1735862400000, 'user', 'why does my session timeout differ between staging and prod', NULL, NULL, 'u3', NULL, 0),
+  ('m7', 'conv-cccc-3333-3333-3333-333333333333', '/home/u/projects/beta', 'beta',
+   1735862410000, 'assistant', 'check your load balancer idle session timeout — it overrides app config', NULL, NULL, 'a3', 'u3', 0);
+
+-- Conversation D: in project beta, much older — for --since testing
+INSERT INTO messages VALUES
+  ('m8', 'conv-dddd-4444-4444-4444-444444444444', '/home/u/projects/beta', 'beta',
+   1700000000000, 'user', 'what does session affinity do', NULL, NULL, 'u4', NULL, 0),
+  ('m9', 'conv-dddd-4444-4444-4444-444444444444', '/home/u/projects/beta', 'beta',
+   1700000010000, 'assistant', 'session affinity pins requests to the same backend pod', NULL, NULL, 'a4', 'u4', 0);
+
+-- Conversation E: tool_use only — testing default-excludes-tools
+INSERT INTO messages VALUES
+  ('m10', 'conv-eeee-5555-5555-5555-555555555555', '/home/u/projects/alpha', 'alpha',
+    1735948800000, 'user', 'unrelated query about deployment', NULL, NULL, 'u5', NULL, 0),
+  ('m11', 'conv-eeee-5555-5555-5555-555555555555', '/home/u/projects/alpha', 'alpha',
+    1735948810000, 'tool_result', 'output: PROCESS_KILLED_OOM', NULL, NULL, 't5', 'u5', 0);
+SQL
+
+# All output below is captured for assertion. Run ccsearch with --no-color and explicit --format text.
+RUN() { CCSEARCH_DB="$DB" "$CCSEARCH" --no-color "$@" 2>&1; }
+RUN_CODE() { CCSEARCH_DB="$DB" "$CCSEARCH" --no-color "$@" >/dev/null 2>&1; echo $?; }
+
+# --- Tests --------------------------------------------------------------
+
+echo
+echo "Test 1: simple FTS query for 'session timeout' returns 2 conversations (A and C, not D — D has 'session' but not 'timeout' adjacent)"
+out="$(RUN '"session timeout"' --format text)"
+# Conversation A and C contain the phrase; D contains only 'session affinity'
+assert_contains "T1.A_match"   "alpha" "$out"
+assert_contains "T1.C_match"   "beta"  "$out"
+# session count should not include D
+case "$out" in
+  *"affinity"*) FAIL=$((FAIL+1)); echo "  FAIL  T1.D_excluded — D's snippet leaked in" >&2 ;;
+  *)            PASS=$((PASS+1)); echo "  PASS  T1.D_excluded" ;;
+esac
+
+echo
+echo "Test 2: empty result"
+out="$(RUN 'stringthatappearsnowhere' --format text)"
+code="$(RUN_CODE 'stringthatappearsnowhere')"
+assert_eq        "T2.exit_zero" "0" "$code"
+assert_contains  "T2.no_matches_message" "no matches" "$out"
+
+echo
+echo "Test 3: --project filter"
+out="$(RUN session --project beta --format text)"
+assert_contains "T3.beta_present"  "beta"  "$out"
+case "$out" in
+  *"alpha"*) FAIL=$((FAIL+1)); echo "  FAIL  T3.alpha_excluded" >&2 ;;
+  *)         PASS=$((PASS+1)); echo "  PASS  T3.alpha_excluded" ;;
+esac
+
+echo
+echo "Test 4: --regex post-filter narrows FTS results"
+out="$(RUN regex --regex 'TOKEN_[A-F0-9]+' --format text)"
+assert_contains "T4.token_match" "TOKEN_DEADBEEF" "$out"
+
+echo
+echo "Test 5: --regex --scan finds patterns FTS would miss (pure-regex token, no FTS query)"
+out="$(RUN --regex 'PROCESS_KILLED_OOM' --scan --include-tools --format text)"
+assert_contains "T5.scan_finds_tool_result" "PROCESS_KILLED_OOM" "$out"
+
+echo
+echo "Test 6: --include-tools finds tool_use / tool_result matches"
+out="$(RUN SESSION_TIMEOUT_SECONDS --include-tools --format text)"
+# m3 (tool_use) contains SESSION_TIMEOUT_SECONDS in its tool_operations; m2 (assistant) also mentions it.
+assert_contains "T6.tools_match" "alpha" "$out"
+
+echo
+echo "Test 7: default search excludes tool rows"
+out="$(RUN PROCESS_KILLED_OOM --format text)"
+# Should be empty — only m11 (tool_result) contains it
+assert_contains "T7.tools_excluded_by_default" "no matches" "$out"
+
+echo
+echo "Test 8: --since filter (after 2025-01-01) excludes conversation D"
+out="$(RUN session --since 2025-01-01 --format text)"
+case "$out" in
+  *"affinity"*) FAIL=$((FAIL+1)); echo "  FAIL  T8.D_excluded — D's content from 2023 leaked through" >&2 ;;
+  *)            PASS=$((PASS+1)); echo "  PASS  T8.D_excluded" ;;
+esac
+
+echo
+echo "Test 9: --since unparseable date → exit 1"
+code="$(RUN_CODE x --since notadate)"
+assert_eq "T9.exit_1" "1" "$code"
+
+echo
+echo "Test 10: invalid regex → exit 1"
+code="$(RUN_CODE x --regex '[unclosed')"
+assert_eq "T10.exit_1" "1" "$code"
+
+echo
+echo "Test 11: --regex without query and without --scan → exit 1"
+code="$(RUN_CODE --regex 'pat')"
+assert_eq "T11.exit_1" "1" "$code"
+
+echo
+echo "Test 12: conflicting type flags → exit 1"
+code="$(RUN_CODE x --only-user --include-tools)"
+assert_eq "T12.exit_1" "1" "$code"
+
+echo
+echo "Test 13: --scan without --regex → exit 1"
+code="$(RUN_CODE x --scan)"
+assert_eq "T13.exit_1" "1" "$code"
+
+echo
+echo "Test 14: missing DB → exit 2"
+out="$(CCSEARCH_DB=/nonexistent/path/to/no.db "$CCSEARCH" --no-color foo 2>&1)"
+code="$(CCSEARCH_DB=/nonexistent/path/to/no.db "$CCSEARCH" --no-color foo >/dev/null 2>&1; echo $?)"
+assert_eq        "T14.exit_2" "2" "$code"
+assert_contains  "T14.message" "not found" "$out"
+
+echo
+echo "Test 15: schema drift (drop project_name column) → exit 2"
+DB2="$(mktemp -t ccsearch-fixture-broken.XXXXXX.db)"
+sqlite3 "$DB2" <<'SQL'
+-- Same schema but missing project_name
+CREATE TABLE messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  project_path TEXT NOT NULL,
+  -- project_name DELIBERATELY OMITTED
+  timestamp INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  content TEXT,
+  message_uuid TEXT NOT NULL,
+  parent_uuid TEXT
+);
+CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
+SQL
+out="$(CCSEARCH_DB="$DB2" "$CCSEARCH" --no-color foo 2>&1)"
+code="$(CCSEARCH_DB="$DB2" "$CCSEARCH" --no-color foo >/dev/null 2>&1; echo $?)"
+assert_eq        "T15.exit_2" "2" "$code"
+assert_contains  "T15.message" "project_name" "$out"
+rm -f "$DB2"
+
+echo
+echo "Test 16: tsv format produces tab-separated rows with session id in column 1"
+out="$(RUN '"session timeout"' --format tsv)"
+# Expect at least one row; first column should be a UUID-like string (conv-aaaa-... or conv-cccc-...)
+case "$out" in
+  *conv-aaaa*|*conv-cccc*) PASS=$((PASS+1)); echo "  PASS  T16.tsv_session_id_present" ;;
+  *)                       FAIL=$((FAIL+1)); echo "  FAIL  T16.tsv_session_id_present — output: $out" >&2 ;;
+esac
+
+echo
+echo "Test 17: --preview renders header + a turn for the matching session"
+out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color --preview conv-aaaa-1111-1111-1111-111111111111 2>&1)"
+assert_contains "T17.preview_project"  "alpha" "$out"
+assert_contains "T17.preview_session"  "session conv-aaaa" "$out"
+assert_contains "T17.preview_turn"     "configure session timeout" "$out"
+
+echo
+echo "Test 18: text output includes cwd-aware resume one-liner per row"
+out="$(RUN '"session timeout"' --format text)"
+# Conversation A has project_path=/home/u/projects/alpha; assert the (cd ... && claude --resume ...) form
+assert_contains "T18.cwd_resume_alpha" "(cd /home/u/projects/alpha && claude --resume conv-aaaa" "$out"
+assert_contains "T18.cwd_resume_beta"  "(cd /home/u/projects/beta && claude --resume conv-cccc"  "$out"
+
+echo
+echo "Test 19: TSV column count and project_path column present"
+out="$(RUN '"session timeout"' --format tsv)"
+# Take the first line, count tab-separated columns
+first_line="$(printf '%s\n' "$out" | head -n 1)"
+col_count="$(printf '%s' "$first_line" | awk -F'\t' '{print NF}')"
+assert_eq        "T19.col_count_7"  "7"  "$col_count"
+# Column 3 should be the absolute project_path
+proj_path_col="$(printf '%s' "$first_line" | awk -F'\t' '{print $3}')"
+case "$proj_path_col" in
+  "/home/u/projects/alpha"|"/home/u/projects/beta")
+    PASS=$((PASS+1)); echo "  PASS  T19.col3_is_project_path"
+    ;;
+  *)
+    FAIL=$((FAIL+1)); echo "  FAIL  T19.col3_is_project_path — got '$proj_path_col'" >&2
+    ;;
+esac
+
+echo
+echo "Test 20: missing project_path → degraded one-liner with '# original project path unknown'"
+DB3="$(mktemp -t ccsearch-fixture-no-path.XXXXXX.db)"
+sqlite3 "$DB3" <<'SQL'
+CREATE TABLE messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  project_path TEXT NOT NULL,
+  project_name TEXT NOT NULL,
+  timestamp INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  content TEXT,
+  raw_content TEXT,
+  tool_operations TEXT,
+  message_uuid TEXT NOT NULL,
+  parent_uuid TEXT,
+  created_at INTEGER DEFAULT (unixepoch())
+);
+CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
+CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(id, searchable_text)
+  VALUES (new.id, new.content || ' ' || COALESCE(new.tool_operations, ''));
+END;
+-- conversation with empty project_path
+INSERT INTO messages VALUES
+  ('mx1', 'conv-x', '', '', 1735689600000, 'user', 'pathless conversation about widgets', NULL, NULL, 'ux1', NULL, 0),
+  ('mx2', 'conv-x', '', '', 1735689610000, 'assistant', 'widgets are great', NULL, NULL, 'ax1', 'ux1', 0);
+SQL
+out="$(CCSEARCH_DB="$DB3" "$CCSEARCH" --no-color --format text widgets 2>&1)"
+assert_contains "T20.degraded_oneliner" "claude --resume conv-x  # original project path unknown" "$out"
+# And in tsv, column 3 should be the empty string
+out_tsv="$(CCSEARCH_DB="$DB3" "$CCSEARCH" --no-color --format tsv widgets 2>&1)"
+first_line="$(printf '%s\n' "$out_tsv" | head -n 1)"
+proj_path_col="$(printf '%s' "$first_line" | awk -F'\t' '{print $3}')"
+assert_eq "T20.tsv_col3_empty" "" "$proj_path_col"
+rm -f "$DB3"
+
+echo
+echo "Test 21: --help exits 0 and mentions Node 22.5"
+out="$("$CCSEARCH" --help 2>&1)"
+code="$("$CCSEARCH" --help >/dev/null 2>&1; echo $?)"
+assert_eq        "T21.exit_0" "0" "$code"
+assert_contains  "T21.help_node_version" "Node.js ≥ 22.5" "$out"
+
+echo
+echo "Test 22.4: indexer builds an FTS index from a JSONL tree"
+INDEXER_TMP="$(mktemp -d -t ccsearch-indexer.XXX)"
+mkdir -p "$INDEXER_TMP/.claude/projects/-home-foo-alpha"
+mkdir -p "$INDEXER_TMP/.claude/projects/-home-foo-beta"
+python3 - "$INDEXER_TMP/.claude/projects/-home-foo-alpha/sess-alpha.jsonl" "$INDEXER_TMP/.claude/projects/-home-foo-beta/sess-beta.jsonl" <<'PY'
+import json, sys
+records_alpha = [
+    {"type":"user","sessionId":"sess-alpha","uuid":"u1","parentUuid":None,"cwd":"/home/foo/alpha","timestamp":"2026-04-01T12:00:00Z","message":{"role":"user","content":"Question about SeekersGuidance integration"}},
+    {"type":"assistant","sessionId":"sess-alpha","uuid":"a1","parentUuid":"u1","cwd":"/home/foo/alpha","timestamp":"2026-04-01T12:00:01Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Considering SeekersGuidance approach"},{"type":"text","text":"Configure it via OAuth."}]}},
+    {"type":"tool_result","sessionId":"sess-alpha","uuid":"t1","parentUuid":"a1","cwd":"/home/foo/alpha","timestamp":"2026-04-01T12:00:02Z","message":{"role":"user","content":"tool ran fine"}},
+    {"type":"attachment","sessionId":"sess-alpha","uuid":"at1","cwd":"/home/foo/alpha","timestamp":"2026-04-01T12:00:03Z"},
+    {"type":"file-history-snapshot","timestamp":None},
+    {"type":"system","sessionId":"sess-alpha","timestamp":"2026-04-01T12:00:04Z","content":"system text"},
+]
+records_beta = [
+    {"type":"user","sessionId":"sess-beta","uuid":"u2","parentUuid":None,"cwd":"/home/foo/beta","timestamp":"2026-04-02T09:00:00Z","message":{"role":"user","content":"Plot density of distinct words"}},
+    {"type":"assistant","sessionId":"sess-beta","uuid":"a2","parentUuid":"u2","cwd":"/home/foo/beta","timestamp":"2026-04-02T09:00:01Z","message":{"role":"assistant","content":[{"type":"text","text":"Use matplotlib histograms."}]}},
+]
+with open(sys.argv[1], "w") as f:
+    for r in records_alpha:
+        f.write(json.dumps(r) + "\n")
+    f.write("not valid json\n")
+with open(sys.argv[2], "w") as f:
+    for r in records_beta:
+        f.write(json.dumps(r) + "\n")
+PY
+
+# Snapshot mtimes before the pass for the read-only invariant test
+PRE_SNAP="$(find "$INDEXER_TMP/.claude/projects" -name "*.jsonl" -printf "%T@ %s %p\n" | sort)"
+
+# First indexer run via ccsearch
+out="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --no-color --format text SeekersGuidance 2>&1)"
+case "$out" in
+  *SeekersGuidance*alpha*) PASS=$((PASS+1)); echo "  PASS  T22.4.indexer_finds_term" ;;
+  *)                       FAIL=$((FAIL+1)); echo "  FAIL  T22.4.indexer_finds_term — output: $out" >&2 ;;
+esac
+
+# Multi-block parsing: thinking AND text should both index → both can be found
+out_th="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --no-color --format text 'Considering' 2>&1)"
+out_tx="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --no-color --format text 'OAuth' 2>&1)"
+assert_contains "T22.4.thinking_block_indexed" "Considering"  "$out_th"
+assert_contains "T22.4.text_block_indexed"     "OAuth"        "$out_tx"
+
+# --index-status reports
+status_out="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --index-status 2>&1)"
+assert_contains "T22.4.status_lists_db_path"   "index.db"     "$status_out"
+assert_contains "T22.4.status_lists_messages"  "messages:"    "$status_out"
+assert_contains "T22.4.status_pending_none"    "pending:    none" "$status_out"
+
+# Read-only invariant: JSONL files unchanged after a pass
+POST_SNAP="$(find "$INDEXER_TMP/.claude/projects" -name "*.jsonl" -printf "%T@ %s %p\n" | sort)"
+if [ "$PRE_SNAP" = "$POST_SNAP" ]; then
+  PASS=$((PASS+1)); echo "  PASS  T22.4.jsonl_readonly_invariant"
+else
+  FAIL=$((FAIL+1)); echo "  FAIL  T22.4.jsonl_readonly_invariant — JSONL mtime/size changed" >&2
+fi
+
+# Incremental: append to one file, re-run, new content should be findable
+echo '{"type":"user","sessionId":"sess-alpha","uuid":"u3","parentUuid":null,"cwd":"/home/foo/alpha","timestamp":"2026-04-03T12:00:00Z","message":{"role":"user","content":"UNIQUE_MARKER_FOR_INCREMENTAL_TEST"}}' >> "$INDEXER_TMP/.claude/projects/-home-foo-alpha/sess-alpha.jsonl"
+# Force mtime forward — `find -newer` granularity issues
+touch -d "+5 seconds" "$INDEXER_TMP/.claude/projects/-home-foo-alpha/sess-alpha.jsonl"
+out_inc="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --no-color --format text UNIQUE_MARKER_FOR_INCREMENTAL_TEST 2>&1)"
+assert_contains "T22.4.incremental_picks_up_new_message" "UNIQUE_MARKER_FOR_INCREMENTAL_TEST" "$out_inc"
+
+# --reindex still works
+reindex_out="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --reindex 2>&1)"
+assert_contains "T22.4.reindex_summary" "indexed" "$reindex_out"
+
+rm -rf "$INDEXER_TMP"
+
+echo
+echo "Test 22.5: --flag=value form is accepted (regression test for slash-command usage)"
+out="$(CCSEARCH_DB="$DB" "$CCSEARCH" '"session timeout"' --format=text --no-color --limit=10 2>&1)"
+code="$(CCSEARCH_DB="$DB" "$CCSEARCH" '"session timeout"' --format=text --no-color --limit=10 >/dev/null 2>&1; echo $?)"
+assert_eq        "T22b.exit_0_with_equals_form" "0" "$code"
+assert_contains  "T22b.row_present"            "alpha" "$out"
+# Also assert --project=substr works (used in slash command examples)
+out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --format=text --no-color session --project=beta 2>&1)"
+code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --format=text --no-color session --project=beta >/dev/null 2>&1; echo $?)"
+assert_eq        "T22b.exit_0_project_equals" "0" "$code"
+assert_contains  "T22b.beta_present"          "beta" "$out"
+
+echo
+echo "Test 22: -i without TTY exits 2 with a clear message"
+# stdin redirection makes it non-TTY
+out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color -i 2>&1 < /dev/null)"
+code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color -i > /dev/null 2>&1 < /dev/null; echo $?)"
+assert_eq        "T22.exit_2" "2" "$code"
+assert_contains  "T22.tty_message" "requires a TTY" "$out"
+
+# --- Summary ------------------------------------------------------------
+
+echo
+echo "----------------------------------------"
+echo "PASS: $PASS"
+echo "FAIL: $FAIL"
+echo "----------------------------------------"
+
+[[ "$FAIL" == "0" ]]

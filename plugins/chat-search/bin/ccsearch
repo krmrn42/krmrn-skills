@@ -1,0 +1,857 @@
+#!/usr/bin/env node
+// ccsearch — relevance-ranked full-text search across local Claude Code conversations.
+//
+// Reads ~/.claude/conversation-search.db (FTS5-backed SQLite, maintained by
+// Claude Code itself). Read-only — never writes, never mutates anything under
+// ~/.claude/. See plugins/chat-search/README.md for usage.
+//
+// Exit codes:
+//   0  success (zero matches is success)
+//   1  user error (bad regex, unparseable date, conflicting flags, etc.)
+//   2  environment error (DB missing, schema drift, unsupported Node, no TTY for -i)
+//   3  internal error (uncaught exception, write attempt against read-only DB)
+
+"use strict";
+
+const EXIT_OK = 0;
+const EXIT_USER = 1;
+const EXIT_ENV = 2;
+const EXIT_INTERNAL = 3;
+
+// --- Runtime probes ------------------------------------------------------
+
+function dieEnv(msg) {
+  process.stderr.write("ccsearch: " + msg + "\n");
+  process.exit(EXIT_ENV);
+}
+
+function dieUser(msg) {
+  process.stderr.write("ccsearch: " + msg + "\n");
+  process.exit(EXIT_USER);
+}
+
+function parseNodeVersion(v) {
+  const m = /^v(\d+)\.(\d+)\.(\d+)/.exec(v);
+  if (!m) return [0, 0, 0];
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function isNodeAtLeast(current, required) {
+  for (let i = 0; i < 3; i++) {
+    if (current[i] > required[i]) return true;
+    if (current[i] < required[i]) return false;
+  }
+  return true;
+}
+
+const REQUIRED_NODE = [22, 5, 0];
+const currentNode = parseNodeVersion(process.version);
+if (!isNodeAtLeast(currentNode, REQUIRED_NODE)) {
+  dieEnv(
+    `this script requires Node.js 22.5+ (found ${process.version}).\n` +
+      `node:sqlite was added in v22.5 and is the engine we use to query\n` +
+      `~/.claude/conversation-search.db.\n\n` +
+      `Install or upgrade Node:\n\n` +
+      `  brew install node              # macOS (Homebrew)\n` +
+      `  winget install OpenJS.NodeJS   # Windows (WinGet)\n` +
+      `  sudo pacman -S nodejs          # Manjaro / Arch\n` +
+      `  sudo apt install nodejs        # Debian / Ubuntu (may be too old; consider nvm or nodesource)\n` +
+      `  nvm install --lts              # any (using nvm)\n\n` +
+      `If you installed Claude Code via \`npm install -g @anthropic-ai/claude-code\`,\n` +
+      `Node is already on your system — your shell's PATH may just not see\n` +
+      `the right \`node\` binary.`
+  );
+}
+
+let DatabaseSync;
+try {
+  ({ DatabaseSync } = require("node:sqlite"));
+} catch (e) {
+  dieEnv(
+    `node:sqlite is not available in this Node build (${process.version}).\n` +
+      `Cause: ${e.message}\n\n` +
+      `Use the official Node distribution from https://nodejs.org/ which ships\n` +
+      `the built-in SQLite module. Some non-standard builds compile Node without it.`
+  );
+}
+
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+function defaultIndexPath() {
+  const xdg = process.env.XDG_DATA_HOME && process.env.XDG_DATA_HOME.trim();
+  const base = xdg && xdg.length > 0 ? xdg : path.join(os.homedir(), ".local", "share");
+  return path.join(base, "krmrn42-skills", "chat-search", "index.db");
+}
+
+const PLUGIN_DEFAULT_DB = defaultIndexPath();
+const DEFAULT_DB = process.env.CCSEARCH_DB || PLUGIN_DEFAULT_DB;
+// True when ccsearch is using the plugin-owned index (the path nobody overrode).
+function isPluginOwnedDb(p) {
+  return p === PLUGIN_DEFAULT_DB;
+}
+
+const EXPECTED_TABLES = new Set(["messages", "messages_fts"]);
+const EXPECTED_COLUMNS = new Set([
+  "id",
+  "conversation_id",
+  "project_path",
+  "project_name",
+  "timestamp",
+  "type",
+  "content",
+  "message_uuid",
+  "parent_uuid",
+]);
+
+const SNIPPET_OPEN = "<<<";
+const SNIPPET_CLOSE = ">>>";
+
+const ANSI_BOLD = "\x1b[1m";
+const ANSI_DIM = "\x1b[2m";
+const ANSI_RESET = "\x1b[0m";
+
+// --- DB / schema ---------------------------------------------------------
+
+function openDb(dbPath, opts = {}) {
+  const usingPluginOwned = isPluginOwnedDb(dbPath);
+  if (!fs.existsSync(dbPath)) {
+    if (usingPluginOwned) {
+      // Create the parent dir; the DB file itself will be created by node:sqlite
+      // when we open it read-write.
+      try {
+        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+      } catch (e) {
+        dieEnv(`could not create index directory at ${path.dirname(dbPath)}: ${e.message}`);
+      }
+    } else {
+      dieEnv(
+        `${dbPath} not found.\n` +
+          `Use Claude Code at least once to create the database,\n` +
+          `or pass --db-path / set CCSEARCH_DB.`
+      );
+    }
+  }
+  // For the plugin-owned index we need a read-write connection so the indexer
+  // can refresh it. For a user-provided path (`--db-path` / CCSEARCH_DB) we
+  // stay strictly read-only (the user is opting into reading an external DB).
+  const readOnly = opts.readWrite ? false : !usingPluginOwned;
+  try {
+    return new DatabaseSync(dbPath, { readOnly });
+  } catch (e) {
+    dieEnv(`could not open ${dbPath}: ${e.message}`);
+  }
+}
+
+function probeSchema(db) {
+  const rows = db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type IN ('table','view') " +
+        "AND name IN ('messages','messages_fts')"
+    )
+    .all();
+  const found = new Set(rows.map((r) => r.name));
+  const missingTables = [...EXPECTED_TABLES].filter((t) => !found.has(t)).sort();
+  if (missingTables.length) {
+    dieEnv(
+      `schema does not match expected layout — missing table(s): ${missingTables.join(", ")}.\n` +
+        `This usually means Claude Code has been updated and chat-search\n` +
+        `needs to update too. File an issue or \`git pull\` and reinstall.`
+    );
+  }
+  const cols = new Set(db.prepare("PRAGMA table_info(messages)").all().map((r) => r.name));
+  const missingCols = [...EXPECTED_COLUMNS].filter((c) => !cols.has(c)).sort();
+  if (missingCols.length) {
+    dieEnv(
+      `schema does not match expected layout — missing column(s) in \`messages\`: ` +
+        `${missingCols.join(", ")}.\n` +
+        `This usually means Claude Code has been updated and chat-search\n` +
+        `needs to update too. File an issue or \`git pull\` and reinstall.`
+    );
+  }
+}
+
+function detectTimestampScale(db) {
+  const row = db.prepare("SELECT MAX(timestamp) AS m FROM messages").get();
+  if (!row || !row.m) return 1000;
+  return row.m > 10_000_000_000 ? 1000 : 1;
+}
+
+// --- Helpers -------------------------------------------------------------
+
+function parseSince(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    dieUser(`--since: cannot parse '${s}' as YYYY-MM-DD`);
+  }
+  const d = new Date(s + "T00:00:00Z");
+  if (Number.isNaN(d.getTime())) {
+    dieUser(`--since: cannot parse '${s}' as YYYY-MM-DD`);
+  }
+  return Math.floor(d.getTime() / 1000);
+}
+
+function projectDisplay(projectPath, projectName) {
+  if (!projectPath) return projectName || "?";
+  const parts = projectPath.split("/").filter(Boolean);
+  if (parts.length >= 2) return parts.slice(-2).join("/");
+  return projectName || projectPath;
+}
+
+function shortSession(sid) {
+  return sid ? sid.slice(0, 8) : "????????";
+}
+
+function fmtDate(ts) {
+  if (!ts) return "????-??-??";
+  let n = ts;
+  if (n > 10_000_000_000) n = Math.floor(n / 1000);
+  const d = new Date(n * 1000);
+  if (Number.isNaN(d.getTime())) return "????-??-??";
+  return d.toISOString().slice(0, 10);
+}
+
+function colorizeSnippet(snippet, useColor) {
+  if (!snippet) return "";
+  let s = snippet;
+  if (useColor) {
+    s = s.split(SNIPPET_OPEN).join(ANSI_BOLD).split(SNIPPET_CLOSE).join(ANSI_RESET);
+  }
+  return s.split(/\s+/).filter(Boolean).join(" ");
+}
+
+function shellQuote(s) {
+  if (s === "" || /[^A-Za-z0-9_./@:+\-=,%]/.test(s)) {
+    return "'" + s.replace(/'/g, "'\\''") + "'";
+  }
+  return s;
+}
+
+function resumeOneLiner(sessionId, projectPath) {
+  if (!projectPath) {
+    return `claude --resume ${sessionId}  # original project path unknown`;
+  }
+  return `(cd ${shellQuote(projectPath)} && claude --resume ${sessionId})`;
+}
+
+const _projectDirCache = new Map();
+function isExistingDir(p) {
+  if (!p) return false;
+  if (_projectDirCache.has(p)) return _projectDirCache.get(p);
+  let ok = false;
+  try {
+    ok = fs.statSync(p).isDirectory();
+  } catch (_) {
+    ok = false;
+  }
+  _projectDirCache.set(p, ok);
+  return ok;
+}
+
+// --- Search --------------------------------------------------------------
+
+function typeFilterClause(includeTools, onlyUser) {
+  if (onlyUser) return { sql: "m.type = ?", params: ["user"] };
+  if (includeTools)
+    return { sql: "m.type IN (?, ?, ?, ?)", params: ["user", "assistant", "tool_use", "tool_result"] };
+  return { sql: "m.type IN (?, ?)", params: ["user", "assistant"] };
+}
+
+function dieFts(query, err) {
+  const msg = err.message || String(err);
+  if (/no such column|fts5|syntax error/i.test(msg)) {
+    let suggestion = "";
+    if (query.includes("-") && !(query.startsWith('"') && query.endsWith('"'))) {
+      suggestion =
+        `\nFTS5 treats '-' as NOT and '"…"' as a phrase. ` +
+        `To search for the literal phrase, quote it:\n` +
+        `    ccsearch '"${query}"'`;
+    }
+    dieUser(`FTS5 query error: ${msg}${suggestion}`);
+  }
+  dieUser(`FTS5 query error: ${msg}`);
+}
+
+function buildWhereExtras(args) {
+  const extras = [];
+  const params = [];
+  if (args.since) {
+    extras.push("m.timestamp >= ?");
+    params.push(args.sinceTs);
+  }
+  if (args.project) {
+    extras.push("(LOWER(m.project_name) LIKE ? OR LOWER(m.project_path) LIKE ?)");
+    const like = `%${args.project.toLowerCase()}%`;
+    params.push(like, like);
+  }
+  return { sql: extras.length ? "AND " + extras.join(" AND ") : "", params };
+}
+
+function ftsSearch(db, args) {
+  const { sql: typeSql, params: typeParams } = typeFilterClause(
+    args.includeTools,
+    args.onlyUser
+  );
+  const { sql: whereExtraSql, params: extraParams } = buildWhereExtras(args);
+
+  const innerLimit = Math.max(args.limit * 50, 500);
+
+  const sql = `
+SELECT
+  m.conversation_id AS conversation_id,
+  m.project_path AS project_path,
+  m.project_name AS project_name,
+  m.timestamp AS timestamp,
+  snippet(messages_fts, 1, ?, ?, '…', 12) AS snippet,
+  bm25(messages_fts) AS score
+FROM messages_fts
+JOIN messages m ON m.id = messages_fts.id
+WHERE messages_fts MATCH ?
+  AND ${typeSql}
+  ${whereExtraSql}
+ORDER BY bm25(messages_fts)
+LIMIT ?
+`;
+
+  const params = [SNIPPET_OPEN, SNIPPET_CLOSE, args.query, ...typeParams, ...extraParams, innerLimit];
+  let rows;
+  try {
+    rows = db.prepare(sql).all(...params);
+  } catch (e) {
+    dieFts(args.query, e);
+  }
+  const seen = new Map();
+  for (const r of rows) {
+    if (seen.has(r.conversation_id)) continue;
+    seen.set(r.conversation_id, {
+      sessionId: r.conversation_id,
+      projectPath: r.project_path || "",
+      projectName: r.project_name || "",
+      lastActivity: 0,
+      msgCount: 0,
+      snippet: r.snippet || "",
+      score: r.score,
+    });
+    if (seen.size >= args.limit) break;
+  }
+  return fillMeta(db, [...seen.values()]);
+}
+
+function regexPostfilter(db, args, pattern) {
+  const { sql: typeSql, params: typeParams } = typeFilterClause(
+    args.includeTools,
+    args.onlyUser
+  );
+  const { sql: whereExtraSql, params: extraParams } = buildWhereExtras(args);
+
+  const sql = `
+SELECT
+  m.conversation_id AS conversation_id,
+  m.project_path AS project_path,
+  m.project_name AS project_name,
+  m.timestamp AS timestamp,
+  m.content AS content,
+  snippet(messages_fts, 1, ?, ?, '…', 12) AS snippet,
+  bm25(messages_fts) AS score
+FROM messages_fts
+JOIN messages m ON m.id = messages_fts.id
+WHERE messages_fts MATCH ?
+  AND ${typeSql}
+  ${whereExtraSql}
+ORDER BY bm25(messages_fts)
+`;
+  const params = [SNIPPET_OPEN, SNIPPET_CLOSE, args.query, ...typeParams, ...extraParams];
+
+  let rows;
+  try {
+    rows = db.prepare(sql).all(...params);
+  } catch (e) {
+    dieFts(args.query, e);
+  }
+  const seen = new Map();
+  for (const r of rows) {
+    if (seen.has(r.conversation_id)) continue;
+    if (!r.content || !pattern.test(r.content)) continue;
+    seen.set(r.conversation_id, {
+      sessionId: r.conversation_id,
+      projectPath: r.project_path || "",
+      projectName: r.project_name || "",
+      lastActivity: 0,
+      msgCount: 0,
+      snippet: r.snippet || "",
+      score: r.score,
+    });
+    if (seen.size >= args.limit) break;
+  }
+  return fillMeta(db, [...seen.values()]);
+}
+
+function regexScan(db, args, pattern) {
+  const { sql: typeSql, params: typeParams } = typeFilterClause(
+    args.includeTools,
+    args.onlyUser
+  );
+  const { sql: whereExtraSql, params: extraParams } = buildWhereExtras(args);
+
+  const totalRow = db
+    .prepare(`SELECT COUNT(*) AS c FROM messages m WHERE ${typeSql} ${whereExtraSql}`)
+    .get(...typeParams, ...extraParams);
+  const total = totalRow ? totalRow.c : 0;
+  const progressThreshold = 50_000;
+  const progressInterval = 10_000;
+  const progressEnabled = total > progressThreshold && process.stderr.isTTY;
+
+  if (progressEnabled) {
+    process.stderr.write(`ccsearch: scanning ${total.toLocaleString()} messages…\n`);
+  }
+
+  const sql = `
+SELECT m.conversation_id AS conversation_id, m.project_path AS project_path,
+       m.project_name AS project_name, m.timestamp AS timestamp, m.content AS content
+FROM messages m
+WHERE ${typeSql}
+${whereExtraSql}
+ORDER BY m.timestamp DESC
+`;
+  const iter = db.prepare(sql).iterate(...typeParams, ...extraParams);
+
+  const seen = new Map();
+  let scanned = 0;
+  for (const r of iter) {
+    scanned++;
+    if (progressEnabled && scanned % progressInterval === 0) {
+      process.stderr.write(`ccsearch: scanned ${scanned.toLocaleString()}/${total.toLocaleString()}…\n`);
+    }
+    if (seen.has(r.conversation_id)) continue;
+    if (!r.content) continue;
+    // Use String.match (non-global pattern returns first match or null)
+    const m = r.content.match(pattern);
+    if (!m) continue;
+    const matchIdx = typeof m.index === "number" ? m.index : 0;
+    const start = Math.max(0, matchIdx - 40);
+    const end = Math.min(r.content.length, matchIdx + m[0].length + 40);
+    const prefix = start > 0 ? "…" : "";
+    const suffix = end < r.content.length ? "…" : "";
+    const snippet =
+      prefix +
+      r.content.slice(start, matchIdx) +
+      SNIPPET_OPEN +
+      r.content.slice(matchIdx, matchIdx + m[0].length) +
+      SNIPPET_CLOSE +
+      r.content.slice(matchIdx + m[0].length, end) +
+      suffix;
+    seen.set(r.conversation_id, {
+      sessionId: r.conversation_id,
+      projectPath: r.project_path || "",
+      projectName: r.project_name || "",
+      lastActivity: 0,
+      msgCount: 0,
+      snippet,
+      score: 0.0,
+    });
+    if (seen.size >= args.limit) break;
+  }
+  return fillMeta(db, [...seen.values()]);
+}
+
+function fillMeta(db, results) {
+  const stmt = db.prepare(
+    "SELECT COUNT(*) AS c, MAX(timestamp) AS t FROM messages WHERE conversation_id = ?"
+  );
+  for (const r of results) {
+    const row = stmt.get(r.sessionId);
+    r.msgCount = (row && row.c) || 0;
+    r.lastActivity = (row && row.t) || 0;
+  }
+  return results;
+}
+
+// --- Output --------------------------------------------------------------
+
+function renderText(results, useColor) {
+  if (!results.length) {
+    process.stdout.write("no matches\n");
+    return;
+  }
+  const lines = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const proj = projectDisplay(r.projectPath, r.projectName);
+    const date = fmtDate(r.lastActivity);
+    const snippet = colorizeSnippet(r.snippet, useColor);
+    const idx = String(i + 1).padStart(3);
+    const sid = shortSession(r.sessionId);
+    const msgs = String(r.msgCount).padStart(4);
+    let header;
+    if (useColor) {
+      header = `${idx}. ${ANSI_BOLD}${proj}${ANSI_RESET}  ${ANSI_DIM}${date}  ${msgs} msgs  ${sid}${ANSI_RESET}`;
+    } else {
+      header = `${idx}. ${proj}  ${date}  ${msgs} msgs  ${sid}`;
+    }
+    lines.push(header);
+    if (snippet) lines.push(`     ${snippet}`);
+    lines.push(`     ${resumeOneLiner(r.sessionId, r.projectPath)}`);
+  }
+  process.stdout.write(lines.join("\n") + "\n");
+}
+
+function renderTsv(results) {
+  const out = [];
+  for (const r of results) {
+    const proj = projectDisplay(r.projectPath, r.projectName);
+    const date = fmtDate(r.lastActivity);
+    const snippet = r.snippet.split(/\s+/).filter(Boolean).join(" ");
+    const score = (typeof r.score === "number" ? r.score : 0).toFixed(4);
+    out.push(
+      [r.sessionId, proj, r.projectPath, date, r.msgCount, snippet, score].join("\t")
+    );
+  }
+  if (out.length) process.stdout.write(out.join("\n") + "\n");
+}
+
+// --- Preview (for the built-in picker's preview pane) --------------------
+
+function renderPreview(db, sessionId, useColor) {
+  probeSchema(db);
+  const head = db
+    .prepare(
+      "SELECT project_path, project_name, " +
+        "       (SELECT COUNT(*) FROM messages WHERE conversation_id = ?) AS msg_count, " +
+        "       (SELECT MAX(timestamp) FROM messages WHERE conversation_id = ?) AS last_ts, " +
+        "       (SELECT MIN(timestamp) FROM messages WHERE conversation_id = ?) AS first_ts " +
+        "FROM messages WHERE conversation_id = ? LIMIT 1"
+    )
+    .get(sessionId, sessionId, sessionId, sessionId);
+  if (!head) {
+    process.stdout.write(`(no messages found for session ${shortSession(sessionId)})\n`);
+    return;
+  }
+  const proj = projectDisplay(head.project_path || "", head.project_name || "");
+  const bold = useColor ? ANSI_BOLD : "";
+  const dim = useColor ? ANSI_DIM : "";
+  const reset = useColor ? ANSI_RESET : "";
+  process.stdout.write(
+    `${bold}${proj}${reset}  ${dim}(${fmtDate(head.first_ts)} → ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}\n`
+  );
+  process.stdout.write(`${dim}session ${sessionId}${reset}\n\n`);
+
+  const rows = db
+    .prepare(
+      "SELECT type, content, timestamp FROM messages " +
+        "WHERE conversation_id = ? AND type IN ('user','assistant') " +
+        "ORDER BY timestamp ASC LIMIT 20"
+    )
+    .all(sessionId);
+  for (const r of rows) {
+    const marker = r.type === "user" ? "▶" : "◀";
+    process.stdout.write(`${bold}${marker} ${r.type}${reset} ${dim}${fmtDate(r.timestamp)}${reset}\n`);
+    let text = (r.content || "").trim();
+    if (text.length > 600) text = text.slice(0, 600) + " […]";
+    for (const line of text.split("\n")) process.stdout.write(`  ${line}\n`);
+    process.stdout.write("\n");
+  }
+}
+
+// --- Argument parsing ----------------------------------------------------
+
+function buildHelp() {
+  return [
+    "usage: ccsearch [-h] [-i] [--regex PAT] [--scan]",
+    "                [--include-tools | --only-user]",
+    "                [--project SUBSTR] [--since YYYY-MM-DD] [--limit N]",
+    "                [--format text|tsv] [--db-path PATH] [--no-color]",
+    "                [--preview SESSION_ID]",
+    "                [query]",
+    "",
+    "Relevance-ranked full-text search across local Claude Code conversations.",
+    "",
+    "Examples:",
+    '  ccsearch "session timeout"',
+    "  ccsearch -i",
+    '  ccsearch -i "regex parse"',
+    `  ccsearch "auth" --regex 'TOKEN_[A-F0-9]{8}'`,
+    `  ccsearch --regex 'TOKEN_[A-F0-9]{8}' --scan`,
+    '  ccsearch "deploy" --project alpha --since 2026-04-01',
+    "",
+    "TSV columns: session_id, project, project_path, date, messages_count, snippet, score",
+    "",
+    "Runtime: Node.js ≥ 22.5 (uses the built-in node:sqlite module). No npm dependencies.",
+  ].join("\n");
+}
+
+function parseArgs(argv) {
+  const args = {
+    query: "",
+    interactive: false,
+    regex: null,
+    scan: false,
+    includeTools: false,
+    onlyUser: false,
+    project: null,
+    since: null,
+    sinceTs: 0,
+    limit: 20,
+    format: null,
+    dbPath: DEFAULT_DB,
+    preview: null,
+    noColor: false,
+    help: false,
+    reindex: false,
+    indexStatus: false,
+  };
+  const rest = [];
+  // Accept both `--flag value` (space-separated) and `--flag=value` (equals form).
+  // Pre-split equals form so the switch below handles only the bare flag.
+  const expanded = [];
+  for (const a of argv) {
+    if (a.startsWith("--") && a.length > 2 && a.includes("=")) {
+      const eq = a.indexOf("=");
+      expanded.push(a.slice(0, eq), a.slice(eq + 1));
+    } else {
+      expanded.push(a);
+    }
+  }
+  for (let i = 0; i < expanded.length; i++) {
+    const a = expanded[i];
+    if (a === "--") {
+      rest.push(...expanded.slice(i + 1));
+      break;
+    }
+    switch (a) {
+      case "-h":
+      case "--help":
+        args.help = true;
+        break;
+      case "-i":
+      case "--interactive":
+        args.interactive = true;
+        break;
+      case "--regex":
+        args.regex = expanded[++i];
+        if (args.regex === undefined) dieUser("--regex requires a pattern");
+        break;
+      case "--scan":
+        args.scan = true;
+        break;
+      case "--include-tools":
+        args.includeTools = true;
+        break;
+      case "--only-user":
+        args.onlyUser = true;
+        break;
+      case "--project":
+        args.project = expanded[++i];
+        if (args.project === undefined) dieUser("--project requires a substring");
+        break;
+      case "--since":
+        args.since = expanded[++i];
+        if (args.since === undefined) dieUser("--since requires YYYY-MM-DD");
+        break;
+      case "--limit":
+        args.limit = Number(expanded[++i]);
+        if (!Number.isFinite(args.limit) || args.limit <= 0) dieUser("--limit must be a positive integer");
+        args.limit = Math.floor(args.limit);
+        break;
+      case "--format":
+        args.format = expanded[++i];
+        if (args.format !== "text" && args.format !== "tsv") {
+          dieUser("--format must be 'text' or 'tsv'");
+        }
+        break;
+      case "--db-path":
+        args.dbPath = expanded[++i];
+        if (args.dbPath === undefined) dieUser("--db-path requires a path");
+        break;
+      case "--preview":
+        args.preview = expanded[++i];
+        if (args.preview === undefined) dieUser("--preview requires a session id");
+        break;
+      case "--no-color":
+        args.noColor = true;
+        break;
+      case "--reindex":
+        args.reindex = true;
+        break;
+      case "--index-status":
+        args.indexStatus = true;
+        break;
+      default:
+        if (a.startsWith("--")) {
+          dieUser(`unknown flag: ${a}`);
+        }
+        rest.push(a);
+    }
+  }
+  if (args.help) {
+    process.stdout.write(buildHelp() + "\n");
+    process.exit(EXIT_OK);
+  }
+  if (rest.length > 1) {
+    args.query = rest.join(" ");
+  } else if (rest.length === 1) {
+    args.query = rest[0];
+  }
+  return args;
+}
+
+function validateArgs(args) {
+  if (args.scan && !args.regex) dieUser("--scan requires --regex.");
+  if (args.regex && !args.query && !args.scan) {
+    dieUser(
+      "--regex without a query requires --scan to acknowledge the full-table scan.\n" +
+        "Either add an FTS query (e.g., `ccsearch \"keyword\" --regex 'pat'`) or pass --scan."
+    );
+  }
+  if (args.includeTools && args.onlyUser) {
+    dieUser("--only-user and --include-tools cannot be combined.");
+  }
+  if (args.regex) {
+    try {
+      args.regexCompiled = new RegExp(args.regex, "m");
+    } catch (e) {
+      dieUser(`--regex: invalid pattern: ${e.message}`);
+    }
+  } else {
+    args.regexCompiled = null;
+  }
+  args.sinceTs = args.since ? parseSince(args.since) : 0;
+  if (args.format === null) {
+    args.format = process.stdout.isTTY ? "text" : "tsv";
+  }
+}
+
+// --- Main ----------------------------------------------------------------
+
+function runOneShot(db, args) {
+  let results;
+  if (args.scan) {
+    results = regexScan(db, args, args.regexCompiled);
+  } else if (args.regex) {
+    if (!args.query) dieUser("internal: regex without query without scan reached search path");
+    results = regexPostfilter(db, args, args.regexCompiled);
+  } else {
+    if (!args.query) {
+      dieUser(
+        "no query provided.\n" +
+          'Try: ccsearch "some keyword"   or   ccsearch -i\n' +
+          "Run `ccsearch --help` for the full flag reference."
+      );
+    }
+    results = ftsSearch(db, args);
+  }
+  const useColor = process.stdout.isTTY && !args.noColor;
+  if (args.format === "tsv") {
+    renderTsv(results);
+  } else {
+    renderText(results, useColor);
+  }
+}
+
+async function main(argv) {
+  const args = parseArgs(argv);
+  validateArgs(args);
+
+  const usingPluginOwned = isPluginOwnedDb(args.dbPath);
+  // Plugin-owned DB needs write access for the indexer pass that runs on every startup.
+  const db = openDb(args.dbPath, { readWrite: usingPluginOwned });
+
+  // For the plugin-owned index, ensure schema exists before probeSchema runs
+  // against an otherwise-empty DB.
+  if (usingPluginOwned) {
+    const indexer = require("./indexer.js");
+    indexer.ensureSchema(db);
+  }
+
+  probeSchema(db);
+
+  // --index-status: short-circuit before any indexing or query work.
+  if (args.indexStatus) {
+    const indexer = require("./indexer.js");
+    const status = indexer.getIndexStatus(db, args.dbPath);
+    process.stdout.write(indexer.renderIndexStatus(status));
+    return EXIT_OK;
+  }
+
+  // Refresh / full-rebuild for the plugin-owned index.
+  if (usingPluginOwned) {
+    const indexer = require("./indexer.js");
+    if (args.reindex) {
+      await indexer.fullReindex(db);
+    } else {
+      await indexer.runIndexer(db);
+    }
+
+    // Empty index + empty disk = friendly nudge.
+    const counts = db.prepare("SELECT COUNT(*) AS c FROM messages").get();
+    if (!counts || counts.c === 0) {
+      const projects = indexer.projectsRoot();
+      const files = indexer.listJsonlFiles(projects);
+      if (files.length === 0) {
+        dieEnv(
+          `no past conversations on disk — use Claude Code at least once to populate ${projects}, ` +
+            `or pass --db-path to a different SQLite FTS5 index.`
+        );
+      }
+    }
+
+    // --reindex without a query is a no-op exit after the rebuild.
+    if (args.reindex && !args.query && !args.interactive && !args.preview) {
+      const c = db.prepare("SELECT COUNT(*) AS c, COUNT(DISTINCT conversation_id) AS conv, COUNT(DISTINCT project_path) AS proj FROM messages").get();
+      process.stderr.write(
+        `ccsearch: indexed ${(c.c || 0).toLocaleString()} messages across ${(c.conv || 0).toLocaleString()} conversations / ${c.proj || 0} projects\n`
+      );
+      return EXIT_OK;
+    }
+  } else if (args.reindex || args.indexStatus) {
+    dieUser("--reindex and --index-status apply only to the plugin-owned index. Remove --db-path / CCSEARCH_DB to use them.");
+  }
+
+  args.sinceTs *= detectTimestampScale(db);
+
+  const useColor = process.stdout.isTTY && !args.noColor;
+
+  if (args.preview) {
+    renderPreview(db, args.preview, useColor);
+    return EXIT_OK;
+  }
+
+  if (args.interactive) {
+    const runPicker = require("./picker.js");
+    const result = await runPicker({
+      db,
+      args,
+      ftsSearch,
+      projectDisplay,
+      shortSession,
+      fmtDate,
+      colorizeSnippet,
+      resumeOneLiner,
+      isExistingDir,
+      renderPreview,
+      ANSI_BOLD,
+      ANSI_DIM,
+      ANSI_RESET,
+      EXIT_OK,
+      EXIT_ENV,
+    });
+    return result;
+  }
+
+  runOneShot(db, args);
+  return EXIT_OK;
+}
+
+if (require.main === module) {
+  main(process.argv.slice(2))
+    .then((code) => process.exit(code))
+    .catch((e) => {
+      if (e && e.code === "SQLITE_READONLY") {
+        process.stderr.write(`ccsearch: ${e.message}\n`);
+        process.exit(EXIT_INTERNAL);
+      }
+      process.stderr.write(
+        `ccsearch: internal error: ${e && e.stack ? e.stack : e}\n`
+      );
+      process.exit(EXIT_INTERNAL);
+    });
+}

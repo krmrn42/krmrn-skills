@@ -1,0 +1,9 @@
+{
+  "name": "chat-search",
+  "description": "Cross-project full-text search across local Claude Code conversations. Maintains its own SQLite FTS5 index at $XDG_DATA_HOME/krmrn42-skills/chat-search/index.db, refreshed lazily from ~/.claude/projects/**/*.jsonl on every startup — so search hits every conversation on disk, not just what Claude Code's index remembers. Three surfaces: one-shot CLI (`ccsearch <query>` — ranked list with project, date, msg count, snippet, copy-paste resume one-liner per row); built-in TUI picker (`ccsearch -i` — Enter resumes in the original project dir, Ctrl-F forks, Ctrl-O prints id, Ctrl-D prints path); `/chat-search:find` inline rendering. Zero external deps — one Node script using node:sqlite (Node 22.5+); no fzf, no Python. `/chat-search:setup` symlinks `bin/ccsearch` into ~/.local/bin. Flags: `--regex`, `--scan`, `--include-tools`, `--only-user`, `--project`, `--since`, `--limit`, `--reindex`, `--index-status`. Trigger on \"find that chat where I figured out X\", \"search history for Y\".",
+  "version": "0.4.0",
+  "author": {
+    "name": "krmrn42"
+  },
+  "license": "MIT"
+}

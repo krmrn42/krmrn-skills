@@ -23,6 +23,7 @@ For local development (after cloning):
 | Plugin | What it does |
 |---|---|
 | [`skill-linting`](./plugins/skill-linting) | Zero-deps Python lint for Claude Code skills. Catches frontmatter, length-cap, manifest-sync, and reference-depth issues. Wires into a slash command (`/skill-linting:lint-skills`), a Makefile target (`make lint-skills`), and pre-commit. |
+| [`chat-search`](./plugins/chat-search) | Cross-project full-text search across local Claude Code conversations. Maintains its own SQLite FTS5 index built from the JSONL files Claude Code keeps under `~/.claude/projects/`. Three surfaces — CLI `ccsearch`, built-in TUI picker (`ccsearch -i`), and the slash command `/chat-search:find`. Enter resumes you in the conversation's original project directory. Zero external dependencies; needs Node ≥ 22.5. |
 
 More plugins will land here over time. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the bar.
 
@@ -55,14 +56,24 @@ A typical author's install set:
 .
 ├── .claude-plugin/marketplace.json    # marketplace manifest
 ├── plugins/
-│   └── skill-linting/
+│   ├── skill-linting/
+│   │   ├── .claude-plugin/plugin.json
+│   │   ├── commands/lint-skills.md    # /skill-linting:lint-skills
+│   │   ├── scripts/lint.py            # the linter (zero deps, Python 3.11+)
+│   │   └── skills/skill-linting/
+│   │       ├── SKILL.md
+│   │       ├── references/
+│   │       └── templates/
+│   └── chat-search/
 │       ├── .claude-plugin/plugin.json
-│       ├── commands/lint-skills.md    # /skill-linting:lint-skills
-│       ├── scripts/lint.py            # the linter (zero deps, Python 3.11+)
-│       └── skills/skill-linting/
-│           ├── SKILL.md
-│           ├── references/
-│           └── templates/
+│       ├── bin/
+│       │   ├── ccsearch               # CLI engine (Node, zero deps)
+│       │   ├── picker.js              # built-in TUI picker
+│       │   ├── indexer.js             # JSONL → SQLite FTS5 indexer
+│       │   └── ccsearch.test.sh       # fixture-DB smoke test
+│       └── commands/
+│           ├── find.md                # /chat-search:find
+│           └── setup.md               # /chat-search:setup
 ├── Makefile                           # make lint-skills, lint-skills-strict, ci
 ├── .pre-commit-config.yaml            # local hook invoking lint.py
 ├── .skill-lint.toml                   # repo-wide and per-skill lint config
