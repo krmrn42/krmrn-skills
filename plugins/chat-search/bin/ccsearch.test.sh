@@ -817,6 +817,14 @@ case "$RC_NAME_OUT" in
 esac
 
 echo
+echo "Test 44: --help mentions all new picker keybindings (Ctrl-R/P/T)"
+help_out="$("$CCSEARCH" --help 2>&1)"
+assert_contains "T44.help_mentions_ctrl_r" "Ctrl-R" "$help_out"
+assert_contains "T44.help_mentions_ctrl_p" "Ctrl-P" "$help_out"
+assert_contains "T44.help_mentions_ctrl_t" "Ctrl-T" "$help_out"
+assert_contains "T44.help_mentions_remote_control" "remote-control" "$help_out"
+
+echo
 echo "Test 41: applyPinOrdering — partition, pin-order, limit, FTS-mode no-inject"
 APO_OUT="$(CCSEARCH_TEST=1 node -e '
 const { applyPinOrdering } = require(process.argv[1]);

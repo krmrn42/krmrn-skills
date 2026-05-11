@@ -164,7 +164,7 @@ function runPicker(deps) {
   let lastRenderTimer = null;
   let previewCache = new Map(); // sessionId -> rendered preview lines
   let lastDims = { rows: 0, cols: 0 };
-  let exitReason = null; // { type: "resume"|"fork"|"resume-dangerous"|"print-id"|"print-path"|"cancel", row }
+  let exitReason = null; // { type: "resume"|"fork"|"resume-dangerous"|"resume-remote-control"|"print-id"|"print-path"|"cancel", row }
   // Recent-browse cache: populated on the first empty-query render, reused on
   // backspace-to-empty. Picker-session-scoped — not invalidated mid-session.
   let recentCache = null;
@@ -371,7 +371,7 @@ function runPicker(deps) {
           truncateToWidth(
             "Enter resume" +
               dangerEntry +
-              "   Ctrl-F fork   Ctrl-R rename   Ctrl-P pin   Ctrl-O print id   Ctrl-D print path   Esc cancel",
+              "   Ctrl-F fork   Ctrl-R rename   Ctrl-P pin   Ctrl-T remote-control   Ctrl-O print id   Ctrl-D print path   Esc cancel",
             cols
           ) +
           ansi.reset
@@ -560,6 +560,7 @@ function runPicker(deps) {
     }
     if (reason === "resume") return spawnClaude("resume", row);
     if (reason === "resume-dangerous") return spawnClaude("resume-dangerous", row);
+    if (reason === "resume-remote-control") return spawnClaude("resume-remote-control", row);
     if (reason === "fork") return spawnClaude("fork", row);
     if (reason === "print-id") {
       teardown();
@@ -722,6 +723,11 @@ function runPicker(deps) {
       // re-runs the current search to apply the new ordering; keeps the
       // cursor on the same row so the user can chain pin operations.
       if (key.ctrl && key.name === "p") return togglePin();
+      // Ctrl-T: spawn `claude --remote-control [name] --resume <id>` for the
+      // selected row. The saved name (when set) flows into --remote-control
+      // as its positional argument; --name is suppressed (see
+      // buildClaudeArgs / picker-remote-control-launch design Decision 2).
+      if (key.ctrl && key.name === "t") return finish("resume-remote-control");
       // Alt+Enter (key.meta) and Shift+Enter (key.shift, CSI-u terminals only)
       // route to the dangerous-resume action when armed. On terminals that do
       // not distinguish Shift+Enter from Enter, key.shift is false for plain

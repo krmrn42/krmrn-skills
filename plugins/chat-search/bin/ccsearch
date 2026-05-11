@@ -807,8 +807,9 @@ const OPTIONS = [
     description:
       "Open the built-in TUI picker. Default on a TTY; this flag forces the " +
       "picker even when other inference would dispatch to one-shot. Inside the " +
-      "picker: Enter resumes, Ctrl-F forks, Ctrl-O prints session id, Ctrl-D " +
-      "prints project path, arrow keys / PgUp / PgDn navigate, Esc cancels.",
+      "picker: Enter resumes, Ctrl-F forks, Ctrl-R renames, Ctrl-P pins, Ctrl-T " +
+      "launches in remote-control mode, Ctrl-O prints session id, Ctrl-D prints " +
+      "project path, arrow keys / PgUp / PgDn navigate, Esc cancels.",
   },
   {
     flags: ["-l", "--list"],

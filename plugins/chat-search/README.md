@@ -112,6 +112,7 @@ ccsearch "deploy" --format tsv | head -3
 | `Ctrl-F` | `cd <project> && claude --fork-session --resume <id>` |
 | `Ctrl-R` | Rename the selected row (saved name persists, passed to `claude --name`) |
 | `Ctrl-P` | Pin / unpin the selected row (pinned rows sort to the top with a `📌` indicator) |
+| `Ctrl-T` | Resume with `claude --remote-control [name] --resume <id>` (uses saved name when set) |
 | `Ctrl-O` | Print the session id and exit |
 | `Ctrl-D` | Print the original project path and exit |
 | `Backspace` | Delete the last query character |
@@ -181,6 +182,12 @@ Press **Ctrl-P** on any picker row to pin it. Pinned rows surface at the top of 
 Pin state lives in the same `sessions.json` as saved names. Pinning is global by session id — pins surface regardless of which project you're in. In FTS mode, pinning **does not override the query**: only pins whose content matches the typed query surface; pins that don't match are still hidden.
 
 The `--limit` flag bounds the total visible rows (pinned + non-pinned). If you pin more conversations than the limit, only the newest pins surface. Use `ccsearch --unpin-all` for a quick cleanup.
+
+### Resume with Remote Control (Ctrl-T)
+
+Press **Ctrl-T** on any picker row to launch `claude --remote-control [name] --resume <session-id>` in the conversation's project directory. When the row has a saved name (via Ctrl-R), the name is passed as `--remote-control <name>` — Claude Code's Remote Control consumes that name semantically, so `--name` is deliberately suppressed for this action to avoid double-display.
+
+Ctrl-T has no opt-in flag. If your Remote Control is unconfigured, `claude` will surface that error directly when launched.
 
 ## Exit codes
 
