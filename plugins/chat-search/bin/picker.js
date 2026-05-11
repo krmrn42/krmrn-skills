@@ -222,7 +222,9 @@ function runPicker(deps) {
       return;
     }
     try {
-      const localArgs = { ...args, query };
+      // Pass sessionStore through so ftsSearch can apply pin-first ordering
+      // to matching rows (pinned rows still must match the query).
+      const localArgs = { ...args, query, sessionStore: deps.sessionStore };
       results = deps.ftsSearch(db, localArgs);
     } catch (e) {
       // FTS5 syntax errors etc. — show inline instead of crashing the picker.
@@ -256,11 +258,15 @@ function runPicker(deps) {
     const date = deps.fmtDate(r.lastActivity);
     const sid = deps.shortSession(r.sessionId);
     const msgs = String(r.msgCount).padStart(4);
+    // Pin indicator: 📌 for color, * for --no-color. Always at the start of
+    // line 1, before the title/metadata. Empty string when not pinned.
+    const pinMarker = r.isPinned ? (args.noColor ? "* " : "📌 ") : "";
     // Recent-browse rows carry a synthesized title; lead with it when present.
     // FTS rows have r.title === undefined and fall back to the original layout.
-    const head = r.title
+    const headBody = r.title
       ? `${r.title} · ${proj}  ${date}  ${msgs} msgs  ${sid}`
       : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
+    const head = pinMarker + headBody;
     const snippet = deps.colorizeSnippet(r.snippet, false);
     const headTrunc = truncateToWidth(head, width - 2);
     const snipTrunc = snippet ? truncateToWidth(snippet, width - 4) : "";
@@ -365,7 +371,7 @@ function runPicker(deps) {
           truncateToWidth(
             "Enter resume" +
               dangerEntry +
-              "   Ctrl-F fork   Ctrl-R rename   Ctrl-O print id   Ctrl-D print path   Esc cancel",
+              "   Ctrl-F fork   Ctrl-R rename   Ctrl-P pin   Ctrl-O print id   Ctrl-D print path   Esc cancel",
             cols
           ) +
           ansi.reset
@@ -377,9 +383,28 @@ function runPicker(deps) {
     const bodyBottom = rows - 1;
     const bodyHeight = bodyBottom - bodyTop + 1;
 
+    // Locate the pinned/unpinned partition for the divider. firstUnpinnedIdx
+    // is the index of the first non-pinned row, or -1 if all rows are
+    // pinned (or empty). Divider only shows when BOTH partitions are present.
+    let firstUnpinnedIdx = -1;
+    for (let i = 0; i < results.length; i++) {
+      if (!results[i].isPinned) {
+        firstUnpinnedIdx = i;
+        break;
+      }
+    }
+    const hasDivider =
+      results.length > 0 && firstUnpinnedIdx > 0 && firstUnpinnedIdx < results.length;
+    const dividerText =
+      query && query.trim().length > 0 ? "── results ──" : "── recent ──";
+
     // Two lines per result (header + snippet). Compute visible window.
+    // Reserve one body row for the divider when it exists. The reservation
+    // is conservative (we reserve even when scrolled past the divider) for
+    // a stable maxVisible across cursor movement.
     const rowsPerResult = 2;
-    const maxVisible = Math.max(1, Math.floor(bodyHeight / rowsPerResult));
+    const usableHeight = hasDivider ? bodyHeight - 1 : bodyHeight;
+    const maxVisible = Math.max(1, Math.floor(usableHeight / rowsPerResult));
     if (cursor < scrollOffset) scrollOffset = cursor;
     if (cursor >= scrollOffset + maxVisible) scrollOffset = cursor - maxVisible + 1;
 
@@ -406,8 +431,26 @@ function runPicker(deps) {
     } else {
       const visible = results.slice(scrollOffset, scrollOffset + maxVisible);
       const dimBody = mode === "rename";
+      let dividerWritten = false;
       for (let i = 0; i < visible.length; i++) {
         const idx = scrollOffset + i;
+        // Insert the divider between the last pinned row and the first
+        // unpinned row IF both are within the visible window. The divider
+        // is render-only — the cursor cannot land on it, and `results`
+        // does not contain it as an entry.
+        if (
+          hasDivider &&
+          !dividerWritten &&
+          idx === firstUnpinnedIdx &&
+          scrollOffset < firstUnpinnedIdx &&
+          line <= bodyBottom
+        ) {
+          stdout.write(ansi.moveTo(line, 1));
+          stdout.write(ansi.dim + truncateToWidth(dividerText, listWidth) + ansi.reset);
+          line++;
+          dividerWritten = true;
+          if (line > bodyBottom) break;
+        }
         const r = visible[i];
         const selected = idx === cursor;
         const { line1, line2 } = buildResultLine(r, listWidth, selected, dimBody);
@@ -542,6 +585,41 @@ function runPicker(deps) {
     };
     stdout.on("resize", onResize);
 
+    function togglePin() {
+      const row = results[cursor];
+      if (!row) return;
+      const store = deps.sessionStore;
+      if (!store) return;
+      store.pins = Array.isArray(store.pins) ? store.pins : [];
+      const idx = store.pins.indexOf(row.sessionId);
+      if (idx >= 0) {
+        // Unpin: remove from pins.
+        store.pins.splice(idx, 1);
+      } else {
+        // Pin: prepend so newest pin is first (per design Decision 1).
+        store.pins.unshift(row.sessionId);
+      }
+      if (typeof deps.saveSessionStore === "function") {
+        try {
+          deps.saveSessionStore(store);
+        } catch (e) {
+          process.stderr.write(`ccsearch: could not save sessions.json: ${e.message}\n`);
+        }
+      }
+      // Preserve cursor on the same row through the re-ordering. The
+      // recentCache is invalidated to force re-partitioning; in FTS mode
+      // we just re-run the search (no cache).
+      const sessionIdToFollow = row.sessionId;
+      recentCache = null;
+      doSearch();
+      const newIdx = results.findIndex((r) => r.sessionId === sessionIdToFollow);
+      if (newIdx >= 0) {
+        cursor = newIdx;
+        // doSearch already rendered; re-render so cursor position updates.
+        render();
+      }
+    }
+
     function commitRename() {
       const row = results[cursor];
       // No selected row → silently bail back to browse mode. The Ctrl-R
@@ -640,6 +718,10 @@ function runPicker(deps) {
         render();
         return;
       }
+      // Ctrl-P: toggle pin state for the selected row. Persists immediately;
+      // re-runs the current search to apply the new ordering; keeps the
+      // cursor on the same row so the user can chain pin operations.
+      if (key.ctrl && key.name === "p") return togglePin();
       // Alt+Enter (key.meta) and Shift+Enter (key.shift, CSI-u terminals only)
       // route to the dangerous-resume action when armed. On terminals that do
       // not distinguish Shift+Enter from Enter, key.shift is false for plain

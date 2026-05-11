@@ -396,7 +396,10 @@ LIMIT ?
     });
     if (seen.size >= args.limit) break;
   }
-  return fillMeta(db, [...seen.values()]);
+  // Pinned rows that match the FTS query promote above ranked rows. Pinned
+  // rows that DON'T match the query are not injected here — pin ≠ override.
+  const filled = fillMeta(db, [...seen.values()]);
+  return applyPinOrdering(filled, args.sessionStore, args.limit);
 }
 
 function regexPostfilter(db, args, pattern) {
@@ -585,6 +588,37 @@ function normalizeTailContent(rawContent) {
   return s;
 }
 
+// applyPinOrdering partitions a result-row array into pinned-first + the rest.
+// Pinned rows preserve `sessionStore.pins` order (most-recently-pinned first).
+// Non-pinned rows preserve their incoming order (recent-most-first or
+// BM25-ranked depending on the caller). Each row is annotated with isPinned
+// for downstream rendering. The total is capped at `limit`; pinned rows
+// count toward the cap. See picker-pin-sessions/design.md §Decision 2.
+function applyPinOrdering(rows, sessionStore, limit) {
+  const pins = (sessionStore && Array.isArray(sessionStore.pins)) ? sessionStore.pins : [];
+  if (!pins.length) {
+    // No pins → annotate all rows as not pinned and return at most `limit`.
+    return rows.slice(0, Math.max(0, limit | 0)).map((r) => ({ ...r, isPinned: false }));
+  }
+  // Build a quick set + index map so we can preserve pin order in O(n).
+  const pinIndex = new Map();
+  for (let i = 0; i < pins.length; i++) pinIndex.set(pins[i], i);
+  const pinned = [];
+  const unpinned = [];
+  for (const r of rows) {
+    if (pinIndex.has(r.sessionId)) {
+      pinned.push({ ...r, isPinned: true });
+    } else {
+      unpinned.push({ ...r, isPinned: false });
+    }
+  }
+  // Sort pinned rows by their position in sessionStore.pins so pin-order
+  // matches what the user expects (newest pin first).
+  pinned.sort((a, b) => pinIndex.get(a.sessionId) - pinIndex.get(b.sessionId));
+  const out = pinned.concat(unpinned);
+  return out.slice(0, Math.max(0, limit | 0));
+}
+
 function recentConversations(db, { limit, projectFilter, sessionStore }) {
   // Step 1: most recent conversations across all (or one) projects.
   const projectExtra = projectFilter
@@ -663,7 +697,10 @@ LIMIT ?
       title,
     });
   }
-  return results;
+  // Pinned rows (from sessionStore.pins) sort to the top in pin-order. Rows
+  // not in the SQL recent-N don't get injected here — pinning promotes
+  // within the result set, not above it.
+  return applyPinOrdering(results, sessionStore, Math.max(1, limit | 0));
 }
 
 // --- Output --------------------------------------------------------------
@@ -880,9 +917,16 @@ const OPTIONS = [
     flags: ["--print-names"],
     group: "Index management",
     description:
-      "Print the saved-session-names config file (sessions.json) to stdout and exit. " +
-      "Read-only; emits `{}` when no config has been written yet. Useful for backups " +
-      "or shell pipelines (e.g., `ccsearch --print-names | jq '.names'`).",
+      "Print the picker config file (sessions.json — saved names AND pin list) to " +
+      "stdout and exit. Read-only; emits `{}` when no config has been written yet. " +
+      "Useful for backups or shell pipelines (e.g., `ccsearch --print-names | jq '.pins'`).",
+  },
+  {
+    flags: ["--unpin-all"],
+    group: "Index management",
+    description:
+      "Clear every pinned session (sessions.json.pins = []) and exit. Leaves saved " +
+      "names untouched. Idempotent. Useful as a one-shot cleanup outside the picker.",
   },
 
   // Dangerous
@@ -1034,6 +1078,7 @@ function parseArgs(argv) {
     indexStatus: false,
     dangerouslySkipPermissions: false,
     printNames: false,
+    unpinAll: false,
   };
   const rest = [];
   // Accept both `--flag value` (space-separated) and `--flag=value` (equals form).
@@ -1122,6 +1167,9 @@ function parseArgs(argv) {
         break;
       case "--print-names":
         args.printNames = true;
+        break;
+      case "--unpin-all":
+        args.unpinAll = true;
         break;
       default:
         if (a.startsWith("--")) {
@@ -1232,6 +1280,17 @@ async function main(argv) {
     }
     if (!body.endsWith("\n")) body += "\n";
     process.stdout.write(body);
+    return EXIT_OK;
+  }
+
+  // --unpin-all clears sessions.json.pins and exits. Leaves names untouched.
+  // Creates the file when missing (matches the pin-toggle write contract).
+  if (args.unpinAll) {
+    const store = loadSessionStore();
+    const oldLen = store.pins.length;
+    store.pins = [];
+    saveSessionStore(store);
+    process.stdout.write(`ccsearch: cleared ${oldLen} pin${oldLen === 1 ? "" : "s"}\n`);
     return EXIT_OK;
   }
 
@@ -1372,5 +1431,6 @@ if (process.env.CCSEARCH_TEST) {
     loadSessionStore,
     saveSessionStore,
     emptySessionStore,
+    applyPinOrdering,
   };
 }

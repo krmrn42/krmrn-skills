@@ -111,6 +111,7 @@ ccsearch "deploy" --format tsv | head -3
 | `Enter` | `cd <project> && claude --resume <id>` for the selected row |
 | `Ctrl-F` | `cd <project> && claude --fork-session --resume <id>` |
 | `Ctrl-R` | Rename the selected row (saved name persists, passed to `claude --name`) |
+| `Ctrl-P` | Pin / unpin the selected row (pinned rows sort to the top with a `📌` indicator) |
 | `Ctrl-O` | Print the session id and exit |
 | `Ctrl-D` | Print the original project path and exit |
 | `Backspace` | Delete the last query character |
@@ -142,7 +143,8 @@ And since Claude Code stores sessions per project (under `~/.claude/projects/<en
 | `--format text\|tsv` | output format | `text` on TTY, `tsv` when piped |
 | `--db-path PATH` | override `~/.claude/conversation-search.db` | — |
 | `--dangerously-skip-permissions` | arm the picker's Alt+Enter keybinding to resume with `claude --dangerously-skip-permissions` (see "Skip permissions on resume" below) | off |
-| `--print-names` | print the saved-session-names config (`sessions.json`) to stdout and exit | — |
+| `--print-names` | print the picker config (`sessions.json` — names + pins) to stdout and exit | — |
+| `--unpin-all` | clear every pinned session (leaves saved names untouched) and exit | — |
 
 `--regex` uses the Node [`RegExp`](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp) flavor compiled with the `m` (multiline) flag. Named groups syntax differs from Python's `re` module (`(?<name>…)` rather than `(?P<name>…)`); other common features (character classes, alternation, anchors, quantifiers, lookaround, backreferences) are the same.
 
@@ -171,6 +173,14 @@ Press **Ctrl-R** on any picker row to assign a memorable name. The prompt line s
 Saved names persist in `$XDG_CONFIG_HOME/krmrn42-skills/chat-search/sessions.json` (default `~/.config/...`). The file is human-editable JSON and safe to back up or sync via dotfiles. View it with `ccsearch --print-names`.
 
 On resume, the saved name flows through to `claude --name <name>` so the resumed session opens with the familiar label. This applies to plain resume (Enter), fork (Ctrl-F), and dangerous resume (Alt+Enter) — every resume action threads the name through automatically.
+
+### Pin a session (Ctrl-P)
+
+Press **Ctrl-P** on any picker row to pin it. Pinned rows surface at the top of the list (in pin-order, newest pin first), separated from the rest by a dim `── recent ──` divider (or `── results ──` in FTS mode). Each pinned row shows a `📌` indicator (or `*` with `--no-color`). Pressing Ctrl-P again unpins.
+
+Pin state lives in the same `sessions.json` as saved names. Pinning is global by session id — pins surface regardless of which project you're in. In FTS mode, pinning **does not override the query**: only pins whose content matches the typed query surface; pins that don't match are still hidden.
+
+The `--limit` flag bounds the total visible rows (pinned + non-pinned). If you pin more conversations than the limit, only the newest pins surface. Use `ccsearch --unpin-all` for a quick cleanup.
 
 ## Exit codes
 

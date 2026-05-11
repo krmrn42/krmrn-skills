@@ -817,6 +817,88 @@ case "$RC_NAME_OUT" in
 esac
 
 echo
+echo "Test 41: applyPinOrdering — partition, pin-order, limit, FTS-mode no-inject"
+APO_OUT="$(CCSEARCH_TEST=1 node -e '
+const { applyPinOrdering } = require(process.argv[1]);
+const rows = [
+  { sessionId: "A" }, { sessionId: "B" }, { sessionId: "C" }, { sessionId: "D" },
+];
+function check(label, expected, actual) {
+  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  if (a === e) console.log("OK", label);
+  else { console.log("FAIL", label, "expected", e, "got", a); process.exitCode = 1; }
+}
+function shape(rows) { return rows.map(r => r.sessionId + (r.isPinned ? "*" : "")); }
+check("no_pins",        ["A","B","C","D"],         shape(applyPinOrdering(rows, { pins: [] }, 10)));
+check("no_store",       ["A","B","C","D"],         shape(applyPinOrdering(rows, null, 10)));
+check("pinned_order",   ["B*","A*","C","D"],       shape(applyPinOrdering(rows, { pins: ["B","A"] }, 10)));
+check("limit_caps_total",["A*","B*"],              shape(applyPinOrdering(rows, { pins: ["A","B"] }, 2)));
+check("limit_excludes_unpinned",["A*"],            shape(applyPinOrdering(rows, { pins: ["A"] }, 1)));
+check("fts_no_inject",  ["C*","A","B","D"],        shape(applyPinOrdering(rows, { pins: ["Z","C"] }, 10)));
+check("limit_zero_returns_empty",[],               shape(applyPinOrdering(rows, { pins: ["A"] }, 0)));
+' "$CCSEARCH" 2>&1)"
+if echo "$APO_OUT" | grep -q '^FAIL'; then
+  FAIL=$((FAIL+1))
+  echo "  FAIL  T41.applyPinOrdering"
+  echo "$APO_OUT" | sed 's/^/         /'
+else
+  PASS=$((PASS+1))
+  echo "  PASS  T41.applyPinOrdering ($(echo "$APO_OUT" | grep -c '^OK') cases ok)"
+fi
+
+echo
+echo "Test 42: recentConversations + pins — partition end-to-end with fixture DB"
+PIN_REC_OUT="$(CCSEARCH_TEST=1 node -e '
+const { recentConversations } = require(process.argv[1]);
+const { DatabaseSync } = require("node:sqlite");
+const db = new DatabaseSync(process.argv[2], { readOnly: true });
+// Pin the OLDEST conversation (conv-aaaa). Expect: conv-aaaa first (pinned),
+// then the rest in recency order.
+const store = { version: 1, names: {}, pins: ["conv-aaaa-1111-1111-1111-111111111111"] };
+const rows = recentConversations(db, { limit: 10, projectFilter: null, sessionStore: store });
+console.log("FIRST_IS_PINNED", rows[0].isPinned, rows[0].sessionId.slice(0, 9));
+console.log("REST_NOT_PINNED", rows.slice(1).every(r => !r.isPinned) ? "yes" : "no");
+// Without store, no pinning; recent-first order
+const rows2 = recentConversations(db, { limit: 10, projectFilter: null });
+console.log("NO_STORE_NO_PIN", rows2.every(r => !r.isPinned) ? "yes" : "no");
+' "$CCSEARCH" "$DB" 2>&1)"
+case "$PIN_REC_OUT" in
+  *"FIRST_IS_PINNED true conv-aaaa"*"REST_NOT_PINNED yes"*"NO_STORE_NO_PIN yes"*)
+    PASS=$((PASS+1)); echo "  PASS  T42.recent_pinned_promoted" ;;
+  *)
+    FAIL=$((FAIL+1)); echo "  FAIL  T42.recent_pinned_promoted — got:" >&2
+    echo "$PIN_REC_OUT" | sed 's/^/         /' >&2 ;;
+esac
+
+echo
+echo "Test 43: --unpin-all clears pins, leaves names alone, exits 0"
+TMPCFG="$(mktemp -d -t ccsearch-cfg.XXXXXX)"
+mkdir -p "$TMPCFG/krmrn42-skills/chat-search"
+SESFILE="$TMPCFG/krmrn42-skills/chat-search/sessions.json"
+echo '{"version":1,"names":{"conv-x":"keep me"},"pins":["a","b","c"]}' > "$SESFILE"
+UNPIN_OUT="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --unpin-all 2>&1)"
+UNPIN_RC=$?
+assert_eq "T43.exit_code" "0" "$UNPIN_RC"
+assert_contains "T43.stdout_announces" "cleared 3 pin" "$UNPIN_OUT"
+AFTER="$(cat "$SESFILE")"
+assert_contains "T43.names_preserved" '"keep me"' "$AFTER"
+assert_contains "T43.pins_cleared" '"pins": []' "$AFTER"
+# Idempotency: re-run on empty pins
+UNPIN2_OUT="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --unpin-all 2>&1)"
+assert_contains "T43.idempotent" "cleared 0 pin" "$UNPIN2_OUT"
+# Missing file: creates one
+rm -f "$SESFILE"
+UNPIN3_OUT="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --unpin-all 2>&1)"
+UNPIN3_RC=$?
+assert_eq "T43.create_when_missing_exit" "0" "$UNPIN3_RC"
+if [[ -f "$SESFILE" ]]; then
+  PASS=$((PASS+1)); echo "  PASS  T43.create_when_missing_file_exists"
+else
+  FAIL=$((FAIL+1)); echo "  FAIL  T43.create_when_missing_file_exists" >&2
+fi
+rm -rf "$TMPCFG"
+
+echo
 echo "Test 26: drift guard — every parser flag appears in --help"
 # Extract long-form flags from source: lines like `case "--something":`. Strip
 # line-comment lines first so `case "--flag":` appearing inside a // comment
