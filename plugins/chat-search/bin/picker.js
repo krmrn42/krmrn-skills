@@ -107,6 +107,50 @@ function wrapToWidth(s, width) {
   return lines;
 }
 
+// --- Tmux helpers --------------------------------------------------------
+
+// sanitizeTmuxName strips control characters (tmux window-name slot can't
+// render them) and truncates to 40 visible chars with a trailing ellipsis.
+// Empty input falls back to "claude" so we always have a usable name.
+function sanitizeTmuxName(s) {
+  if (typeof s !== "string") return "claude";
+  // eslint-disable-next-line no-control-regex
+  let clean = s.replace(/[\x00-\x1f\x7f]/g, "");
+  if (clean.length === 0) return "claude";
+  if (clean.length > 40) clean = clean.slice(0, 39) + "…";
+  return clean;
+}
+
+// shellSingleQuote wraps a string in POSIX single quotes, escaping internal
+// single quotes the standard way (' → '\''). Used to build the inner shell
+// command passed to `tmux new-window` as its last positional arg — tmux
+// runs it via $SHELL -c so any user-supplied string must be quoted.
+function shellSingleQuote(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
+
+// buildTmuxNewWindowCommand returns the argv for `tmux new-window …`.
+// Window name resolution order: savedName → projectName → basename(projectPath)
+// → "claude" (defensive default). The inner claude command reuses
+// buildClaudeArgs so name passthrough stays in sync with non-tmux resume.
+function buildTmuxNewWindowCommand(row, opts) {
+  const path = require("node:path");
+  const savedName = (opts && opts.savedName) || null;
+  const nameSource =
+    (savedName && savedName.length > 0 && savedName) ||
+    (row.projectName && row.projectName.length > 0 && row.projectName) ||
+    (row.projectPath && path.basename(row.projectPath)) ||
+    "claude";
+  const windowName = sanitizeTmuxName(nameSource);
+  const cwd = row.projectPath || process.cwd();
+  // Reuse buildClaudeArgs so --name passthrough and any future actions stay
+  // consistent with the direct-spawn path. We shell-quote each piece for
+  // safety; tmux invokes $SHELL -c on the joined string.
+  const claudeArgs = buildClaudeArgs("resume", row, savedName);
+  const innerCmd = ["claude", ...claudeArgs].map(shellSingleQuote).join(" ");
+  return ["new-window", "-n", windowName, "-c", cwd, innerCmd];
+}
+
 // --- Claude argv builder -------------------------------------------------
 
 // buildClaudeArgs is the single source of truth for the argv passed to
@@ -164,7 +208,7 @@ function runPicker(deps) {
   let lastRenderTimer = null;
   let previewCache = new Map(); // sessionId -> rendered preview lines
   let lastDims = { rows: 0, cols: 0 };
-  let exitReason = null; // { type: "resume"|"fork"|"resume-dangerous"|"resume-remote-control"|"print-id"|"print-path"|"cancel", row }
+  let exitReason = null; // { type: "resume"|"fork"|"resume-dangerous"|"resume-remote-control"|"resume-tmux-window"|"print-id"|"print-path"|"cancel", row }
   // Recent-browse cache: populated on the first empty-query render, reused on
   // backspace-to-empty. Picker-session-scoped — not invalidated mid-session.
   let recentCache = null;
@@ -366,12 +410,15 @@ function runPicker(deps) {
       const dangerEntry = deps.dangerouslySkipPermissions
         ? "   " + ansi.fgYellow + "Alt-Enter dangerous" + ansi.reset + ansi.dim
         : "";
+      const tmuxEntry = deps.tmuxAvailable ? "   Ctrl-W tmux-window" : "";
       stdout.write(
         ansi.dim +
           truncateToWidth(
             "Enter resume" +
               dangerEntry +
-              "   Ctrl-F fork   Ctrl-R rename   Ctrl-P pin   Ctrl-T remote-control   Ctrl-O print id   Ctrl-D print path   Esc cancel",
+              "   Ctrl-F fork   Ctrl-R rename   Ctrl-P pin   Ctrl-T remote-control" +
+              tmuxEntry +
+              "   Ctrl-O print id   Ctrl-D print path   Esc cancel",
             cols
           ) +
           ansi.reset
@@ -548,6 +595,33 @@ function runPicker(deps) {
     return result.status ?? 0;
   }
 
+  function spawnTmuxNewWindow(row) {
+    teardown();
+    const savedName =
+      (deps.sessionStore && deps.sessionStore.names && deps.sessionStore.names[row.sessionId]) ||
+      null;
+    const tmuxArgs = buildTmuxNewWindowCommand(row, { savedName });
+    if (row.projectPath && !deps.isExistingDir(row.projectPath)) {
+      process.stderr.write(
+        `ccsearch: project path '${row.projectPath}' is not a directory; ` +
+          "tmux new-window will fall back to its own cwd.\n"
+      );
+    }
+    const result = childProc.spawnSync("tmux", tmuxArgs, { stdio: "inherit" });
+    if (result.error) {
+      if (result.error.code === "ENOENT") {
+        process.stderr.write(
+          "ccsearch: `tmux` not found on PATH. " +
+            "Install tmux or run ccsearch outside a tmux session.\n"
+        );
+        return deps.EXIT_ENV;
+      }
+      process.stderr.write(`ccsearch: spawning tmux failed: ${result.error.message}\n`);
+      return 3;
+    }
+    return result.status ?? 0;
+  }
+
   function handleAction(reason) {
     if (reason === "cancel") {
       teardown();
@@ -561,6 +635,7 @@ function runPicker(deps) {
     if (reason === "resume") return spawnClaude("resume", row);
     if (reason === "resume-dangerous") return spawnClaude("resume-dangerous", row);
     if (reason === "resume-remote-control") return spawnClaude("resume-remote-control", row);
+    if (reason === "resume-tmux-window") return spawnTmuxNewWindow(row);
     if (reason === "fork") return spawnClaude("fork", row);
     if (reason === "print-id") {
       teardown();
@@ -728,6 +803,19 @@ function runPicker(deps) {
       // as its positional argument; --name is suppressed (see
       // buildClaudeArgs / picker-remote-control-launch design Decision 2).
       if (key.ctrl && key.name === "t") return finish("resume-remote-control");
+      // Ctrl-W: spawn `tmux new-window` for the selected row. Requires
+      // running inside tmux ($TMUX set); --no-tmux disables. Outside tmux
+      // we print a one-line diagnostic and keep the picker open.
+      if (key.ctrl && key.name === "w") {
+        if (!deps.tmuxAvailable) {
+          process.stderr.write(
+            "ccsearch: Ctrl-W requires running inside tmux ($TMUX not set). " +
+              "Pass --no-tmux to silence this binding.\n"
+          );
+          return;
+        }
+        return finish("resume-tmux-window");
+      }
       // Alt+Enter (key.meta) and Shift+Enter (key.shift, CSI-u terminals only)
       // route to the dangerous-resume action when armed. On terminals that do
       // not distinguish Shift+Enter from Enter, key.shift is false for plain
@@ -790,5 +878,10 @@ module.exports = runPicker;
 // Test-only exports. Guarded so production behavior is unaffected; the tests
 // in bin/ccsearch.test.sh set CCSEARCH_TEST=1 before requiring this file.
 if (process.env.CCSEARCH_TEST) {
-  module.exports._test = { buildClaudeArgs };
+  module.exports._test = {
+    buildClaudeArgs,
+    buildTmuxNewWindowCommand,
+    sanitizeTmuxName,
+    shellSingleQuote,
+  };
 }

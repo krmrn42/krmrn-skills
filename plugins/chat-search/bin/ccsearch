@@ -929,6 +929,14 @@ const OPTIONS = [
       "Clear every pinned session (sessions.json.pins = []) and exit. Leaves saved " +
       "names untouched. Idempotent. Useful as a one-shot cleanup outside the picker.",
   },
+  {
+    flags: ["--no-tmux"],
+    group: "Options",
+    description:
+      "Disable the picker's Ctrl-W keybinding even when running inside tmux. Use " +
+      "this if your terminal setup (nested tmux, screen-inside-tmux, IDE-embedded " +
+      "shell) confuses the tmux passthrough.",
+  },
 
   // Dangerous
   {
@@ -1080,6 +1088,7 @@ function parseArgs(argv) {
     dangerouslySkipPermissions: false,
     printNames: false,
     unpinAll: false,
+    noTmux: false,
   };
   const rest = [];
   // Accept both `--flag value` (space-separated) and `--flag=value` (equals form).
@@ -1171,6 +1180,9 @@ function parseArgs(argv) {
         break;
       case "--unpin-all":
         args.unpinAll = true;
+        break;
+      case "--no-tmux":
+        args.noTmux = true;
         break;
       default:
         if (a.startsWith("--")) {
@@ -1390,6 +1402,9 @@ async function main(argv) {
       dangerouslySkipPermissions: args.dangerouslySkipPermissions,
       sessionStore,
       saveSessionStore,
+      // Tmux availability is computed once at startup. The user's $TMUX env
+      // var being set means we're inside tmux; --no-tmux is the kill switch.
+      tmuxAvailable: !!process.env.TMUX && !args.noTmux,
     });
     return result;
   }

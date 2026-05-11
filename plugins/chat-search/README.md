@@ -113,6 +113,7 @@ ccsearch "deploy" --format tsv | head -3
 | `Ctrl-R` | Rename the selected row (saved name persists, passed to `claude --name`) |
 | `Ctrl-P` | Pin / unpin the selected row (pinned rows sort to the top with a `📌` indicator) |
 | `Ctrl-T` | Resume with `claude --remote-control [name] --resume <id>` (uses saved name when set) |
+| `Ctrl-W` | Resume in a new tmux window (requires running inside tmux; `--no-tmux` disables) |
 | `Ctrl-O` | Print the session id and exit |
 | `Ctrl-D` | Print the original project path and exit |
 | `Backspace` | Delete the last query character |
@@ -146,6 +147,7 @@ And since Claude Code stores sessions per project (under `~/.claude/projects/<en
 | `--dangerously-skip-permissions` | arm the picker's Alt+Enter keybinding to resume with `claude --dangerously-skip-permissions` (see "Skip permissions on resume" below) | off |
 | `--print-names` | print the picker config (`sessions.json` — names + pins) to stdout and exit | — |
 | `--unpin-all` | clear every pinned session (leaves saved names untouched) and exit | — |
+| `--no-tmux` | disable the picker's Ctrl-W keybinding even when running inside tmux | — |
 
 `--regex` uses the Node [`RegExp`](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/RegExp) flavor compiled with the `m` (multiline) flag. Named groups syntax differs from Python's `re` module (`(?<name>…)` rather than `(?P<name>…)`); other common features (character classes, alternation, anchors, quantifiers, lookaround, backreferences) are the same.
 
@@ -188,6 +190,12 @@ The `--limit` flag bounds the total visible rows (pinned + non-pinned). If you p
 Press **Ctrl-T** on any picker row to launch `claude --remote-control [name] --resume <session-id>` in the conversation's project directory. When the row has a saved name (via Ctrl-R), the name is passed as `--remote-control <name>` — Claude Code's Remote Control consumes that name semantically, so `--name` is deliberately suppressed for this action to avoid double-display.
 
 Ctrl-T has no opt-in flag. If your Remote Control is unconfigured, `claude` will surface that error directly when launched.
+
+### Resume in a new tmux window (Ctrl-W)
+
+When you run the picker inside a tmux session (the picker detects `$TMUX`), pressing **Ctrl-W** spawns `tmux new-window` running `claude --resume <id>` (with `--name` if a saved name exists) in the conversation's project directory. The window's name is the saved name → project name → directory basename, sanitized for tmux's tab bar (control chars stripped, truncated to 40 chars).
+
+The new window receives focus; your previous pane is preserved (`prefix p` to return). Outside tmux, the binding is hidden from the status line and a no-op if pressed. Pass `--no-tmux` to disable the binding even inside tmux (useful for nested tmux, screen-inside-tmux, or IDE-embedded shells that confuse the passthrough).
 
 ## Exit codes
 

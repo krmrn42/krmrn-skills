@@ -817,6 +817,86 @@ case "$RC_NAME_OUT" in
 esac
 
 echo
+echo "Test 45: sanitizeTmuxName + shellSingleQuote — pure helpers"
+TMX_OUT="$(CCSEARCH_TEST=1 node -e '
+const { sanitizeTmuxName, shellSingleQuote } = require(process.argv[1])._test;
+function check(label, expected, actual) {
+  if (expected === actual) console.log("OK", label);
+  else { console.log("FAIL", label, "expected", JSON.stringify(expected), "got", JSON.stringify(actual)); process.exitCode = 1; }
+}
+check("empty_to_claude",   "claude", sanitizeTmuxName(""));
+check("null_to_claude",    "claude", sanitizeTmuxName(null));
+check("undef_to_claude",   "claude", sanitizeTmuxName(undefined));
+check("ascii_pass",        "foo bar", sanitizeTmuxName("foo bar"));
+check("strip_bel",         "foobar", sanitizeTmuxName("foo\x07bar"));
+check("strip_null",        "foobar", sanitizeTmuxName("foo\x00bar"));
+check("strip_del",         "foobar", sanitizeTmuxName("foo\x7fbar"));
+check("truncate_long",     "a".repeat(39) + "…", sanitizeTmuxName("a".repeat(50)));
+check("exactly_40_ok",     "a".repeat(40), sanitizeTmuxName("a".repeat(40)));
+check("strip_then_empty",  "claude", sanitizeTmuxName("\x01\x02\x03"));
+// shellSingleQuote
+check("sq_plain",          "'\''foo'\''", shellSingleQuote("foo"));
+check("sq_with_space",     "'\''hello world'\''", shellSingleQuote("hello world"));
+check("sq_with_sq",        "'\''foo'\''\\'\'''\''bar'\''", shellSingleQuote("foo'\''bar"));
+' "$HERE/picker.js" 2>&1)"
+if echo "$TMX_OUT" | grep -q '^FAIL'; then
+  FAIL=$((FAIL+1))
+  echo "  FAIL  T45.tmux_helpers"
+  echo "$TMX_OUT" | sed 's/^/         /'
+else
+  PASS=$((PASS+1))
+  echo "  PASS  T45.tmux_helpers ($(echo "$TMX_OUT" | grep -c '^OK') cases ok)"
+fi
+
+echo
+echo "Test 46: buildTmuxNewWindowCommand — name resolution + cwd + inner command"
+BTW_OUT="$(CCSEARCH_TEST=1 node -e '
+const { buildTmuxNewWindowCommand } = require(process.argv[1])._test;
+function check(label, expected, actual) {
+  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  if (a === e) console.log("OK", label);
+  else { console.log("FAIL", label, "expected", e, "got", a); process.exitCode = 1; }
+}
+const row1 = { sessionId: "abc", projectPath: "/p/alpha", projectName: "alpha" };
+check("saved_name_wins", ["new-window","-n","my chat","-c","/p/alpha","'\''claude'\'' '\''--name'\'' '\''my chat'\'' '\''--resume'\'' '\''abc'\''"],
+  buildTmuxNewWindowCommand(row1, { savedName: "my chat" }));
+check("no_name_projectName", ["new-window","-n","alpha","-c","/p/alpha","'\''claude'\'' '\''--resume'\'' '\''abc'\''"],
+  buildTmuxNewWindowCommand(row1, { savedName: null }));
+check("no_projectName_basename", ["new-window","-n","beta","-c","/p/beta","'\''claude'\'' '\''--resume'\'' '\''xyz'\''"],
+  buildTmuxNewWindowCommand({ sessionId: "xyz", projectPath: "/p/beta" }, { savedName: null }));
+check("no_path_fallback_claude", ["new-window","-n","claude","-c",process.cwd(),"'\''claude'\'' '\''--resume'\'' '\''qqq'\''"],
+  buildTmuxNewWindowCommand({ sessionId: "qqq" }, { savedName: null }));
+check("long_name_truncated", "a".repeat(39) + "…",
+  buildTmuxNewWindowCommand(row1, { savedName: "a".repeat(50) })[2]);
+check("control_name_stripped", "clean",
+  buildTmuxNewWindowCommand(row1, { savedName: "clean\x07\x00" })[2]);
+' "$HERE/picker.js" 2>&1)"
+if echo "$BTW_OUT" | grep -q '^FAIL'; then
+  FAIL=$((FAIL+1))
+  echo "  FAIL  T46.buildTmuxNewWindowCommand"
+  echo "$BTW_OUT" | sed 's/^/         /'
+else
+  PASS=$((PASS+1))
+  echo "  PASS  T46.buildTmuxNewWindowCommand ($(echo "$BTW_OUT" | grep -c '^OK') cases ok)"
+fi
+
+echo
+echo "Test 47: --no-tmux parses + --help mentions Ctrl-W when relevant"
+nt_out="$(CCSEARCH_TEST=1 node -e '
+const { parseArgs } = require(process.argv[1]);
+const on = parseArgs(["--no-tmux"]);
+const off = parseArgs([]);
+console.log("on", on.noTmux);
+console.log("off", off.noTmux);
+' "$CCSEARCH" 2>&1)"
+case "$nt_out" in
+  *"on true"*"off false"*) PASS=$((PASS+1)); echo "  PASS  T47.parser_branch" ;;
+  *)                       FAIL=$((FAIL+1)); echo "  FAIL  T47.parser_branch — got: $nt_out" >&2 ;;
+esac
+help_for_nt="$("$CCSEARCH" --help 2>&1)"
+assert_contains "T47.help_mentions_no_tmux" "--no-tmux" "$help_for_nt"
+
+echo
 echo "Test 44: --help mentions all new picker keybindings (Ctrl-R/P/T)"
 help_out="$("$CCSEARCH" --help 2>&1)"
 assert_contains "T44.help_mentions_ctrl_r" "Ctrl-R" "$help_out"
