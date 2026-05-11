@@ -554,17 +554,194 @@ function renderPreview(db, sessionId, useColor) {
 
 // --- Argument parsing ----------------------------------------------------
 
+// Single source of truth for --help. The drift-guard test in ccsearch.test.sh
+// diffs the long-form flags in OPTIONS against the `case "--…":` lines in
+// parseArgs and fails if they disagree, so every parser flag must appear here.
+const OPTIONS = [
+  // Core
+  {
+    flags: ["-h", "--help"],
+    group: "Options",
+    description: "Show this help message and exit.",
+  },
+  {
+    flags: ["-i", "--interactive"],
+    group: "Options",
+    description:
+      "Open the built-in TUI picker. Inside it: Enter resumes the selected " +
+      "conversation, Ctrl-F forks it, Ctrl-O prints the session id, Ctrl-D " +
+      "prints the project path, arrow keys / PgUp / PgDn navigate, Esc cancels.",
+  },
+
+  // Filters
+  {
+    flags: ["--regex"],
+    placeholder: "PAT",
+    group: "Filters",
+    description:
+      "Post-filter results with this regex (Node RegExp flavor, `m` flag). " +
+      "Without a positional query, requires --scan.",
+  },
+  {
+    flags: ["--scan"],
+    group: "Filters",
+    description:
+      "With --regex and no positional query, full-scan all messages. Required " +
+      "as an explicit acknowledgment because the scan is slow on large indexes.",
+  },
+  {
+    flags: ["--include-tools"],
+    group: "Filters",
+    description:
+      "Also search tool_use / tool_result rows (excluded by default). " +
+      "Mutually exclusive with --only-user.",
+  },
+  {
+    flags: ["--only-user"],
+    group: "Filters",
+    description:
+      "Search only user rows (exclude assistant and tool rows). " +
+      "Mutually exclusive with --include-tools.",
+  },
+  {
+    flags: ["--project"],
+    placeholder: "SUBSTR",
+    group: "Filters",
+    description: "Filter by case-insensitive substring of project name or path.",
+  },
+  {
+    flags: ["--since"],
+    placeholder: "YYYY-MM-DD",
+    group: "Filters",
+    description: "Only include messages on or after this date.",
+  },
+
+  // Output
+  {
+    flags: ["--limit"],
+    placeholder: "N",
+    group: "Output",
+    description: "Maximum conversations returned. Default: 20.",
+  },
+  {
+    flags: ["--format"],
+    placeholder: "text|tsv",
+    group: "Output",
+    description:
+      "Output format. Default: text on a TTY, tsv when stdout is piped.",
+  },
+  {
+    flags: ["--no-color"],
+    group: "Output",
+    description: "Disable ANSI color in text output.",
+  },
+  {
+    flags: ["--preview"],
+    placeholder: "SESSION_ID",
+    group: "Output",
+    description:
+      "Render a turn-by-turn preview of the named session and exit (read-only).",
+  },
+
+  // Index management
+  {
+    flags: ["--db-path"],
+    placeholder: "PATH",
+    group: "Index management",
+    description:
+      "Override the index DB path. Default: " +
+      "$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db (or $CCSEARCH_DB if set).",
+  },
+  {
+    flags: ["--reindex"],
+    group: "Index management",
+    description:
+      "Force a full rebuild of the plugin-owned index from JSONL files, then exit. " +
+      "Applies only to the plugin-owned index.",
+  },
+  {
+    flags: ["--index-status"],
+    group: "Index management",
+    description:
+      "Print index DB path, size, message and conversation counts, last-refresh " +
+      "time, and any pending files. Applies only to the plugin-owned index.",
+  },
+];
+
+const HELP_WIDTH = 80;
+const HELP_FLAG_COL = 28;
+
+function wrapText(text, width) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = "";
+  for (const w of words) {
+    if (cur.length === 0) {
+      cur = w;
+    } else if (cur.length + 1 + w.length <= width) {
+      cur += " " + w;
+    } else {
+      lines.push(cur);
+      cur = w;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [""];
+}
+
+function formatOptionEntry(entry) {
+  const flagPart = entry.flags.join(", ");
+  return entry.placeholder ? flagPart + " " + entry.placeholder : flagPart;
+}
+
 function buildHelp() {
-  return [
+  const synopsis = [
     "usage: ccsearch [-h] [-i] [--regex PAT] [--scan]",
     "                [--include-tools | --only-user]",
     "                [--project SUBSTR] [--since YYYY-MM-DD] [--limit N]",
-    "                [--format text|tsv] [--db-path PATH] [--no-color]",
-    "                [--preview SESSION_ID]",
+    "                [--format text|tsv] [--no-color]",
+    "                [--db-path PATH] [--preview SESSION_ID]",
+    "                [--reindex | --index-status]",
     "                [query]",
-    "",
-    "Relevance-ranked full-text search across local Claude Code conversations.",
-    "",
+  ];
+  const description =
+    "Relevance-ranked full-text search across local Claude Code conversations.";
+  const positional = [
+    "Positional arguments:",
+    "  query                       FTS5 query (phrases \"…\", prefix term*, NEAR,",
+    "                              AND/OR/NOT). Optional when -i, --regex --scan,",
+    "                              --preview, --reindex, or --index-status is used.",
+  ];
+
+  // Render OPTIONS grouped, with wrapped descriptions.
+  const optionsLines = [];
+  const descWidth = HELP_WIDTH - HELP_FLAG_COL - 2; // 2 for the leading "  "
+  let lastGroup = null;
+  for (const opt of OPTIONS) {
+    if (opt.group !== lastGroup) {
+      if (lastGroup !== null) optionsLines.push("");
+      optionsLines.push(opt.group + ":");
+      lastGroup = opt.group;
+    }
+    const flagStr = formatOptionEntry(opt);
+    const descLines = wrapText(opt.description, descWidth);
+    if (flagStr.length + 1 > HELP_FLAG_COL) {
+      // Flag column overflows — put description on the next line(s) instead.
+      optionsLines.push("  " + flagStr);
+      for (const line of descLines) {
+        optionsLines.push("  " + " ".repeat(HELP_FLAG_COL) + line);
+      }
+    } else {
+      optionsLines.push(
+        "  " + flagStr.padEnd(HELP_FLAG_COL) + descLines[0]
+      );
+      for (let i = 1; i < descLines.length; i++) {
+        optionsLines.push("  " + " ".repeat(HELP_FLAG_COL) + descLines[i]);
+      }
+    }
+  }
+
+  const examples = [
     "Examples:",
     '  ccsearch "session timeout"',
     "  ccsearch -i",
@@ -572,10 +749,34 @@ function buildHelp() {
     `  ccsearch "auth" --regex 'TOKEN_[A-F0-9]{8}'`,
     `  ccsearch --regex 'TOKEN_[A-F0-9]{8}' --scan`,
     '  ccsearch "deploy" --project alpha --since 2026-04-01',
+  ];
+  const notes = [
+    "Notes:",
+    "  TSV columns:  session_id, project, project_path, date, messages_count,",
+    "                snippet, score",
+    "  Constraints:  --only-user and --include-tools are mutually exclusive;",
+    "                --regex without a positional query requires --scan;",
+    "                --reindex and --index-status apply only to the plugin-owned",
+    "                index (cannot be combined with --db-path / $CCSEARCH_DB).",
+    "  Exit codes:   0 success (zero matches is success); 1 user error (bad regex,",
+    "                unparseable date, conflicting flags); 2 environment error",
+    "                (DB missing, schema drift, unsupported Node, no TTY for -i);",
+    "                3 internal error.",
+    "  Runtime:      Node.js ≥ 22.5 (uses the built-in node:sqlite module).",
+    "                No npm dependencies.",
+  ];
+  return [
+    ...synopsis,
     "",
-    "TSV columns: session_id, project, project_path, date, messages_count, snippet, score",
+    description,
     "",
-    "Runtime: Node.js ≥ 22.5 (uses the built-in node:sqlite module). No npm dependencies.",
+    ...positional,
+    "",
+    ...optionsLines,
+    "",
+    ...examples,
+    "",
+    ...notes,
   ].join("\n");
 }
 
@@ -617,6 +818,8 @@ function parseArgs(argv) {
       rest.push(...expanded.slice(i + 1));
       break;
     }
+    // Long-form flag cases use `case "--flag":` on its own line. The drift-guard
+    // test (ccsearch.test.sh) scans for that idiom to compare against --help.
     switch (a) {
       case "-h":
       case "--help":

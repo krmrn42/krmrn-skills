@@ -434,6 +434,60 @@ code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color -i > /dev/null 2>&1 < /dev/null
 assert_eq        "T22.exit_2" "2" "$code"
 assert_contains  "T22.tty_message" "requires a TTY" "$out"
 
+echo
+echo "Test 23: --help exits 0, writes to stdout, stderr is empty"
+out_stdout="$("$CCSEARCH" --help 2>/dev/null)"
+out_stderr="$("$CCSEARCH" --help 2>&1 >/dev/null)"
+code="$("$CCSEARCH" --help >/dev/null 2>&1; echo $?)"
+assert_eq        "T23.exit_0"      "0" "$code"
+assert_contains  "T23.stdout_used" "usage:" "$out_stdout"
+assert_eq        "T23.stderr_empty" "" "$out_stderr"
+
+echo
+echo "Test 24: -h short form matches --help byte-for-byte"
+out_h="$("$CCSEARCH" -h 2>/dev/null)"
+out_long="$("$CCSEARCH" --help 2>/dev/null)"
+if [ "$out_h" = "$out_long" ]; then
+  PASS=$((PASS+1)); echo "  PASS  T24.short_form_matches"
+else
+  FAIL=$((FAIL+1)); echo "  FAIL  T24.short_form_matches — -h and --help differ" >&2
+fi
+
+echo
+echo "Test 25: --help overrides other flags (no DB access, no query attempt)"
+# Even with a bogus DB path and contradictory flags, --help should exit 0
+out="$(CCSEARCH_DB=/nonexistent/no.db "$CCSEARCH" --help --regex 'foo' --limit 5 2>&1)"
+code="$(CCSEARCH_DB=/nonexistent/no.db "$CCSEARCH" --help --regex 'foo' --limit 5 >/dev/null 2>&1; echo $?)"
+assert_eq        "T25.exit_0_override" "0" "$code"
+assert_contains  "T25.help_printed"    "usage:" "$out"
+
+echo
+echo "Test 26: drift guard — every parser flag appears in --help"
+# Extract long-form flags from source: lines like `case "--something":`. Strip
+# line-comment lines first so `case "--flag":` appearing inside a // comment
+# (documenting the convention) doesn't get picked up as a real parser case.
+PARSER_FLAGS=$(grep -v -E '^[[:space:]]*//' "$CCSEARCH" \
+  | grep -oE 'case "--[a-z][a-z-]+"' \
+  | sed -E 's/case "(.*)"/\1/' \
+  | sort -u)
+# Extract long-form flags from --help output (any --token)
+HELP_FLAGS=$("$CCSEARCH" --help 2>/dev/null | grep -oE -- '--[a-z][a-z-]+' | sort -u)
+MISSING_IN_HELP=$(comm -23 <(echo "$PARSER_FLAGS") <(echo "$HELP_FLAGS"))
+EXTRA_IN_HELP=$(comm -13 <(echo "$PARSER_FLAGS") <(echo "$HELP_FLAGS"))
+if [ -z "$MISSING_IN_HELP" ]; then
+  PASS=$((PASS+1)); echo "  PASS  T26.parser_flags_all_in_help"
+else
+  FAIL=$((FAIL+1)); echo "  FAIL  T26.parser_flags_all_in_help — missing in help:" >&2
+  echo "$MISSING_IN_HELP" | sed 's/^/         /' >&2
+fi
+# An extra flag in help (mentioned but not parseable) is also a bug worth catching.
+if [ -z "$EXTRA_IN_HELP" ]; then
+  PASS=$((PASS+1)); echo "  PASS  T26.no_phantom_help_flags"
+else
+  FAIL=$((FAIL+1)); echo "  FAIL  T26.no_phantom_help_flags — flags in help but not parsed:" >&2
+  echo "$EXTRA_IN_HELP" | sed 's/^/         /' >&2
+fi
+
 # --- Summary ------------------------------------------------------------
 
 echo

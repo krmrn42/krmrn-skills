@@ -1,27 +1,24 @@
 ## 1. Inventory and layout draft
 
-- [ ] 1.1 List every long-form flag accepted by `parseArgs` in `plugins/chat-search/bin/ccsearch` and pair each with the wording used in the README's "Flag reference" table; flag any mismatch between accepted flags and README rows for explicit reconciliation.
-- [ ] 1.2 Draft the new help layout on paper / scratch buffer: synopsis line(s), one-line description, `Positional arguments:`, `Options:` groups (filters, output, index management), `Examples:`, `Notes:` (TSV columns, exit codes, runtime). Confirm column widths (flag column ~28 chars, 2-space outer indent) render cleanly at 80-col terminal width.
+- [x] 1.1 List every long-form flag accepted by `parseArgs` in `plugins/chat-search/bin/ccsearch` and pair each with the wording used in the README's "Flag reference" table; flag any mismatch between accepted flags and README rows for explicit reconciliation.
+- [x] 1.2 Draft the new help layout on paper / scratch buffer: synopsis line(s), one-line description, `Positional arguments:`, `Options:` groups (filters, output, index management), `Examples:`, `Notes:` (TSV columns, exit codes, runtime). Confirm column widths (flag column ~28 chars, 2-space outer indent) render cleanly at 80-col terminal width.
 
 ## 2. Implement OPTIONS table and `buildHelp` rewrite
 
-- [ ] 2.1 In `plugins/chat-search/bin/ccsearch`, introduce a local `const OPTIONS = [...]` array immediately above `buildHelp()`. Each entry: `{ flags, placeholder, group, description, defaultText }`. Cover every flag listed in §1.1 plus `-h/--help` and the `[query]` positional.
-- [ ] 2.2 Add a short formatter (`formatOption(entry, flagColWidth)`) that produces a flag column padded to `flagColWidth`, then the description wrapped at terminal-ish width (hard-coded 80 cols; continuation lines indent to the flag column).
-- [ ] 2.3 Rewrite `buildHelp()` to emit, in order: synopsis (mostly preserved from current), one-line description, `Positional arguments:` block (`[query]`), `Options:` headers per group iterating the OPTIONS table, `Examples:` block (preserved from current), `Notes:` block listing TSV columns, exit codes 0/1/2/3, and the inter-flag constraints (`--only-user`/`--include-tools` mutex; `--regex` without query requires `--scan`; `--format` ∈ {`text`,`tsv`}; `--since` is `YYYY-MM-DD`; `--limit` is positive integer; runtime ≥ Node 22.5).
-- [ ] 2.4 Add a one-line comment above `parseArgs`'s option `switch` documenting the `case "--flag":` convention that the drift-guard test relies on.
+- [x] 2.1 In `plugins/chat-search/bin/ccsearch`, introduce a local `const OPTIONS = [...]` array immediately above `buildHelp()`. Each entry: `{ flags, placeholder, group, description }`. Covers every flag plus `-h/--help` and the `[query]` positional.
+- [x] 2.2 Add a short formatter (`wrapText` + `formatOptionEntry`) that produces a flag column padded to `HELP_FLAG_COL` (28), then the description wrapped at `HELP_WIDTH - HELP_FLAG_COL - 2` width; continuation lines indent to the flag column.
+- [x] 2.3 Rewrite `buildHelp()` to emit, in order: synopsis, one-line description, `Positional arguments:`, grouped `Options:` / `Filters:` / `Output:` / `Index management:` blocks iterating OPTIONS, `Examples:`, `Notes:` (TSV columns, constraints, exit codes 0/1/2/3, runtime).
+- [x] 2.4 Added a `// Long-form flag cases use \`case "--flag":\` on its own line.` comment above `parseArgs`'s option `switch` documenting the convention the drift-guard test relies on.
 
 ## 3. Drift-guard test
 
-- [ ] 3.1 In `plugins/chat-search/bin/ccsearch.test.sh`, add an assertion block that:
-  - extracts the set of long-form flags from the source: `grep -oE 'case "--[a-z][a-z-]+"' bin/ccsearch | sort -u`,
-  - extracts the set of long-form flags from `bin/ccsearch --help`: `bin/ccsearch --help | grep -oE -- '--[a-z][a-z-]+' | sort -u`,
-  - diffs the two sets and fails (non-zero exit) with a clear message if any flag is in the parser but not in help (or vice versa).
-- [ ] 3.2 Add an assertion that `bin/ccsearch --help` exits `0`, writes to stdout, and produces empty stderr; and that `bin/ccsearch -h` output equals `bin/ccsearch --help` output byte-for-byte.
-- [ ] 3.3 Add an assertion that `bin/ccsearch --help --regex foo --limit 5` exits `0` and prints help (does not attempt a query).
+- [x] 3.1 Added Test 26 in `bin/ccsearch.test.sh` extracting parser flags (`grep -v // | grep -oE 'case "--…"'`) and help flags (`--help | grep -oE -- '--…'`), comm-diffing both directions. Comment lines are stripped before the grep so the convention comment doesn't false-positive.
+- [x] 3.2 Test 23 added: `--help` exits 0, writes to stdout, stderr empty. Test 24 added: `-h` output equals `--help` output byte-for-byte.
+- [x] 3.3 Test 25 added: `--help --regex foo --limit 5` (with a bogus DB) exits 0 and prints help.
 
 ## 4. Verify
 
-- [ ] 4.1 Run `bash plugins/chat-search/bin/ccsearch.test.sh` locally and confirm exit `0` with all new assertions executed (assertion log lines visible in output).
-- [ ] 4.2 Manually inspect `bin/ccsearch --help` output at an 80-col terminal; verify each section header appears, every parser flag has a description, and the layout matches the design's example block.
-- [ ] 4.3 Negative test: temporarily add a fake `case "--xyzzy":` branch to `parseArgs` without touching `buildHelp`, rerun the test, confirm it fails with a message naming `--xyzzy`, then revert.
-- [ ] 4.4 Run `make lint-skills-strict` (or `make lint-skills`) from the repo root to confirm no skill / manifest regressions were introduced (no skill files are changed, but the linter runs project-wide).
+- [x] 4.1 `bash plugins/chat-search/bin/ccsearch.test.sh` → 56 PASS, 0 FAIL.
+- [x] 4.2 Manually inspected `bin/ccsearch --help` output — all sections present, every parser flag has a description, layout clean at 80 cols.
+- [x] 4.3 Negative test: injected a fake `case "--xyzzy":` branch; drift guard failed with `T26.parser_flags_all_in_help — missing in help: --xyzzy`. Restored.
+- [x] 4.4 `make lint-skills` → exit 0.
