@@ -57,6 +57,33 @@
         "bm25",
         "node-sqlite"
       ]
+    },
+    {
+      "name": "prdspec",
+      "source": "./plugins/prdspec",
+      "description": "Implements the Requirements Management Framework end-to-end — PM exploration → Pitch (PRD) → Epics → User Stories → tracker push, optimized for AI-agent-driven delivery and PLG. Four user-invoked slash commands — /prd (PRD synthesis with exploration snapshotting and gap-protocol questions), /epics (epic shaping in explore-vs-direct modes with explicit inherited-PRD pointers), /stories (story decomposition with ripgrep-driven implementer context and pinned project-knowledge anchors), /push (tracker-agnostic mirroring with flag registration; reads tracker + flag-platform from the host project's AGENTS.md). Three templates (PRD/Epic/Story) and six conventions (frontmatter, gap-protocol, no-fabrication, parent-chain, flag-naming, workspace-layout). Tool-agnostic runbooks bound to the filesystem backend via tools.md — MCP migration path is a single-file rewrite. Trigger phrases: 'write a PRD', 'shape epics for', 'decompose this epic into stories', 'push this epic to the tracker', 'mirror to Jira/Linear/GitHub Projects', 'draft a pitch'. Not for: brainstorming product strategy from scratch (use after PM exploration converges), tracker administration, or general project documentation.",
+      "version": "0.1.0",
+      "author": {
+        "name": "krmrn42"
+      },
+      "category": "product",
+      "keywords": [
+        "prd",
+        "pitch",
+        "shape-up",
+        "epics",
+        "user-stories",
+        "requirements",
+        "product-management",
+        "issue-tracker",
+        "feature-flags",
+        "plg",
+        "agentic-development",
+        "spec-driven",
+        "fresh-agent-run",
+        "anchors",
+        "gap-protocol"
+      ]
     }
   ]
 }

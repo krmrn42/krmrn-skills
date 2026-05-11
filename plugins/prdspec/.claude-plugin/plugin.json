@@ -1,0 +1,22 @@
+{
+  "name": "prdspec",
+  "version": "0.1.0",
+  "description": "Requirements Management Framework as a Claude Code skill — PM exploration → PRD → Epics → Stories → tracker. Four slash commands (/prd, /epics, /stories, /push) and one shared knowledge skill carrying templates, conventions, and the verb→tool binding. Tracker-agnostic: /push reads the host project's AGENTS.md to learn which issue tracker and flag platform to drive.",
+  "author": {
+    "name": "krmrn42"
+  },
+  "license": "MIT",
+  "keywords": [
+    "prd",
+    "pitch",
+    "shape-up",
+    "epics",
+    "user-stories",
+    "requirements",
+    "product-management",
+    "issue-tracker",
+    "feature-flags",
+    "plg",
+    "agentic-development"
+  ]
+}
