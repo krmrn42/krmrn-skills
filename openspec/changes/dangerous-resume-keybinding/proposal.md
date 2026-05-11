@@ -1,0 +1,33 @@
+## Why
+
+The picker's Enter resume spawns `claude --resume <id>` directly (`bin/picker.js:388-391`), and every tool call Claude wants to make then triggers a permission prompt. For users who already trust their working context — short turnaround projects, scratch repos, throwaway worktrees, well-fenced sandbox dirs — those prompts are friction with no upside. Claude Code ships `--dangerously-skip-permissions` exactly for that case. Right now, getting it via `ccsearch` means picking a row, copying the session id, and rebuilding the command by hand. The natural shape is to expose the flag in the picker: a single extra keystroke (Alt+Enter) on a row to resume it with permissions skipped. The flag's name is genuinely warning the user; we keep that warning visible and require an explicit CLI opt-in so the keystroke can never fire by accident on a fresh `ccsearch` invocation.
+
+## What Changes
+
+- New CLI flag `--dangerously-skip-permissions` (no short form). Mirrors Claude Code's own flag name 1:1 so users recognize it. **Without** this flag, every existing behavior is unchanged; the new keybinding is inert.
+- **With** the flag set, the picker arms a new keybinding **Alt+Enter** (Node readline reports `{ name: "return", meta: true }`) that resumes the selected conversation as if the user had run `claude --dangerously-skip-permissions --resume <id>` from the project directory. The `spawnSync("claude", …)` call adds the flag to the args array; everything else (cwd handling, error reporting, exit code propagation) is identical to plain Enter.
+- **Shift+Enter** is added as a best-effort second binding for the same action: when the terminal sends a distinguishable Shift+Enter sequence (CSI-u-aware terminals like Kitty / WezTerm / iTerm2-with-CSIu, Windows Terminal with enhanced keyboard mode), it triggers dangerous resume. On terminals that send plain `\r` for both Enter and Shift+Enter (the majority — xterm, GNOME Terminal, macOS Terminal.app default, tmux without passthrough), Shift+Enter is indistinguishable from Enter and falls through to normal resume. This is documented explicitly so users on unsupported terminals know Alt+Enter is the reliable path.
+- The picker's footer help line is updated when the flag is armed: a new entry `Alt-Enter dangerous` appears next to the existing `Enter resume`, styled in yellow (`ansi.fgYellow` — already imported in `picker.js`) so the danger is visible at a glance. When the flag is **not** armed, the help line is unchanged and the binding is silent.
+- One-shot output (`runOneShot` / `--list` / `--format=text`) is **unchanged**. The dangerous flag is picker-only. If a user wants the dangerous flag in a copy-paste line, they can append it themselves — but `resumeOneLiner` doesn't carry it. The reasoning: text output is read and then executed manually; the picker is direct-spawn, which is the higher-blast-radius surface that warrants the affordance.
+- Ctrl-F (fork) is **not** wired to the dangerous flag in this change. Reason: the fork flow creates a new session id and we don't yet have a clear keystroke for "dangerous fork" that won't collide with the existing bindings. Out of scope; documented as a possible follow-up.
+- Help text additions: `ccsearch --help` gets a new flag entry for `--dangerously-skip-permissions` (description: "arm the Alt+Enter / Shift+Enter binding in the picker to resume the selected conversation with `claude --dangerously-skip-permissions`. Off by default. The flag has no effect on one-shot output."). The picker's in-screen help line gains the yellow `Alt-Enter dangerous` entry as above.
+
+## Capabilities
+
+### New Capabilities
+
+- `ccsearch-dangerous-resume`: Defines the opt-in flag, the Alt+Enter primary keybinding, the Shift+Enter best-effort secondary binding, the styling/visibility of the picker help line when armed, the exact `claude` argv produced by the dangerous resume action, and what one-shot mode does (nothing — preserved unchanged).
+
+### Modified Capabilities
+
+<!-- None. -->
+
+## Impact
+
+- **Code**: `plugins/chat-search/bin/ccsearch` — `parseArgs` gains a `case "--dangerously-skip-permissions":` branch setting `args.dangerouslySkipPermissions = true`. The `deps` object passed to `runPicker` (`bin/ccsearch:820-836`) gains `dangerouslySkipPermissions: args.dangerouslySkipPermissions`. `plugins/chat-search/bin/picker.js` — `onKeypress` gains `if ((key.meta || key.shift) && key.name === "return") return finish("resume-dangerous")` ahead of the plain-`return` branch; `handleAction` gains a `if (reason === "resume-dangerous") return spawnClaude("resume-dangerous", row);` branch; `spawnClaude` learns one new action that adds `"--dangerously-skip-permissions"` to its argv array (when, and only when, `deps.dangerouslySkipPermissions === true`). The picker's help line is updated in `render` to include the yellow `Alt-Enter dangerous` entry only when the flag is set.
+- **Help text**: `buildHelp` in `bin/ccsearch` gains one entry. Coordinated with the in-flight `improve-ccsearch-help` change exactly as the parallel `interactive-by-default` change is — whichever lands first, the other rebases its one-line surface; the drift-guard test in `improve-ccsearch-help` catches a missing entry.
+- **Tests**: `plugins/chat-search/bin/ccsearch.test.sh` — one new assertion that `ccsearch --dangerously-skip-permissions --help` exits 0 (a smoke that the new parser branch doesn't crash). A second assertion calls the existing `CCSEARCH_TEST` export pattern to test that `parseArgs(["--dangerously-skip-permissions"]).dangerouslySkipPermissions === true`. The actual keypress→spawn behavior is **not** unit-tested (picker tests would require a faked TTY); manual verification covers it per `tasks.md` §5.
+- **Docs**: `plugins/chat-search/README.md` — under the "Picker" section, a new paragraph describes the flag and the Alt+Enter binding, with the explicit Shift+Enter terminal-compat caveat. The flag reference table (~lines 130-141) gains a row.
+- **Users**: Zero impact when the flag is not set. With the flag set, Alt+Enter on a row resumes with `--dangerously-skip-permissions`. Shift+Enter works on CSI-u-aware terminals only.
+- **Security/Safety posture**: The two layers of opt-in (CLI flag *and* a non-default keystroke) make accidental invocation essentially impossible. The yellow help line keeps the user aware whenever the binding is armed. Plain Enter remains the safe path.
+- **Risk**: Low overall — fully opt-in. The only realistic failure mode is a user passing `--dangerously-skip-permissions` to their shell alias and then forgetting it's there; the yellow help line mitigates this every time the picker opens.
