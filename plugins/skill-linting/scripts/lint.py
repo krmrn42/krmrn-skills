@@ -69,6 +69,14 @@ EXCLUSION_PATTERNS = [
     re.compile(r"\bDoes NOT trigger\b"),
 ]
 
+# Plugins that also ship an npm package under packages/<dir>/.
+# When present, package.json#version must match plugin.json#version and the
+# marketplace entry's version — the three are released in lockstep. Add an
+# entry here if a new plugin grows an npm sibling.
+PLUGIN_NPM_PACKAGE_DIRS: dict[str, str] = {
+    "chat-search": "multivac",
+}
+
 
 # ---- Documentation URLs per rule ----
 # Each rule that has a canonical published source maps to its URL.
@@ -115,6 +123,7 @@ DOCS: dict[str, str] = {
     "marketplace.plugin.dangling": CLAUDE_CODE_PLUGINS,
     "marketplace.plugin.source": CLAUDE_CODE_PLUGINS,
     "marketplace.plugin.version-sync": CLAUDE_CODE_PLUGINS,
+    "marketplace.plugin.package-version-sync": CLAUDE_CODE_PLUGINS,
     # No URL: frontmatter.description.exclusion-clause (community pattern,
     # documented in this repo's skill-authoring), reference.orphan
     # (mechanical cousin of progressive-disclosure), io.read (fatal).
@@ -665,6 +674,48 @@ def check_marketplace(repo_root: Path, cfg: Config) -> list[Finding]:
                      fix="bump both files to the same version in one commit. "
                          "Decide which value is canonical (usually the "
                          "plugin.json one) and align the other.")
+
+        # Three-way version-sync for plugins that also ship an npm package:
+        # packages/<dir>/package.json#version must match plugin.json#version
+        # AND marketplace.json#version. The triple is released in lockstep
+        # (one tag, one CI run) so any skew is a release-blocking error.
+        package_dir = PLUGIN_NPM_PACKAGE_DIRS.get(name)
+        if package_dir:
+            pkg_json_path = repo_root / "packages" / package_dir / "package.json"
+            if pkg_json_path.exists():
+                try:
+                    pkg = json.loads(pkg_json_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as e:
+                    emit("error", "marketplace.plugin.package-version-sync",
+                         f"packages/{package_dir}/package.json is invalid "
+                         f"JSON: {e}; cannot verify version-sync with "
+                         f"plugin.json and marketplace.json.",
+                         fix="validate with `python3 -m json.tool "
+                             f"packages/{package_dir}/package.json`.")
+                else:
+                    versions = {
+                        "packages/" + package_dir + "/package.json":
+                            pkg.get("version"),
+                        "plugins/" + name + "/.claude-plugin/plugin.json":
+                            pj.get("version") if plugin_json.exists() else None,
+                        ".claude-plugin/marketplace.json#" + name:
+                            entry.get("version"),
+                    }
+                    distinct = set(versions.values())
+                    if len(distinct) > 1:
+                        triple_str = ", ".join(
+                            f"{p}={v!r}" for p, v in versions.items()
+                        )
+                        emit("error",
+                             "marketplace.plugin.package-version-sync",
+                             f"version drift across the {name!r} release "
+                             f"triple: {triple_str}. The plugin and its npm "
+                             f"package are released in lockstep — any skew "
+                             f"is a release-blocking error.",
+                             fix=f"bump all three files to the same version "
+                                 f"in one commit; the GitHub Actions publish "
+                                 f"workflow keys off the tag `multivac-v<ver>` "
+                                 f"and will refuse to ship on mismatch.")
 
     return findings
 

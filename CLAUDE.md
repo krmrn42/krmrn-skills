@@ -4,12 +4,17 @@ This file guides Claude Code (claude.ai/code) when working in this repository.
 
 ## What this repo is
 
-The **public** Claude Code plugin marketplace `krmrn-skills`. No application code, no build, no test suite — every artifact is markdown that Claude reads at runtime via the `/plugin` system. Companion to the private marketplace at [`krmrn42/skills`](https://github.com/krmrn42/skills); skills graduate here when they're stable and generally useful.
+The **public** Claude Code plugin marketplace `krmrn-skills`. Mostly markdown that Claude reads at runtime via the `/plugin` system, with one exception: `packages/multivac/` is a publishable Node CLI (`@krmrn42/multivac`) that the `chat-search` plugin's `bin/` symlinks into. Companion to the private marketplace at [`krmrn42/skills`](https://github.com/krmrn42/skills); skills graduate here when they're stable and generally useful.
 
 Currently ships these plugins:
 
 - `skill-linting` (skill: `skill-linting`) — zero-deps structural lint for Claude Code skills.
-- `chat-search` (slash commands `chat-search:find`, `chat-search:setup`; CLI `ccsearch`) — cross-project full-text search across local Claude Code conversations. Maintains its own SQLite FTS5 index from `~/.claude/projects/**/*.jsonl`; built-in TUI picker; resume drops you in the conversation's original project directory.
+- `chat-search` (slash commands `chat-search:find`, `chat-search:setup`; CLI `multivac`) — cross-project full-text search across local Claude Code conversations. Maintains its own SQLite FTS5 index from `~/.claude/projects/**/*.jsonl`; built-in TUI picker; resume drops you in the conversation's original project directory. The on-PATH CLI binary is `multivac`; the same binary is also distributable via `npm install -g @krmrn42/multivac` (canonical sources at `packages/multivac/`, plugin `bin/` symlinks into it).
+- `prdspec` (slash commands `/prd`, `/epics`, `/stories`, `/push`) — Requirements Management Framework: PM exploration → Pitch → Epics → User Stories → tracker push.
+
+## Dual-distribution shape (multivac)
+
+The `chat-search` plugin and the `@krmrn42/multivac` npm package ship the **same code** from the same source tree. Canonical files live at `packages/multivac/src/`; the plugin's `bin/multivac`, `bin/indexer.js`, and `bin/picker.js` are git-tracked symlinks into that directory. A single version string lives in three files — `packages/multivac/package.json`, `plugins/chat-search/.claude-plugin/plugin.json`, and the matching entry in `marketplace.json` — and the lint enforces all three agree (rule `marketplace.plugin.package-version-sync`).
 
 ## Authoring rules
 

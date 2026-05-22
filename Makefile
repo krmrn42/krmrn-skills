@@ -1,10 +1,11 @@
-.PHONY: help lint-skills lint-skills-strict ci
+.PHONY: help lint-skills lint-skills-strict test-lint ci
 
 help:
 	@echo "Targets:"
 	@echo "  lint-skills          Run skill-linting (warnings non-blocking)"
 	@echo "  lint-skills-strict   Run skill-linting (warnings = failures)"
-	@echo "  ci                   Full CI suite — currently aligned with pre-commit (errors only)."
+	@echo "  test-lint            Run stdlib unittests for skill-linting rule logic"
+	@echo "  ci                   Full CI suite — lint (errors only) + lint unit tests."
 
 lint-skills:
 	@python3 plugins/skill-linting/scripts/lint.py
@@ -12,4 +13,7 @@ lint-skills:
 lint-skills-strict:
 	@python3 plugins/skill-linting/scripts/lint.py --strict
 
-ci: lint-skills
+test-lint:
+	@python3 plugins/skill-linting/scripts/test_lint.py
+
+ci: lint-skills test-lint

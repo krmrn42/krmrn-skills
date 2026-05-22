@@ -1,0 +1,60 @@
+name: publish-multivac
+
+# Publish @krmrn42/multivac to npm when a `multivac-v*` tag is pushed.
+# The tag's version (substring after `multivac-v`) MUST equal the version
+# in packages/multivac/package.json — the lint enforces three-way agreement
+# between that file, plugins/chat-search/.claude-plugin/plugin.json, and
+# the matching marketplace.json entry. If any of those drift, the lint
+# (which runs as the first publish step) fails and the publish does not happen.
+#
+# Security notes:
+# - We do NOT interpolate any user-controllable github.event fields into run:
+#   commands. The only input read by the tag-version assertion is GITHUB_REF
+#   (set by the runner to refs/tags/<tag>), via the standard env variable.
+# - NPM_TOKEN is exposed only as an env var (NODE_AUTH_TOKEN) during the
+#   publish step, and only to the `cd packages/multivac && npm publish` step.
+
+on:
+  push:
+    tags:
+      - "multivac-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (>=22.5)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify tag version matches package.json
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF##*/}"
+          TAG_VER="${TAG#multivac-v}"
+          PKG_VER="$(node -p "require('./packages/multivac/package.json').version")"
+          if [ "$TAG_VER" != "$PKG_VER" ]; then
+            echo "::error::tag version ($TAG_VER) does not match package.json version ($PKG_VER)" >&2
+            exit 1
+          fi
+          echo "tag and package.json agree on version $PKG_VER"
+
+      - name: Lint (refuses publish on three-way version skew)
+        run: make lint-skills-strict
+
+      - name: Lint unit tests
+        run: make test-lint
+
+      - name: Publish to npm
+        working-directory: packages/multivac
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

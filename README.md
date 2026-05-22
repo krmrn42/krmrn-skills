@@ -23,7 +23,8 @@ For local development (after cloning):
 | Plugin | What it does |
 |---|---|
 | [`skill-linting`](./plugins/skill-linting) | Zero-deps Python lint for Claude Code skills. Catches frontmatter, length-cap, manifest-sync, and reference-depth issues. Wires into a slash command (`/skill-linting:lint-skills`), a Makefile target (`make lint-skills`), and pre-commit. |
-| [`chat-search`](./plugins/chat-search) | Cross-project full-text search across local Claude Code conversations. Maintains its own SQLite FTS5 index built from the JSONL files Claude Code keeps under `~/.claude/projects/`. Three surfaces — CLI `ccsearch`, built-in TUI picker (`ccsearch -i`), and the slash command `/chat-search:find`. Enter resumes you in the conversation's original project directory. Zero external dependencies; needs Node ≥ 22.5. |
+| [`chat-search`](./plugins/chat-search) | Cross-project full-text search across local Claude Code conversations. Maintains its own SQLite FTS5 index built from the JSONL files Claude Code keeps under `~/.claude/projects/`. Three surfaces — CLI `multivac`, built-in TUI picker (`multivac -i`), and the slash command `/chat-search:find`. Enter resumes you in the conversation's original project directory. Also installable outside Claude Code via `npm install -g @krmrn42/multivac && multivac init`. Zero external dependencies; needs Node ≥ 22.5. |
+| [`prdspec`](./plugins/prdspec) | Requirements Management Framework — PM exploration → Pitch (PRD) → Epics → User Stories → tracker push. Four slash commands (`/prd`, `/epics`, `/stories`, `/push`) and a shared skill (`prdspec`) that carries the templates and conventions. |
 
 More plugins will land here over time. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the bar.
 
@@ -55,29 +56,46 @@ A typical author's install set:
 │   │   ├── .claude-plugin/plugin.json
 │   │   ├── commands/lint-skills.md    # /skill-linting:lint-skills
 │   │   ├── scripts/lint.py            # the linter (zero deps, Python 3.11+)
+│   │   ├── scripts/test_lint.py       # stdlib unittests for rule logic
 │   │   └── skills/skill-linting/
 │   │       ├── SKILL.md
 │   │       ├── references/
 │   │       └── templates/
-│   └── chat-search/
-│       ├── .claude-plugin/plugin.json
-│       ├── bin/
-│       │   ├── ccsearch               # CLI engine (Node, zero deps)
-│       │   ├── picker.js              # built-in TUI picker
-│       │   ├── indexer.js             # JSONL → SQLite FTS5 indexer
-│       │   └── ccsearch.test.sh       # fixture-DB smoke test
-│       └── commands/
-│           ├── find.md                # /chat-search:find
-│           └── setup.md               # /chat-search:setup
-├── Makefile                           # make lint-skills, lint-skills-strict, ci
-├── .pre-commit-config.yaml            # local hook invoking lint.py
-├── .skill-lint.toml                   # repo-wide and per-skill lint config
+│   ├── chat-search/
+│   │   ├── .claude-plugin/plugin.json
+│   │   ├── CHANGELOG.md
+│   │   ├── bin/                        # symlinks into packages/multivac/src/
+│   │   │   ├── multivac → …/multivac.js
+│   │   │   ├── indexer.js → …/indexer.js
+│   │   │   └── picker.js  → …/picker.js
+│   │   └── commands/
+│   │       ├── find.md                # /chat-search:find
+│   │       └── setup.md               # /chat-search:setup
+│   └── prdspec/                       # /prd, /epics, /stories, /push
+├── packages/
+│   └── multivac/                       # @krmrn42/multivac npm package
+│       ├── package.json
+│       ├── README.md                   # npm-facing
+│       ├── LICENSE
+│       ├── NAMING.md                   # rename decision record
+│       ├── src/
+│       │   ├── multivac.js             # CLI entry (Node, zero deps)
+│       │   ├── indexer.js              # JSONL → SQLite FTS5 indexer
+│       │   └── picker.js               # built-in TUI picker
+│       └── test/
+│           └── multivac.test.sh        # fixture-DB smoke test
+├── .github/workflows/                  # GitHub Actions (publish-multivac.yml)
+├── Makefile                            # make lint-skills, lint-skills-strict, test-lint, ci
+├── .pre-commit-config.yaml             # local hook invoking lint.py
+├── .skill-lint.toml                    # repo-wide and per-skill lint config
 ├── CONTRIBUTING.md
 ├── CODE_OF_CONDUCT.md
-└── LICENSE                            # MIT
+└── LICENSE                             # MIT
 ```
 
-Each plugin in `plugins/` is a self-contained directory referenced from `marketplace.json`. See the [skill-authoring](https://github.com/krmrn42/skills/tree/main/plugins/authoring) skill for the full layout rules.
+Each plugin in `plugins/` is a self-contained directory referenced from `marketplace.json`. The single npm-publishable package lives in `packages/multivac/` — its sources are git-tracked symlinks from `plugins/chat-search/bin/`, so editing the canonical files under `packages/multivac/src/` updates both distribution channels. Versions in `packages/multivac/package.json`, `plugins/chat-search/.claude-plugin/plugin.json`, and the matching `marketplace.json` entry are kept in lockstep (enforced by the `marketplace.plugin.package-version-sync` lint rule).
+
+See the [skill-authoring](https://github.com/krmrn42/skills/tree/main/plugins/authoring) skill for the full layout rules.
 
 ## Contributing
 

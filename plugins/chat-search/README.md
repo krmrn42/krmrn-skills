@@ -1,5 +1,8 @@
 # chat-search
 
+[![publish-multivac](https://github.com/krmrn42/krmrn-skills/actions/workflows/publish-multivac.yml/badge.svg)](https://github.com/krmrn42/krmrn-skills/actions/workflows/publish-multivac.yml)
+[![npm](https://img.shields.io/npm/v/@krmrn42/multivac.svg)](https://www.npmjs.com/package/@krmrn42/multivac)
+
 Cross-project full-text search across all locally stored Claude Code conversations.
 
 Claude Code's built-in `/resume` picker (with `Ctrl+A`) only filters by chat **title**. This plugin maintains its own SQLite FTS5 index, built from the raw conversation JSONL files under `~/.claude/projects/`, and exposes it as a relevance-ranked search across **message bodies**, across all projects on the machine. Pick a result, hit Enter, and you land in that resumed session — automatically in the right project directory.
@@ -8,27 +11,29 @@ Claude Code's built-in `/resume` picker (with `Ctrl+A`) only filters by chat **t
 
 ## What it does
 
-- Maintains a plugin-owned FTS5 index at `$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db` (default: `~/.local/share/krmrn42-skills/chat-search/index.db`), populated from `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. The JSONL tree is what Claude Code keeps current; our index lives separately and is refreshed lazily on every `ccsearch` invocation.
+- Maintains a plugin-owned FTS5 index at `$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db` (default: `~/.local/share/krmrn42-skills/chat-search/index.db`), populated from `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. The JSONL tree is what Claude Code keeps current; our index lives separately and is refreshed lazily on every `multivac` invocation.
 - Aggregates per-conversation: one row per chat, with the highest-scoring matched message's snippet.
 - Ranks by FTS5 BM25 across the full set — projects compete on the same scoreboard.
 - Three surfaces, one binary:
-  - `ccsearch [<query>]` (on a TTY) — opens the built-in TUI picker by default. Enter resumes in the conversation's original project directory; Ctrl-F forks; Ctrl-O prints session id; Ctrl-D prints project path. With an empty query, the picker shows your most recent conversations across all projects — each row shows a synthesized title (first non-wrapper user message) plus the tail of the last message, so `ccsearch` becomes a recognize-and-resume entry point. `-i` / `--interactive` forces the picker explicitly (default kept for backward-compat scripts).
-  - `ccsearch <query>` (piped or with `--list` / `--format=text|tsv` / `--regex`) — one-shot ranked output (`text` on TTY when `--list`/`--format=text`, `tsv` when piped). Each text row carries a copy-paste resume one-liner.
+  - `multivac [<query>]` (on a TTY) — opens the built-in TUI picker by default. Enter resumes in the conversation's original project directory; Ctrl-F forks; Ctrl-O prints session id; Ctrl-D prints project path. With an empty query, the picker shows your most recent conversations across all projects — each row shows a synthesized title (first non-wrapper user message) plus the tail of the last message, so `multivac` becomes a recognize-and-resume entry point. `-i` / `--interactive` forces the picker explicitly (default kept for backward-compat scripts).
+  - `multivac <query>` (piped or with `--list` / `--format=text|tsv` / `--regex`) — one-shot ranked output (`text` on TTY when `--list`/`--format=text`, `tsv` when piped). Each text row carries a copy-paste resume one-liner.
   - `/chat-search:find` — slash command that renders the top 10 results inline in a Claude Code session, each with the same copy-paste resume one-liner. (Unaffected by the picker default: passes `--format=text` explicitly.)
 - Indexer maintenance:
   - First invocation: full build of all on-disk conversations. Expect ~30–90 seconds for several hundred sessions.
   - Subsequent invocations: incremental refresh only — files whose mtime hasn't changed are skipped (sub-second).
-  - `ccsearch --reindex` forces a full rebuild.
-  - `ccsearch --index-status` prints DB path, size, message/conversation count, last refresh time, and any pending files.
+  - `multivac --reindex` forces a full rebuild.
+  - `multivac --index-status` prints DB path, size, message/conversation count, last refresh time, and any pending files.
 
 ## Install
 
+### As a Claude Code plugin (recommended for Claude Code users)
+
 ```
-/plugin marketplace add /home/data/repos/github.com/krmrn42/skills
-/plugin install chat-search@krmrn42-skills
+/plugin marketplace add krmrn42/krmrn-skills
+/plugin install chat-search@krmrn-skills
 ```
 
-**Inside Claude Code**, you're done — the plugin's `bin/` directory is automatically added to the `Bash` tool's `PATH`, so `/chat-search:find` and the bundled `ccsearch` command both just work.
+**Inside Claude Code**, you're done — the plugin's `bin/` directory is automatically added to the `Bash` tool's `PATH`, so `/chat-search:find` and the bundled `multivac` command both just work.
 
 **From your own shell** (outside Claude Code), run once:
 
@@ -36,7 +41,24 @@ Claude Code's built-in `/resume` picker (with `Ctrl+A`) only filters by chat **t
 /chat-search:setup
 ```
 
-That symlinks `bin/ccsearch` into `~/.local/bin/ccsearch` (creating the directory if needed) and tells you whether `~/.local/bin` is already on your `$PATH` — if not, it prints the export line for your shell. The setup command never edits your shell-rc files itself.
+That symlinks `bin/multivac` into `~/.local/bin/multivac` (creating the directory if needed) and tells you whether `~/.local/bin` is already on your `$PATH` — if not, it prints the export line for your shell. The setup command never edits your shell-rc files itself.
+
+### Via npm (for shell-first users, or one-shot `npx`)
+
+The same CLI is published to npm as [`@krmrn42/multivac`](https://www.npmjs.com/package/@krmrn42/multivac). Two install paths:
+
+```
+npm install -g @krmrn42/multivac    # persistent install
+multivac init                       # installs this plugin via `claude /plugin`
+```
+
+```
+npx -y @krmrn42/multivac --help     # zero-install one-shot
+```
+
+The npm package and this plugin always carry the same version string; updates land in both channels simultaneously. `multivac init` shells out to the `claude` CLI to run `claude plugin marketplace add krmrn42/krmrn-skills` and `claude plugin install chat-search@krmrn-skills` (the `claude` CLI's `plugin` subcommand — see `claude plugin --help`). If `claude` is not on `$PATH`, it falls back to printing the equivalent slash commands for you to paste inside a Claude Code session.
+
+See [CHANGELOG.md](./CHANGELOG.md) for the rename history (the binary was named `ccsearch` prior to 0.6.0).
 
 ### Runtime dependencies
 
@@ -54,13 +76,13 @@ That's it. No Python, no `fzf`, no native compilation. `claude` is on your PATH 
 | `~/.claude/projects/**/*.jsonl` | Source of truth — read by the indexer, never modified |
 | `~/.claude/conversation-search.db` | **Not touched** by default. Override with `--db-path` if you want to read it. |
 
-To wipe the index (it will rebuild on next `ccsearch`):
+To wipe the index (it will rebuild on next `multivac`):
 
 ```bash
 rm -rf ~/.local/share/krmrn42-skills/chat-search/
 ```
 
-If your Node is older than 22.5, `ccsearch` exits with a clear error and per-OS install commands. The Claude Code native installer ships its own binary and does not require Node — if you used that channel, you may need to install Node separately:
+If your Node is older than 22.5, `multivac` exits with a clear error and per-OS install commands. The Claude Code native installer ships its own binary and does not require Node — if you used that channel, you may need to install Node separately:
 
 ```
 brew install node              # macOS (Homebrew)
@@ -74,34 +96,34 @@ nvm install --lts              # any (using nvm)
 
 ```bash
 # basic search — defaults to `user` and `assistant` messages
-ccsearch "session timeout"
+multivac "session timeout"
 
 # interactive picker
-ccsearch -i
+multivac -i
 
 # pre-fill the picker with a query
-ccsearch -i "regex parse"
+multivac -i "regex parse"
 
 # also search tool-call rows (commands you ran, output you saw)
-ccsearch --include-tools "ls -la"
+multivac --include-tools "ls -la"
 
 # regex post-filter on FTS candidates (fast)
-ccsearch "auth" --regex 'TOKEN_[A-F0-9]{8}'
+multivac "auth" --regex 'TOKEN_[A-F0-9]{8}'
 
 # regex full-table scan (slow but no FTS prefilter — for patterns FTS can't help with)
-ccsearch --regex 'TOKEN_[A-F0-9]{8}' --scan
+multivac --regex 'TOKEN_[A-F0-9]{8}' --scan
 
 # scope to a project
-ccsearch "deploy" --project noorriver
+multivac "deploy" --project noorriver
 
 # scope to a date range
-ccsearch "deploy" --since 2026-04-01
+multivac "deploy" --since 2026-04-01
 
 # limit results
-ccsearch "deploy" --limit 5
+multivac "deploy" --limit 5
 
 # pipe-friendly output for scripts
-ccsearch "deploy" --format tsv | head -3
+multivac "deploy" --format tsv | head -3
 ```
 
 ### Picker keybindings
@@ -129,7 +151,7 @@ The picker's status bar (the line under the prompt) reflects the keybindings ava
 
 ## Why this exists
 
-`/resume` (with `Ctrl+A`) searches **chat titles** only. Most of the time when I want to find a past conversation, I remember something from the body — an error message, a function name, a phrase from a discussion — not the title. Reaching for `grep -r ~/.claude/projects/` works but is slow, returns raw JSONL, has no ranking, and doesn't aggregate per-conversation. `ccsearch` is the missing surface on top of an index that Claude Code already keeps current.
+`/resume` (with `Ctrl+A`) searches **chat titles** only. Most of the time when I want to find a past conversation, I remember something from the body — an error message, a function name, a phrase from a discussion — not the title. Reaching for `grep -r ~/.claude/projects/` works but is slow, returns raw JSONL, has no ranking, and doesn't aggregate per-conversation. `multivac` is the missing surface on top of an index that Claude Code already keeps current.
 
 And since Claude Code stores sessions per project (under `~/.claude/projects/<encoded-cwd>/`), `claude --resume <id>` only works from the original project directory. Both surfaces handle that automatically — the picker `cd`s into the right place before spawning `claude`, and the slash command prints the `cd`+resume as one copy-pasteable line.
 
@@ -164,7 +186,7 @@ Mutually exclusive flags:
 
 ### Dispatch (picker vs one-shot)
 
-On an interactive TTY, `ccsearch` opens the TUI picker by default. Any of these explicitly opts out and uses one-shot ranked text/TSV instead: `--list` / `-l`, `--format=text|tsv`, `--regex`, `--preview`, `--reindex`, `--index-status`, or stdout being redirected/piped. The `-i` flag forces the picker even when those signals would otherwise dispatch to one-shot. Migrating from the previous default: `ccsearch <query> --list` or `ccsearch <query> --format=text` reproduces the old behavior on a TTY.
+On an interactive TTY, `multivac` opens the TUI picker by default. Any of these explicitly opts out and uses one-shot ranked text/TSV instead: `--list` / `-l`, `--format=text|tsv`, `--regex`, `--preview`, `--reindex`, `--index-status`, or stdout being redirected/piped. The `-i` flag forces the picker even when those signals would otherwise dispatch to one-shot. Migrating from the previous default: `multivac <query> --list` or `multivac <query> --format=text` reproduces the old behavior on a TTY.
 
 ### Skip permissions on resume (`--dangerously-skip-permissions`)
 
@@ -178,7 +200,7 @@ Two-layer opt-in: the CLI flag must be set AND the user must press Alt+Enter (no
 
 Press **Ctrl-R** on any picker row to assign a memorable name. The prompt line switches to `rename> <buffer>`; type a name, hit Enter to save, or Esc to cancel. Empty + Enter clears the saved name (reverts to the synthesized title on the next picker open).
 
-Saved names persist in `$XDG_CONFIG_HOME/krmrn42-skills/chat-search/sessions.json` (default `~/.config/...`). The file is human-editable JSON and safe to back up or sync via dotfiles. View it with `ccsearch --print-names`.
+Saved names persist in `$XDG_CONFIG_HOME/krmrn42-skills/chat-search/sessions.json` (default `~/.config/...`). The file is human-editable JSON and safe to back up or sync via dotfiles. View it with `multivac --print-names`.
 
 On resume, the saved name flows through to `claude --name <name>` so the resumed session opens with the familiar label. This applies to plain resume (Enter), fork (Ctrl-F), and dangerous resume (Alt+Enter) — every resume action threads the name through automatically.
 
@@ -188,7 +210,7 @@ Press **Ctrl-P** on any picker row to pin it. Pinned rows surface at the top of 
 
 Pin state lives in the same `sessions.json` as saved names. Pinning is global by session id — pins surface regardless of which project you're in. In FTS mode, pinning **does not override the query**: only pins whose content matches the typed query surface; pins that don't match are still hidden.
 
-The `--limit` flag bounds the total visible rows (pinned + non-pinned). If you pin more conversations than the limit, only the newest pins surface. Use `ccsearch --unpin-all` for a quick cleanup.
+The `--limit` flag bounds the total visible rows (pinned + non-pinned). If you pin more conversations than the limit, only the newest pins surface. Use `multivac --unpin-all` for a quick cleanup.
 
 ### Resume with Remote Control (Ctrl-T)
 
@@ -213,7 +235,7 @@ The new window receives focus; your previous pane is preserved (`prefix p` to re
 
 ## TSV columns
 
-For consumers that parse `ccsearch --format=tsv`:
+For consumers that parse `multivac --format=tsv`:
 
 | Col | Field | Notes |
 |---|---|---|
@@ -227,10 +249,10 @@ For consumers that parse `ccsearch --format=tsv`:
 
 ## Schema-drift detection
 
-At startup `ccsearch` probes `sqlite_master` to verify Claude Code's expected layout (`messages` and `messages_fts` tables, plus the columns the script depends on). If Claude Code is updated and the schema changes, you'll get a clear error like:
+At startup `multivac` probes `sqlite_master` to verify Claude Code's expected layout (`messages` and `messages_fts` tables, plus the columns the script depends on). If Claude Code is updated and the schema changes, you'll get a clear error like:
 
 ```
-ccsearch: schema does not match expected layout — missing column(s) in `messages`: project_name.
+multivac: schema does not match expected layout — missing column(s) in `messages`: project_name.
 This usually means Claude Code has been updated and chat-search needs to update too.
 File an issue or `git pull` and reinstall.
 ```
@@ -239,14 +261,14 @@ This is intentional — the plugin reads an undocumented internal store, and the
 
 ## Privacy
 
-Reads your local chat database. **Never** writes to `~/.claude/`. Never uploads anything anywhere. Everything stays on your machine. Don't pipe `ccsearch` output into a remote service if your past chats contain anything you don't want to share.
+Reads your local chat database. **Never** writes to `~/.claude/`. Never uploads anything anywhere. Everything stays on your machine. Don't pipe `multivac` output into a remote service if your past chats contain anything you don't want to share.
 
 ## Self-test
 
-A small fixture-DB-based smoke test ships at `bin/ccsearch.test.sh`:
+A small fixture-DB-based smoke test ships at `bin/multivac.test.sh`:
 
 ```bash
-bash plugins/chat-search/bin/ccsearch.test.sh
+bash plugins/chat-search/bin/multivac.test.sh
 ```
 
 It builds a temporary SQLite database matching the live schema, populates a handful of fake conversations across two fake projects, and asserts on row counts and exit codes for several invocations. It does **not** read your real `~/.claude/conversation-search.db`. The test uses the `sqlite3` CLI to build fixtures — that's a developer-only dependency, not a user-runtime one.
@@ -260,19 +282,19 @@ plugins/chat-search/
 ├── .claude-plugin/plugin.json
 ├── README.md (this file)
 ├── bin/
-│   ├── ccsearch                 # the engine — Node, zero external deps
-│   ├── picker.js                # built-in TUI picker, required by ccsearch -i
-│   └── ccsearch.test.sh         # fixture-DB smoke test
+│   ├── multivac                 # the engine — Node, zero external deps
+│   ├── picker.js                # built-in TUI picker, required by multivac -i
+│   └── multivac.test.sh         # fixture-DB smoke test
 └── commands/
     ├── find.md                  # /chat-search:find slash command
-    └── setup.md                 # /chat-search:setup — symlink ccsearch onto your PATH
+    └── setup.md                 # /chat-search:setup — symlink multivac onto your PATH
 ```
 
 ## Slash commands
 
 ### `/chat-search:find <query>`
 
-Runs `ccsearch` through the `Bash` tool and renders the top 10 results inline in your Claude Code session. The assistant can read the results and reason about them. Each row in the rendered output includes a copy-pasteable line of the form `(cd <project_path> && claude --resume <session_id>)` — paste that line (or prefix it with `!` to run it in this session's shell) to resume.
+Runs `multivac` through the `Bash` tool and renders the top 10 results inline in your Claude Code session. The assistant can read the results and reason about them. Each row in the rendered output includes a copy-pasteable line of the form `(cd <project_path> && claude --resume <session_id>)` — paste that line (or prefix it with `!` to run it in this session's shell) to resume.
 
 ```
 /chat-search:find session timeout
@@ -280,19 +302,19 @@ Runs `ccsearch` through the `Bash` tool and renders the top 10 results inline in
 /chat-search:find "auth flow" --regex 'TOKEN_[A-F0-9]+'
 ```
 
-All `ccsearch` flags are forwarded — the slash command is a thin wrapper. Fixed flags: `--format=text --no-color --limit=10`.
+All `multivac` flags are forwarded — the slash command is a thin wrapper. Fixed flags: `--format=text --no-color --limit=10`.
 
 **The slash command is text-only by design.** Slash commands run in Claude Code's `Bash` tool, which has no controlling TTY, so the picker cannot run from inside the slash command. For the picker, use the `!` escape from inside a session — it runs in your real terminal:
 
 ```
-! ccsearch -i regex parse
+! multivac -i regex parse
 ```
 
-(After running `/chat-search:setup` once, you can also run `ccsearch -i` directly from any shell, without `!`.)
+(After running `/chat-search:setup` once, you can also run `multivac -i` directly from any shell, without `!`.)
 
 ### `/chat-search:setup [target-dir]`
 
-Symlinks the plugin's `bin/ccsearch` into `target-dir` (default `~/.local/bin`) so you can invoke `ccsearch` from any shell. Idempotent — safe to re-run. Checks whether the target dir is on your PATH and prints the appropriate shell-rc export line if not. **Never edits your shell-rc files.**
+Symlinks the plugin's `bin/multivac` into `target-dir` (default `~/.local/bin`) so you can invoke `multivac` from any shell. Idempotent — safe to re-run. Checks whether the target dir is on your PATH and prints the appropriate shell-rc export line if not. **Never edits your shell-rc files.**
 
 ```
 /chat-search:setup            # symlinks into ~/.local/bin
@@ -302,20 +324,20 @@ Symlinks the plugin's `bin/ccsearch` into `target-dir` (default `~/.local/bin`) 
 ## FAQ
 
 **Q: Can I just `grep -r ~/.claude/projects/` instead?**
-Yes. It works. But: no ranking, no per-conversation aggregation, raw JSONL output, and it scans the full text of every session every time including thousands of `tool_result` rows. `ccsearch` is faster and prettier; `grep` is fine if you don't have this plugin installed. Use whichever you prefer.
+Yes. It works. But: no ranking, no per-conversation aggregation, raw JSONL output, and it scans the full text of every session every time including thousands of `tool_result` rows. `multivac` is faster and prettier; `grep` is fine if you don't have this plugin installed. Use whichever you prefer.
 
 **Q: Does this work on Windows?**
 Untested. The CLI itself should run anywhere Node 22.5+ does; the picker uses Node's `setRawMode` + ANSI rendering which works on Windows Terminal in PowerShell and Git Bash. The default DB path (`~/.claude/conversation-search.db`) and `claude --resume` invocation may need adjusting. Use `--db-path` to point elsewhere if needed.
 
 **Q: Does this index my JSONL files?**
-Yes — we maintain our own FTS5 index built from your JSONL files. On every `ccsearch` startup we do an incremental refresh (only files whose mtime changed get re-parsed). The index lives at `$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db`. Use `ccsearch --reindex` to force a full rebuild or `ccsearch --index-status` to inspect what's indexed.
+Yes — we maintain our own FTS5 index built from your JSONL files. On every `multivac` startup we do an incremental refresh (only files whose mtime changed get re-parsed). The index lives at `$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db`. Use `multivac --reindex` to force a full rebuild or `multivac --index-status` to inspect what's indexed.
 
 Earlier versions of this plugin read Claude Code's own `~/.claude/conversation-search.db` directly. We moved away from that because Claude Code's own index has been observed to fall significantly behind disk reality — sometimes by many months — and the plugin's value was bounded by whatever that index happened to know. The self-maintained index gives you a search that matches what's actually on disk.
 
 **Q: My `~/.claude/conversation-search.db` doesn't exist.**
 That's fine. The plugin no longer reads it by default. We read JSONL files from `~/.claude/projects/` instead. If you do have a `~/.claude/conversation-search.db` you want to query, pass `--db-path ~/.claude/conversation-search.db`.
 
-**Q: I have Node, but `ccsearch` says it's too old.**
+**Q: I have Node, but `multivac` says it's too old.**
 Node 22.5+ is required because `node:sqlite` was added in 22.5. Use `nvm install --lts` to get a current LTS (22.x or 24.x). Ubuntu's `apt` Node packages are often too old; consider `nodesource` or `nvm`.
 
 **Q: I installed Claude Code via the native installer (`curl ... | bash`), so I don't have Node.**
