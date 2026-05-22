@@ -36,6 +36,19 @@ Install once:
 /plugin install authoring@krmrn42-skills
 ```
 
+## Commit and merge policy
+
+**All changes go through a pull request — including doc-only or single-character fixes.** Direct commits or pushes to `main` are not allowed. The PR workflow is:
+
+1. Branch from `main` with a Conventional-Commits-style scope: `feat/<scope>`, `fix/<scope>`, `docs/<scope>`, `chore/<scope>`.
+2. Commit on that branch with Conventional Commits messages (see `git log --oneline` for examples in this repo).
+3. `git push -u origin HEAD`, then `gh pr create`.
+4. After merge to `main`, start follow-up work on a fresh branch — never reuse a merged branch.
+5. The merge strategy is **squash-merge** so `main`'s history stays linear and tag SHAs are unambiguous.
+6. Tag on `main` after merge (never on the feature branch). See [`RELEASING.md`](./RELEASING.md) for the tag conventions.
+
+This policy applies to you (Claude) too. If you find yourself about to run `git push` on `main`, stop — you're on the wrong branch. Run `git checkout -b <scope>/<topic>` and start a PR instead.
+
 ## Local development workflow
 
 Install the marketplace from the working tree so edits take effect immediately:
