@@ -1,6 +1,6 @@
-# ccsearch User Manual
+# multivac User Manual
 
-`ccsearch` is a relevance-ranked full-text search across local Claude Code conversations, with a built-in TUI picker, a slash command, and a one-shot pipe-friendly mode. This manual is the workflow-oriented walkthrough: start here when you've installed the plugin and want to learn what's possible. For the canonical flag reference, run `ccsearch --help`; for formal requirements, see `openspec/specs/`.
+`multivac` is a relevance-ranked full-text search across local Claude Code conversations, with a built-in TUI picker, a slash command, and a one-shot pipe-friendly mode. This manual is the workflow-oriented walkthrough: start here when you've installed the plugin and want to learn what's possible. For the canonical flag reference, run `multivac --help`; for formal requirements, see `openspec/specs/`.
 
 **Contents**
 
@@ -13,8 +13,9 @@
 7. [The index](#the-index)
 8. [Flag reference](#flag-reference)
 9. [Troubleshooting](#troubleshooting)
-10. [Compatibility](#compatibility)
-11. [Origins](#origins)
+10. [How it's distributed](#how-its-distributed)
+11. [Compatibility](#compatibility)
+12. [Origins](#origins)
 
 ---
 
@@ -27,14 +28,14 @@ Install the marketplace and the plugin:
 /plugin install chat-search@krmrn-skills
 ```
 
-Inside Claude Code, the bundled `ccsearch` binary is already on PATH. From your own shell, run once: `/chat-search:setup` to symlink `bin/ccsearch` into `~/.local/bin/ccsearch`.
+Inside Claude Code, the bundled `multivac` binary is already on PATH. From your own shell, run once: `/chat-search:setup` to symlink `bin/multivac` into `~/.local/bin/multivac`.
 
 Try it:
 
 ```bash
-ccsearch                  # open the picker; empty query → recent conversations
-ccsearch "session timeout" # FTS5 query
-ccsearch -i               # force the picker even when piped
+multivac                  # open the picker; empty query → recent conversations
+multivac "session timeout" # FTS5 query
+multivac -i               # force the picker even when piped
 ```
 
 When you open the picker, you see a prompt line on top, a status bar listing keybindings, and a result list. Up/Down to navigate, Enter to resume the selected conversation (Claude opens in its original project directory), Esc to cancel.
@@ -43,10 +44,10 @@ When you open the picker, you see a prompt line on top, a status bar listing key
 
 ## The picker
 
-The picker is the default `ccsearch` surface on a TTY. The layout:
+The picker is the default `multivac` surface on a TTY. The layout:
 
 ```
-ccsearch> <query>                          ← prompt line (row 1)
+multivac> <query>                          ← prompt line (row 1)
 Enter resume   Ctrl-F fork   Ctrl-R …      ← status bar (rows 2-3)
                                            ← blank
   ▌ <title> · <project>  <date>  ...       ← selected row marker
@@ -58,7 +59,7 @@ N results                                  ← footer (last row)
 
 When the terminal is wide enough (≥ 100 columns) a preview pane appears on the right showing the first 20 messages of the selected conversation.
 
-**Empty query** opens recent-browse: the picker lists your most recent conversations across all projects, each with a synthesized title (the first non-wrapper user message) and the tail of the last message. This makes `ccsearch` a recognize-and-resume entry point — you don't have to remember keywords from the conversation.
+**Empty query** opens recent-browse: the picker lists your most recent conversations across all projects, each with a synthesized title (the first non-wrapper user message) and the tail of the last message. This makes `multivac` a recognize-and-resume entry point — you don't have to remember keywords from the conversation.
 
 **FTS5 query syntax** (when you type into the prompt):
 
@@ -72,7 +73,7 @@ Results re-rank live as you type (80ms debounce). FTS5 errors render inline rath
 
 **Terminal-size requirements:** the picker needs at least 40 columns × 6 rows. Below that you'll see "terminal too small" — resize and the render recovers.
 
-> spec: `openspec/specs/ccsearch-default-mode/spec.md`, `openspec/specs/ccsearch-recent-browse/spec.md`
+> spec: `openspec/specs/multivac-default-mode/spec.md`, `openspec/specs/multivac-recent-browse/spec.md`
 
 ---
 
@@ -90,15 +91,15 @@ When the picker is launched with `--dangerously-skip-permissions`, Alt-Enter res
 
 Shift-Enter is wired as a best-effort alias for the same action. It works on terminals that distinguish Shift-Enter from Enter via CSI-u / kitty keyboard protocol: Kitty, WezTerm, iTerm2 with report-modifiers, Windows Terminal with enhanced keyboard. On terminals that send `\r` for both, Shift-Enter behaves as plain Enter (falls through to safe resume — no silent escalation).
 
-> spec: `openspec/specs/ccsearch-dangerous-resume/spec.md`
+> spec: `openspec/specs/multivac-dangerous-resume/spec.md`
 
 ### Remote-control (Ctrl-T)
 
 Spawns `claude --remote-control [name] --resume <id>` in the row's project directory. If the row has a saved name, the name is passed as `--remote-control <name>` — Claude Code's Remote Control consumes that name semantically, and `--name` is deliberately suppressed for this action to avoid double-display.
 
-Ctrl-T has no opt-in flag. If Remote Control is unconfigured on your system, `claude` surfaces that error directly when launched — ccsearch doesn't try to second-guess.
+Ctrl-T has no opt-in flag. If Remote Control is unconfigured on your system, `claude` surfaces that error directly when launched — multivac doesn't try to second-guess.
 
-> spec: `openspec/specs/ccsearch-remote-control-resume/spec.md`
+> spec: `openspec/specs/multivac-remote-control-resume/spec.md`
 
 ### Tmux new-window (Ctrl-W)
 
@@ -108,7 +109,7 @@ The new window receives focus; your previous pane is preserved and reachable via
 
 Pass `--no-tmux` to disable the binding even inside tmux — useful for nested tmux, screen-inside-tmux, or IDE-embedded shells where the passthrough misbehaves.
 
-> spec: `openspec/specs/ccsearch-tmux-window-launch/spec.md`
+> spec: `openspec/specs/multivac-tmux-window-launch/spec.md`
 
 ### Fork (Ctrl-F)
 
@@ -124,11 +125,11 @@ These actions modify `sessions.json` (the picker's per-session config under `$XD
 
 Assigns a memorable name to the selected conversation. The picker enters rename mode: the top line switches to `rename> <buffer>` in cyan, the result list dims, and your keystrokes go to the rename buffer. Enter commits, Esc cancels, empty + Enter clears the saved name (reverts to the synthesized title on the next picker open).
 
-Saved names live in `sessions.json` under the `names` key. The file is human-editable JSON; back it up or sync it via dotfiles. View it with `ccsearch --print-names`.
+Saved names live in `sessions.json` under the `names` key. The file is human-editable JSON; back it up or sync it via dotfiles. View it with `multivac --print-names`.
 
 On resume (plain Enter, fork, and dangerous resume), the saved name flows through as `claude --name <name>` so the resumed session opens with the label you chose. (Remote-control is the exception — its own positional name argument supersedes `--name`; see the "Remote-control" picker action.)
 
-> spec: `openspec/specs/ccsearch-session-rename/spec.md`
+> spec: `openspec/specs/multivac-session-rename/spec.md`
 
 ### Pin (Ctrl-P)
 
@@ -136,9 +137,9 @@ Pins the selected row to the top of the result list. Pinned rows render in pin-o
 
 Pin state is global by session id (not per-project), and lives in the same `sessions.json` as saved names. In FTS mode, **pinning does not override the query**: only pins whose content matches your typed query surface; non-matching pins stay hidden. This matches the mental model "show me what I'm looking for, with pinned ones surfacing if they match."
 
-The `--limit` flag bounds the total visible rows (pinned + non-pinned). If pins exceed the limit, only the newest pins surface. Use `ccsearch --unpin-all` to wipe pins without opening the picker.
+The `--limit` flag bounds the total visible rows (pinned + non-pinned). If pins exceed the limit, only the newest pins surface. Use `multivac --unpin-all` to wipe pins without opening the picker.
 
-> spec: `openspec/specs/ccsearch-session-pin/spec.md`
+> spec: `openspec/specs/multivac-session-pin/spec.md`
 
 ### Help overlay (?)
 
@@ -146,18 +147,18 @@ Press `?` when the query is empty to open a help overlay listing every active pi
 
 The overlay is per-category styled (the same color scheme as the status bar: resume is default, action is cyan, dangerous is yellow, navigation is dim). Bindings hidden by their visibility predicate (dangerous-resume when not armed; tmux-window outside `$TMUX`) don't appear in the overlay either.
 
-> spec: `openspec/specs/ccsearch-picker-status-bar/spec.md`
+> spec: `openspec/specs/multivac-picker-status-bar/spec.md`
 
 ---
 
 ## One-shot mode
 
-When stdout is piped, or you pass `--list`, `--format`, `--regex`, `--preview`, `--reindex`, or `--index-status`, `ccsearch` runs in one-shot mode instead of opening the picker. The default format is `text` on a TTY and `tsv` when piped — override with `--format text|tsv`.
+When stdout is piped, or you pass `--list`, `--format`, `--regex`, `--preview`, `--reindex`, or `--index-status`, `multivac` runs in one-shot mode instead of opening the picker. The default format is `text` on a TTY and `tsv` when piped — override with `--format text|tsv`.
 
 Text output shows ranked rows with a copy-paste resume one-liner per row:
 
 ```
-ccsearch "auth flow" --list
+multivac "auth flow" --list
 
   1. alpha  2025-08-12  142 msgs  conv-aaaa
      ... let me work the <<<auth>>> <<<flow>>> step by step ...
@@ -168,10 +169,10 @@ TSV output is one row per result, columns `session_id`, `project`, `project_path
 
 ```bash
 # project breakdown of conversations mentioning "deploy"
-ccsearch "deploy" --format tsv --limit 200 | cut -f2 | sort | uniq -c | sort -rn
+multivac "deploy" --format tsv --limit 200 | cut -f2 | sort | uniq -c | sort -rn
 
 # pull the top 5 session ids for piping into another tool
-ccsearch "auth" --format tsv | head -5 | cut -f1
+multivac "auth" --format tsv | head -5 | cut -f1
 ```
 
 The `-i` flag forces the picker even when piped (use with `</dev/tty` or in an `tty`-checking wrapper).
@@ -180,7 +181,7 @@ The `-i` flag forces the picker even when piped (use with `</dev/tty` or in an `
 
 ## The slash command
 
-`/chat-search:find <query>` runs `ccsearch` inside Claude Code's `Bash` tool and renders the top results inline. Each row carries the same copy-paste resume one-liner you'd see in text mode — paste it (or prefix with `!` to run it in your real shell) to resume.
+`/chat-search:find <query>` runs `multivac` inside Claude Code's `Bash` tool and renders the top results inline. Each row carries the same copy-paste resume one-liner you'd see in text mode — paste it (or prefix with `!` to run it in your real shell) to resume.
 
 ```
 /chat-search:find session timeout
@@ -188,27 +189,27 @@ The `-i` flag forces the picker even when piped (use with `</dev/tty` or in an `
 /chat-search:find "auth flow" --regex 'TOKEN_[A-F0-9]+'
 ```
 
-The slash command always forces text format with `--no-color` and a `--limit=10` cap. All other ccsearch flags are forwarded. The picker doesn't run from slash-command context (the Bash tool has no controlling TTY); for the picker, use the `!` escape:
+The slash command always forces text format with `--no-color` and a `--limit=10` cap. All other multivac flags are forwarded. The picker doesn't run from slash-command context (the Bash tool has no controlling TTY); for the picker, use the `!` escape:
 
 ```
-! ccsearch -i regex parse
+! multivac -i regex parse
 ```
 
 ---
 
 ## The index
 
-`ccsearch` maintains its own SQLite FTS5 index at `$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db` (default: `~/.local/share/krmrn42-skills/chat-search/index.db`). The source of truth is `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`, which Claude Code writes and updates as you have conversations. ccsearch reads those JSONL files and never modifies them.
+`multivac` maintains its own SQLite FTS5 index at `$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db` (default: `~/.local/share/krmrn42-skills/chat-search/index.db`). The source of truth is `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`, which Claude Code writes and updates as you have conversations. multivac reads those JSONL files and never modifies them.
 
 **First invocation:** full build. Expect ~30–90 seconds for several hundred sessions.
 
 **Subsequent invocations:** incremental refresh — files whose mtime hasn't changed are skipped. Sub-second on most machines.
 
-**Force a full rebuild:** `ccsearch --reindex`. Prints a summary (messages, conversations, projects) and exits.
+**Force a full rebuild:** `multivac --reindex`. Prints a summary (messages, conversations, projects) and exits.
 
-**Inspect the index:** `ccsearch --index-status` prints the DB path, size, message/conversation count, last-refresh time, and any files pending refresh.
+**Inspect the index:** `multivac --index-status` prints the DB path, size, message/conversation count, last-refresh time, and any files pending refresh.
 
-**Wipe and rebuild:** `rm -rf ~/.local/share/krmrn42-skills/chat-search/` then run ccsearch — it builds from scratch.
+**Wipe and rebuild:** `rm -rf ~/.local/share/krmrn42-skills/chat-search/` then run multivac — it builds from scratch.
 
 The plugin reads (and writes) only its own `index.db` plus `sessions.json` (saved names + pins). It never writes to `~/.claude/`.
 
@@ -216,7 +217,7 @@ The plugin reads (and writes) only its own `index.db` plus `sessions.json` (save
 
 ## Flag reference
 
-For the canonical form, run `ccsearch --help`. The summary:
+For the canonical form, run `multivac --help`. The summary:
 
 | Flag | Effect |
 |---|---|
@@ -243,7 +244,7 @@ For the canonical form, run `ccsearch --help`. The summary:
 
 Mutually exclusive: `-i` / `-l`; `--only-user` / `--include-tools`; `--reindex` and `--index-status` can't be combined with `--db-path` / `$CCSEARCH_DB`.
 
-> spec: `openspec/specs/ccsearch-cli-help/spec.md`
+> spec: `openspec/specs/multivac-cli-help/spec.md`
 
 ---
 
@@ -253,23 +254,38 @@ Mutually exclusive: `-i` / `-l`; `--only-user` / `--include-tools`; `--reindex` 
 
 **Exit code 2 — environment error.** Most common causes:
 
-- *DB missing or schema-drifted.* Run `ccsearch --reindex` to rebuild from disk. If the schema has changed (Claude Code updated under you), check whether the plugin has an update available.
-- *Node version too old.* ccsearch requires Node 22.5+ (uses the built-in `node:sqlite` module). `nvm install --lts` or use your package manager's current LTS.
+- *DB missing or schema-drifted.* Run `multivac --reindex` to rebuild from disk. If the schema has changed (Claude Code updated under you), check whether the plugin has an update available.
+- *Node version too old.* multivac requires Node 22.5+ (uses the built-in `node:sqlite` module). `nvm install --lts` or use your package manager's current LTS.
 - *`-i` without a TTY.* The picker needs a real terminal. From CI or a non-interactive shell, use `--list` or `--format text` instead.
 
-**Exit code 3 — internal error.** An uncaught exception or a write attempt against a read-only DB. Re-run with the full error visible (`ccsearch ... 2>&1 | less`) and file an issue if the cause isn't obvious.
+**Exit code 3 — internal error.** An uncaught exception or a write attempt against a read-only DB. Re-run with the full error visible (`multivac ... 2>&1 | less`) and file an issue if the cause isn't obvious.
 
 **Picker opens but no results.** Two cases:
-- *Fresh index, empty query.* You'll see "no conversations indexed yet". Use Claude Code at least once and re-run ccsearch — the first invocation builds the index.
+- *Fresh index, empty query.* You'll see "no conversations indexed yet". Use Claude Code at least once and re-run multivac — the first invocation builds the index.
 - *Query has FTS syntax errors.* The picker shows the FTS error inline rather than crashing. Fix the syntax (most often a stray `*` or unescaped quote) and keep typing.
 
-**`claude --resume` says "session not found".** ccsearch always launches `claude` in the conversation's original project directory, so this should be rare. If it happens, double-check that `~/.claude/projects/<dir>/<session-id>.jsonl` still exists — if you've moved or deleted the project directory, the session is orphaned.
+**`claude --resume` says "session not found".** multivac always launches `claude` in the conversation's original project directory, so this should be rare. If it happens, double-check that `~/.claude/projects/<dir>/<session-id>.jsonl` still exists — if you've moved or deleted the project directory, the session is orphaned.
 
-**`sessions.json` is corrupt.** ccsearch prints a stderr warning on load and falls back to the empty default. Fix the JSON by hand or delete the file; renames and pins recreate it on the next mutation.
+**`sessions.json` is corrupt.** multivac prints a stderr warning on load and falls back to the empty default. Fix the JSON by hand or delete the file; renames and pins recreate it on the next mutation.
 
 **Ctrl-W does nothing.** You're not inside tmux, or you passed `--no-tmux`. Run `echo $TMUX` to verify.
 
 **Shift-Enter doesn't trigger dangerous resume.** Your terminal sends `\r` for both Enter and Shift-Enter (no CSI-u support). Use Alt-Enter instead — it works on every terminal that distinguishes Alt from no-Alt for Enter.
+
+---
+
+## How it's distributed
+
+The `multivac` CLI ships through **two distribution channels** that carry the same code:
+
+| Channel | Install | When to choose it |
+|---|---|---|
+| Claude Code marketplace plugin | `/plugin marketplace add krmrn42/krmrn-skills` + `/plugin install chat-search@krmrn-skills` | You live inside Claude Code; want `/chat-search:find` and the auto-PATH integration that comes with plugin install |
+| npm scoped package | `npm install -g @krmrn42/multivac` (or `npx -y @krmrn42/multivac`) | You're a shell-first user, or want a one-shot run without installing; you can still bridge to Claude Code via `multivac init` |
+
+The plugin and the npm package always carry the same version string. Inside this monorepo, canonical sources live at `packages/multivac/src/`; the plugin's `bin/` is a thin layer of git-tracked symlinks pointing into the package directory. A linter rule (`marketplace.plugin.package-version-sync`) refuses to ship if `packages/multivac/package.json`, `plugins/chat-search/.claude-plugin/plugin.json`, and the matching `marketplace.json` entry disagree on the version.
+
+**The 0.6.0 rename:** before 0.6.0 the binary was named `ccsearch`. The rename is a hard cut — no `ccsearch` bin alias ships. If you ran `/chat-search:setup` before 0.6.0, re-run it once; the slash command detects the stale `~/.local/bin/ccsearch` symlink (only if it points into the plugin's own `bin/`) and removes it before symlinking the new `multivac`. See [CHANGELOG.md](./CHANGELOG.md) for the full rename note.
 
 ---
 
@@ -302,7 +318,7 @@ On those latter terminals, Alt-Enter is the working alternative (no CSI-u requir
 
 ## Origins
 
-`ccsearch`'s foundation was shaped in the private companion marketplace [`krmrn42/skills`](https://github.com/krmrn42/skills) before this plugin graduated. The four archived OpenSpec changes that established the architecture:
+`multivac`'s foundation was shaped in the private companion marketplace [`krmrn42/skills`](https://github.com/krmrn42/skills) before this plugin graduated. The four archived OpenSpec changes that established the architecture:
 
 - [`add-chat-search-plugin`](https://github.com/krmrn42/skills/tree/main/openspec/changes/archive/2026-05-10-add-chat-search-plugin) — the plugin scaffold (plugin.json, README, install path) and the initial picker.
 - [`add-chat-search-slash-command`](https://github.com/krmrn42/skills/tree/main/openspec/changes/archive/2026-05-10-add-chat-search-slash-command) — the `/chat-search:find` slash command surface.
@@ -313,4 +329,4 @@ Newer capabilities — recent-browse (empty query), the default-picker behavior,
 
 ---
 
-*This manual is part of the `ccsearch-user-manual` capability. Any change that adds or modifies a picker keybinding, CLI flag, or user-visible behavior should update the corresponding section here in the same change-set — see `openspec/specs/ccsearch-user-manual/spec.md`.*
+*This manual is part of the `multivac-user-manual` capability. Any change that adds or modifies a picker keybinding, CLI flag, or user-visible behavior should update the corresponding section here in the same change-set — see `openspec/specs/multivac-user-manual/spec.md`.*

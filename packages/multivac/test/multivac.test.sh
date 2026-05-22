@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ccsearch.test.sh — fixture-DB smoke test for ccsearch.
+# multivac.test.sh — fixture-DB smoke test for multivac.
 #
 # Builds a temporary SQLite database matching the live Claude Code FTS5 schema,
 # populates 5 fake conversations across 2 fake projects, and asserts on row
@@ -7,22 +7,22 @@
 # real ~/.claude/conversation-search.db.
 #
 # Usage:
-#   bash plugins/chat-search/bin/ccsearch.test.sh [--keep]
+#   bash packages/multivac/test/multivac.test.sh [--keep]
 #
 # --keep leaves the fixture DB on disk (printed at the end) for manual probing.
 
 set -u  # NB: -e is intentionally OFF — we test exit codes explicitly.
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-CCSEARCH="$HERE/ccsearch"
+MULTIVAC="$HERE/../src/multivac.js"
 
 # Resolve sqlite3 once (some installs have it bundled with Python only)
 if ! command -v sqlite3 >/dev/null 2>&1; then
-  echo "ccsearch.test.sh: sqlite3 binary required for the test (used to build the fixture)" >&2
+  echo "multivac.test.sh: sqlite3 binary required for the test (used to build the fixture)" >&2
   exit 2
 fi
 
-DB="$(mktemp -t ccsearch-fixture.XXXXXX.db)"
+DB="$(mktemp -t multivac-fixture.XXXXXX.db)"
 KEEP=0
 [[ "${1-}" == "--keep" ]] && KEEP=1
 
@@ -58,6 +58,17 @@ assert_contains() {
   else
     printf '  FAIL  %s — expected substring %q in output\n' "$name" "$needle" >&2
     printf '         got: %q\n' "$haystack" >&2
+    FAIL=$((FAIL+1))
+  fi
+}
+
+assert_not_contains() {
+  local name="$1" needle="$2" haystack="$3"
+  if [[ "$haystack" != *"$needle"* ]]; then
+    printf '  PASS  %s\n' "$name"
+    PASS=$((PASS+1))
+  else
+    printf '  FAIL  %s — unexpected substring %q present in output\n' "$name" "$needle" >&2
     FAIL=$((FAIL+1))
   fi
 }
@@ -138,9 +149,9 @@ INSERT INTO messages VALUES
     1735948810000, 'tool_result', 'output: PROCESS_KILLED_OOM', NULL, NULL, 't5', 'u5', 0);
 SQL
 
-# All output below is captured for assertion. Run ccsearch with --no-color and explicit --format text.
-RUN() { CCSEARCH_DB="$DB" "$CCSEARCH" --no-color "$@" 2>&1; }
-RUN_CODE() { CCSEARCH_DB="$DB" "$CCSEARCH" --no-color "$@" >/dev/null 2>&1; echo $?; }
+# All output below is captured for assertion. Run multivac with --no-color and explicit --format text.
+RUN() { MULTIVAC_DB="$DB" "$MULTIVAC" --no-color "$@" 2>&1; }
+RUN_CODE() { MULTIVAC_DB="$DB" "$MULTIVAC" --no-color "$@" >/dev/null 2>&1; echo $?; }
 
 # --- Tests --------------------------------------------------------------
 
@@ -229,14 +240,14 @@ assert_eq "T13.exit_1" "1" "$code"
 
 echo
 echo "Test 14: missing DB → exit 2"
-out="$(CCSEARCH_DB=/nonexistent/path/to/no.db "$CCSEARCH" --no-color foo 2>&1)"
-code="$(CCSEARCH_DB=/nonexistent/path/to/no.db "$CCSEARCH" --no-color foo >/dev/null 2>&1; echo $?)"
+out="$(MULTIVAC_DB=/nonexistent/path/to/no.db "$MULTIVAC" --no-color foo 2>&1)"
+code="$(MULTIVAC_DB=/nonexistent/path/to/no.db "$MULTIVAC" --no-color foo >/dev/null 2>&1; echo $?)"
 assert_eq        "T14.exit_2" "2" "$code"
 assert_contains  "T14.message" "not found" "$out"
 
 echo
 echo "Test 15: schema drift (drop project_name column) → exit 2"
-DB2="$(mktemp -t ccsearch-fixture-broken.XXXXXX.db)"
+DB2="$(mktemp -t multivac-fixture-broken.XXXXXX.db)"
 sqlite3 "$DB2" <<'SQL'
 -- Same schema but missing project_name
 CREATE TABLE messages (
@@ -252,8 +263,8 @@ CREATE TABLE messages (
 );
 CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
 SQL
-out="$(CCSEARCH_DB="$DB2" "$CCSEARCH" --no-color foo 2>&1)"
-code="$(CCSEARCH_DB="$DB2" "$CCSEARCH" --no-color foo >/dev/null 2>&1; echo $?)"
+out="$(MULTIVAC_DB="$DB2" "$MULTIVAC" --no-color foo 2>&1)"
+code="$(MULTIVAC_DB="$DB2" "$MULTIVAC" --no-color foo >/dev/null 2>&1; echo $?)"
 assert_eq        "T15.exit_2" "2" "$code"
 assert_contains  "T15.message" "project_name" "$out"
 rm -f "$DB2"
@@ -269,7 +280,7 @@ esac
 
 echo
 echo "Test 17: --preview renders header + a turn for the matching session"
-out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color --preview conv-aaaa-1111-1111-1111-111111111111 2>&1)"
+out="$(MULTIVAC_DB="$DB" "$MULTIVAC" --no-color --preview conv-aaaa-1111-1111-1111-111111111111 2>&1)"
 assert_contains "T17.preview_project"  "alpha" "$out"
 assert_contains "T17.preview_session"  "session conv-aaaa" "$out"
 assert_contains "T17.preview_turn"     "configure session timeout" "$out"
@@ -301,7 +312,7 @@ esac
 
 echo
 echo "Test 20: missing project_path → degraded one-liner with '# original project path unknown'"
-DB3="$(mktemp -t ccsearch-fixture-no-path.XXXXXX.db)"
+DB3="$(mktemp -t multivac-fixture-no-path.XXXXXX.db)"
 sqlite3 "$DB3" <<'SQL'
 CREATE TABLE messages (
   id TEXT PRIMARY KEY,
@@ -327,10 +338,10 @@ INSERT INTO messages VALUES
   ('mx1', 'conv-x', '', '', 1735689600000, 'user', 'pathless conversation about widgets', NULL, NULL, 'ux1', NULL, 0),
   ('mx2', 'conv-x', '', '', 1735689610000, 'assistant', 'widgets are great', NULL, NULL, 'ax1', 'ux1', 0);
 SQL
-out="$(CCSEARCH_DB="$DB3" "$CCSEARCH" --no-color --format text widgets 2>&1)"
+out="$(MULTIVAC_DB="$DB3" "$MULTIVAC" --no-color --format text widgets 2>&1)"
 assert_contains "T20.degraded_oneliner" "claude --resume conv-x  # original project path unknown" "$out"
 # And in tsv, column 3 should be the empty string
-out_tsv="$(CCSEARCH_DB="$DB3" "$CCSEARCH" --no-color --format tsv widgets 2>&1)"
+out_tsv="$(MULTIVAC_DB="$DB3" "$MULTIVAC" --no-color --format tsv widgets 2>&1)"
 first_line="$(printf '%s\n' "$out_tsv" | head -n 1)"
 proj_path_col="$(printf '%s' "$first_line" | awk -F'\t' '{print $3}')"
 assert_eq "T20.tsv_col3_empty" "" "$proj_path_col"
@@ -338,14 +349,14 @@ rm -f "$DB3"
 
 echo
 echo "Test 21: --help exits 0 and mentions Node 22.5"
-out="$("$CCSEARCH" --help 2>&1)"
-code="$("$CCSEARCH" --help >/dev/null 2>&1; echo $?)"
+out="$("$MULTIVAC" --help 2>&1)"
+code="$("$MULTIVAC" --help >/dev/null 2>&1; echo $?)"
 assert_eq        "T21.exit_0" "0" "$code"
 assert_contains  "T21.help_node_version" "Node.js ≥ 22.5" "$out"
 
 echo
 echo "Test 22.4: indexer builds an FTS index from a JSONL tree"
-INDEXER_TMP="$(mktemp -d -t ccsearch-indexer.XXX)"
+INDEXER_TMP="$(mktemp -d -t multivac-indexer.XXX)"
 mkdir -p "$INDEXER_TMP/.claude/projects/-home-foo-alpha"
 mkdir -p "$INDEXER_TMP/.claude/projects/-home-foo-beta"
 python3 - "$INDEXER_TMP/.claude/projects/-home-foo-alpha/sess-alpha.jsonl" "$INDEXER_TMP/.claude/projects/-home-foo-beta/sess-beta.jsonl" <<'PY'
@@ -374,21 +385,21 @@ PY
 # Snapshot mtimes before the pass for the read-only invariant test
 PRE_SNAP="$(find "$INDEXER_TMP/.claude/projects" -name "*.jsonl" -printf "%T@ %s %p\n" | sort)"
 
-# First indexer run via ccsearch
-out="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --no-color --format text SeekersGuidance 2>&1)"
+# First indexer run via multivac
+out="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$MULTIVAC" --no-color --format text SeekersGuidance 2>&1)"
 case "$out" in
   *SeekersGuidance*alpha*) PASS=$((PASS+1)); echo "  PASS  T22.4.indexer_finds_term" ;;
   *)                       FAIL=$((FAIL+1)); echo "  FAIL  T22.4.indexer_finds_term — output: $out" >&2 ;;
 esac
 
 # Multi-block parsing: thinking AND text should both index → both can be found
-out_th="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --no-color --format text 'Considering' 2>&1)"
-out_tx="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --no-color --format text 'OAuth' 2>&1)"
+out_th="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$MULTIVAC" --no-color --format text 'Considering' 2>&1)"
+out_tx="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$MULTIVAC" --no-color --format text 'OAuth' 2>&1)"
 assert_contains "T22.4.thinking_block_indexed" "Considering"  "$out_th"
 assert_contains "T22.4.text_block_indexed"     "OAuth"        "$out_tx"
 
 # --index-status reports
-status_out="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --index-status 2>&1)"
+status_out="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$MULTIVAC" --index-status 2>&1)"
 assert_contains "T22.4.status_lists_db_path"   "index.db"     "$status_out"
 assert_contains "T22.4.status_lists_messages"  "messages:"    "$status_out"
 assert_contains "T22.4.status_pending_none"    "pending:    none" "$status_out"
@@ -405,48 +416,50 @@ fi
 echo '{"type":"user","sessionId":"sess-alpha","uuid":"u3","parentUuid":null,"cwd":"/home/foo/alpha","timestamp":"2026-04-03T12:00:00Z","message":{"role":"user","content":"UNIQUE_MARKER_FOR_INCREMENTAL_TEST"}}' >> "$INDEXER_TMP/.claude/projects/-home-foo-alpha/sess-alpha.jsonl"
 # Force mtime forward — `find -newer` granularity issues
 touch -d "+5 seconds" "$INDEXER_TMP/.claude/projects/-home-foo-alpha/sess-alpha.jsonl"
-out_inc="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --no-color --format text UNIQUE_MARKER_FOR_INCREMENTAL_TEST 2>&1)"
+out_inc="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$MULTIVAC" --no-color --format text UNIQUE_MARKER_FOR_INCREMENTAL_TEST 2>&1)"
 assert_contains "T22.4.incremental_picks_up_new_message" "UNIQUE_MARKER_FOR_INCREMENTAL_TEST" "$out_inc"
 
 # --reindex still works
-reindex_out="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$CCSEARCH" --reindex 2>&1)"
+reindex_out="$(XDG_DATA_HOME="$INDEXER_TMP/xdg" HOME="$INDEXER_TMP" "$MULTIVAC" --reindex 2>&1)"
 assert_contains "T22.4.reindex_summary" "indexed" "$reindex_out"
 
 rm -rf "$INDEXER_TMP"
 
 echo
 echo "Test 22.5: --flag=value form is accepted (regression test for slash-command usage)"
-out="$(CCSEARCH_DB="$DB" "$CCSEARCH" '"session timeout"' --format=text --no-color --limit=10 2>&1)"
-code="$(CCSEARCH_DB="$DB" "$CCSEARCH" '"session timeout"' --format=text --no-color --limit=10 >/dev/null 2>&1; echo $?)"
+out="$(MULTIVAC_DB="$DB" "$MULTIVAC" '"session timeout"' --format=text --no-color --limit=10 2>&1)"
+code="$(MULTIVAC_DB="$DB" "$MULTIVAC" '"session timeout"' --format=text --no-color --limit=10 >/dev/null 2>&1; echo $?)"
 assert_eq        "T22b.exit_0_with_equals_form" "0" "$code"
 assert_contains  "T22b.row_present"            "alpha" "$out"
 # Also assert --project=substr works (used in slash command examples)
-out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --format=text --no-color session --project=beta 2>&1)"
-code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --format=text --no-color session --project=beta >/dev/null 2>&1; echo $?)"
+out="$(MULTIVAC_DB="$DB" "$MULTIVAC" --format=text --no-color session --project=beta 2>&1)"
+code="$(MULTIVAC_DB="$DB" "$MULTIVAC" --format=text --no-color session --project=beta >/dev/null 2>&1; echo $?)"
 assert_eq        "T22b.exit_0_project_equals" "0" "$code"
 assert_contains  "T22b.beta_present"          "beta" "$out"
 
 echo
 echo "Test 22: -i without TTY exits 2 with a clear message"
 # stdin redirection makes it non-TTY
-out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color -i 2>&1 < /dev/null)"
-code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color -i > /dev/null 2>&1 < /dev/null; echo $?)"
+out="$(MULTIVAC_DB="$DB" "$MULTIVAC" --no-color -i 2>&1 < /dev/null)"
+code="$(MULTIVAC_DB="$DB" "$MULTIVAC" --no-color -i > /dev/null 2>&1 < /dev/null; echo $?)"
 assert_eq        "T22.exit_2" "2" "$code"
 assert_contains  "T22.tty_message" "requires a TTY" "$out"
 
 echo
 echo "Test 23: --help exits 0, writes to stdout, stderr is empty"
-out_stdout="$("$CCSEARCH" --help 2>/dev/null)"
-out_stderr="$("$CCSEARCH" --help 2>&1 >/dev/null)"
-code="$("$CCSEARCH" --help >/dev/null 2>&1; echo $?)"
-assert_eq        "T23.exit_0"      "0" "$code"
-assert_contains  "T23.stdout_used" "usage:" "$out_stdout"
-assert_eq        "T23.stderr_empty" "" "$out_stderr"
+out_stdout="$("$MULTIVAC" --help 2>/dev/null)"
+out_stderr="$("$MULTIVAC" --help 2>&1 >/dev/null)"
+code="$("$MULTIVAC" --help >/dev/null 2>&1; echo $?)"
+assert_eq            "T23.exit_0"           "0" "$code"
+assert_contains      "T23.stdout_used"      "usage:" "$out_stdout"
+assert_eq            "T23.stderr_empty"     "" "$out_stderr"
+assert_contains      "T23.banner_multivac"  "usage: multivac" "$out_stdout"
+assert_not_contains  "T23.no_ccsearch"      "ccsearch" "$out_stdout"
 
 echo
 echo "Test 24: -h short form matches --help byte-for-byte"
-out_h="$("$CCSEARCH" -h 2>/dev/null)"
-out_long="$("$CCSEARCH" --help 2>/dev/null)"
+out_h="$("$MULTIVAC" -h 2>/dev/null)"
+out_long="$("$MULTIVAC" --help 2>/dev/null)"
 if [ "$out_h" = "$out_long" ]; then
   PASS=$((PASS+1)); echo "  PASS  T24.short_form_matches"
 else
@@ -456,14 +469,14 @@ fi
 echo
 echo "Test 25: --help overrides other flags (no DB access, no query attempt)"
 # Even with a bogus DB path and contradictory flags, --help should exit 0
-out="$(CCSEARCH_DB=/nonexistent/no.db "$CCSEARCH" --help --regex 'foo' --limit 5 2>&1)"
-code="$(CCSEARCH_DB=/nonexistent/no.db "$CCSEARCH" --help --regex 'foo' --limit 5 >/dev/null 2>&1; echo $?)"
+out="$(MULTIVAC_DB=/nonexistent/no.db "$MULTIVAC" --help --regex 'foo' --limit 5 2>&1)"
+code="$(MULTIVAC_DB=/nonexistent/no.db "$MULTIVAC" --help --regex 'foo' --limit 5 >/dev/null 2>&1; echo $?)"
 assert_eq        "T25.exit_0_override" "0" "$code"
 assert_contains  "T25.help_printed"    "usage:" "$out"
 
 echo
-echo "Test 27: selectMode dispatch matrix (unit-style, via CCSEARCH_TEST export)"
-SELECT_MODE_OUT="$(CCSEARCH_TEST=1 node -e '
+echo "Test 27: selectMode dispatch matrix (unit-style, via MULTIVAC_TEST export)"
+SELECT_MODE_OUT="$(MULTIVAC_TEST=1 node -e '
 const { selectMode } = require(process.argv[1]);
 function check(label, expected, actual) {
   if (expected === actual) {
@@ -491,7 +504,7 @@ check("regex-on-tty",        "one-shot", selectMode({interactive:false,list:fals
 check("dash-i-on-tty",       "picker",   selectMode({interactive:true, list:false,format:null,regex:null},{stdinTTY:true,stdoutTTY:true}));
 // -i forces picker even on non-TTY (picker itself will then EXIT_ENV; the dispatch correctly chooses picker)
 check("dash-i-non-tty",      "picker",   selectMode({interactive:true, list:false,format:null,regex:null},{stdinTTY:false,stdoutTTY:false}));
-' "$CCSEARCH" 2>&1)"
+' "$MULTIVAC" 2>&1)"
 if echo "$SELECT_MODE_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T27.selectMode_matrix"
@@ -504,28 +517,28 @@ fi
 echo
 echo "Test 28: --list forces text output (one-shot) on a TTY-like invocation"
 # Force non-TTY stdin so the picker can't engage; --list is the explicit signal.
-out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color --list 'session timeout' </dev/null 2>&1)"
-code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color --list 'session timeout' >/dev/null </dev/null 2>&1; echo $?)"
+out="$(MULTIVAC_DB="$DB" "$MULTIVAC" --no-color --list 'session timeout' </dev/null 2>&1)"
+code="$(MULTIVAC_DB="$DB" "$MULTIVAC" --no-color --list 'session timeout' >/dev/null </dev/null 2>&1; echo $?)"
 assert_eq        "T28.exit_0" "0" "$code"
 assert_contains  "T28.text_output_present" "alpha" "$out"
 
 echo
 echo "Test 29: --list -i exits 1 (mutex)"
-out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --list -i 2>&1)"
-code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --list -i >/dev/null 2>&1; echo $?)"
+out="$(MULTIVAC_DB="$DB" "$MULTIVAC" --list -i 2>&1)"
+code="$(MULTIVAC_DB="$DB" "$MULTIVAC" --list -i >/dev/null 2>&1; echo $?)"
 assert_eq        "T29.exit_1" "1" "$code"
 assert_contains  "T29.mutex_message" "mutually exclusive" "$out"
 
 echo
 echo "Test 30: slash-command shape (--format=text --no-color --limit=10) still works"
-out="$(CCSEARCH_DB="$DB" "$CCSEARCH" --format=text --no-color --limit=10 'session timeout' </dev/null 2>&1)"
-code="$(CCSEARCH_DB="$DB" "$CCSEARCH" --format=text --no-color --limit=10 'session timeout' >/dev/null </dev/null 2>&1; echo $?)"
+out="$(MULTIVAC_DB="$DB" "$MULTIVAC" --format=text --no-color --limit=10 'session timeout' </dev/null 2>&1)"
+code="$(MULTIVAC_DB="$DB" "$MULTIVAC" --format=text --no-color --limit=10 'session timeout' >/dev/null </dev/null 2>&1; echo $?)"
 assert_eq        "T30.exit_0" "0" "$code"
 assert_contains  "T30.row_present" "alpha" "$out"
 
 echo
 echo "Test 31: piped query produces TSV (stdout not a TTY → one-shot, default tsv)"
-first_line="$(CCSEARCH_DB="$DB" "$CCSEARCH" 'session timeout' 2>/dev/null | head -1)"
+first_line="$(MULTIVAC_DB="$DB" "$MULTIVAC" 'session timeout' 2>/dev/null | head -1)"
 case "$first_line" in
   *$'\t'*)  PASS=$((PASS+1)); echo "  PASS  T31.tsv_when_piped" ;;
   *)        FAIL=$((FAIL+1)); echo "  FAIL  T31.tsv_when_piped — first line missing tab: $first_line" >&2 ;;
@@ -535,7 +548,7 @@ echo
 echo "Test 32: recentConversations — ordering, title synthesis, tail snippet, wrapper-skip"
 # Build a minimal fixture with three conversations whose first-user-message and
 # tail messages exercise the spec.
-DB_REC="$(mktemp -t ccsearch-recent.XXXXXX.db)"
+DB_REC="$(mktemp -t multivac-recent.XXXXXX.db)"
 sqlite3 "$DB_REC" <<'SQL'
 CREATE TABLE messages (
   id TEXT PRIMARY KEY,
@@ -586,7 +599,7 @@ INSERT INTO messages VALUES
    'reply', NULL, NULL, 'aC1', 'uC1', 0);
 SQL
 
-OUT="$(CCSEARCH_TEST=1 node -e '
+OUT="$(MULTIVAC_TEST=1 node -e '
 const { recentConversations } = require(process.argv[1]);
 const { DatabaseSync } = require("node:sqlite");
 const db = new DatabaseSync(process.argv[2], { readOnly: true });
@@ -596,7 +609,7 @@ for (let i = 0; i < rows.length; i++) {
   const r = rows[i];
   console.log(i, "sid=" + r.sessionId, "title=" + (r.title === null ? "<null>" : JSON.stringify(r.title)), "tail=" + JSON.stringify((r.snippet || "").slice(0,60)));
 }
-' "$CCSEARCH" "$DB_REC" 2>&1)"
+' "$MULTIVAC" "$DB_REC" 2>&1)"
 # Order: B (2M ts) → C (1.5M ts) → A (1M ts)
 case "$OUT" in
   *"LEN 3"*)            PASS=$((PASS+1)); echo "  PASS  T32.three_rows" ;;
@@ -631,7 +644,7 @@ rm -f "$DB_REC"
 
 echo
 echo "Test 33: recentConversations — empty index returns []"
-DB_EMPTY="$(mktemp -t ccsearch-empty.XXXXXX.db)"
+DB_EMPTY="$(mktemp -t multivac-empty.XXXXXX.db)"
 sqlite3 "$DB_EMPTY" <<'SQL'
 CREATE TABLE messages (
   id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, project_path TEXT NOT NULL,
@@ -641,13 +654,13 @@ CREATE TABLE messages (
 );
 CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
 SQL
-OUT_EMPTY="$(CCSEARCH_TEST=1 node -e '
+OUT_EMPTY="$(MULTIVAC_TEST=1 node -e '
 const { recentConversations } = require(process.argv[1]);
 const { DatabaseSync } = require("node:sqlite");
 const db = new DatabaseSync(process.argv[2], { readOnly: true });
 const rows = recentConversations(db, { limit: 10, projectFilter: null });
 console.log("LEN", rows.length);
-' "$CCSEARCH" "$DB_EMPTY" 2>&1)"
+' "$MULTIVAC" "$DB_EMPTY" 2>&1)"
 case "$OUT_EMPTY" in
   *"LEN 0"*)            PASS=$((PASS+1)); echo "  PASS  T33.empty_returns_empty_array" ;;
   *)                    FAIL=$((FAIL+1)); echo "  FAIL  T33.empty_returns_empty_array — got: $OUT_EMPTY" >&2 ;;
@@ -656,7 +669,7 @@ rm -f "$DB_EMPTY"
 
 echo
 echo "Test 34: isWrapperContent — unit tests for the wrapper-detection helper"
-WRAP_OUT="$(CCSEARCH_TEST=1 node -e '
+WRAP_OUT="$(MULTIVAC_TEST=1 node -e '
 const { isWrapperContent } = require(process.argv[1]);
 function check(label, expected, actual) {
   if (expected === actual) console.log("OK", label);
@@ -670,7 +683,7 @@ check("real-user",            false, isWrapperContent("how do I write a skill"))
 check("empty",                true,  isWrapperContent(""));
 check("null",                 true,  isWrapperContent(null));
 check("not-wrapper-but-tag",  false, isWrapperContent("<html>not one of ours</html>"));
-' "$CCSEARCH" 2>&1)"
+' "$MULTIVAC" 2>&1)"
 if echo "$WRAP_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T34.isWrapperContent_cases"
@@ -682,18 +695,18 @@ fi
 
 echo
 echo "Test 35: --dangerously-skip-permissions parses + --help mentions it"
-out_help="$("$CCSEARCH" --help 2>&1)"
+out_help="$("$MULTIVAC" --help 2>&1)"
 assert_contains "T35.help_mentions_flag" "--dangerously-skip-permissions" "$out_help"
 assert_contains "T35.help_mentions_alt_enter" "Alt+Enter" "$out_help"
 
 # parseArgs flips the bool
-PARSE_OUT="$(CCSEARCH_TEST=1 node -e '
+PARSE_OUT="$(MULTIVAC_TEST=1 node -e '
 const { parseArgs } = require(process.argv[1]);
 const on  = parseArgs(["--dangerously-skip-permissions"]);
 const off = parseArgs([]);
 console.log("on", on.dangerouslySkipPermissions);
 console.log("off", off.dangerouslySkipPermissions);
-' "$CCSEARCH" 2>&1)"
+' "$MULTIVAC" 2>&1)"
 case "$PARSE_OUT" in
   *"on true"*"off false"*) PASS=$((PASS+1)); echo "  PASS  T35.parser_branch" ;;
   *)                       FAIL=$((FAIL+1)); echo "  FAIL  T35.parser_branch — got: $PARSE_OUT" >&2 ;;
@@ -702,7 +715,7 @@ esac
 echo
 echo "Test 36: --dangerously-skip-permissions is silently ignored in one-shot output"
 # Force text format so resumeOneLiner shows up (without --format the piped capture defaults to tsv).
-out_oneshot="$(CCSEARCH_DB="$DB" "$CCSEARCH" --no-color --format=text --dangerously-skip-permissions 'session timeout' </dev/null 2>&1)"
+out_oneshot="$(MULTIVAC_DB="$DB" "$MULTIVAC" --no-color --format=text --dangerously-skip-permissions 'session timeout' </dev/null 2>&1)"
 case "$out_oneshot" in
   *"--dangerously-skip-permissions"*)
                                 FAIL=$((FAIL+1)); echo "  FAIL  T36.flag_not_in_oneshot — leaked into output" >&2 ;;
@@ -713,7 +726,7 @@ esac
 
 echo
 echo "Test 37: buildClaudeArgs — all action shapes (without + with saved name)"
-BCA_OUT="$(CCSEARCH_TEST=1 node -e '
+BCA_OUT="$(MULTIVAC_TEST=1 node -e '
 const { buildClaudeArgs } = require(process.argv[1])._test;
 const row = { sessionId: "abc" };
 function check(label, expected, actual) {
@@ -743,8 +756,8 @@ fi
 
 echo
 echo "Test 38: sessions.json — load/save round-trip + corrupt-file recovery"
-TMPCFG="$(mktemp -d -t ccsearch-cfg.XXXXXX)"
-SES_OUT="$(CCSEARCH_TEST=1 node -e '
+TMPCFG="$(mktemp -d -t multivac-cfg.XXXXXX)"
+SES_OUT="$(MULTIVAC_TEST=1 node -e '
 const { loadSessionStore, saveSessionStore, emptySessionStore } = require(process.argv[1]);
 const fs = require("node:fs"); const p = process.argv[2];
 // load on missing file
@@ -765,7 +778,7 @@ console.log("RECOVERED", rec.version, Object.keys(rec.names).length, rec.pins.le
 fs.writeFileSync(p, JSON.stringify({ version: 1, names: { a: "ok", b: 42, c: "" }, pins: ["x", null] }));
 const filt = loadSessionStore(p);
 console.log("FILTERED", filt.names.a, filt.names.b, filt.names.c, filt.pins.join(","));
-' "$CCSEARCH" "$TMPCFG/sessions.json" 2>&1)"
+' "$MULTIVAC" "$TMPCFG/sessions.json" 2>&1)"
 case "$SES_OUT" in
   *"EMPTY 1 0 0"*"EXISTS yes"*"NO_TMP no"*"RELOADED alpha beta conv-a"*"RECOVERED 1 0 0"*"FILTERED ok undefined undefined x"*)
     PASS=$((PASS+1)); echo "  PASS  T38.sessions_json_round_trip" ;;
@@ -777,23 +790,23 @@ rm -rf "$TMPCFG"
 
 echo
 echo "Test 39: --print-names — empty config + populated config"
-TMPCFG="$(mktemp -d -t ccsearch-cfg.XXXXXX)"
-PN_EMPTY="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --print-names 2>&1)"
+TMPCFG="$(mktemp -d -t multivac-cfg.XXXXXX)"
+PN_EMPTY="$(XDG_CONFIG_HOME="$TMPCFG" "$MULTIVAC" --print-names 2>&1)"
 assert_eq "T39.empty_prints_braces" "{}" "$PN_EMPTY"
 mkdir -p "$TMPCFG/krmrn42-skills/chat-search"
 echo '{"version":1,"names":{"conv-xyz":"named one"},"pins":[]}' > "$TMPCFG/krmrn42-skills/chat-search/sessions.json"
-PN_FULL="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --print-names 2>&1)"
+PN_FULL="$(XDG_CONFIG_HOME="$TMPCFG" "$MULTIVAC" --print-names 2>&1)"
 assert_contains "T39.populated_prints_content" "named one" "$PN_FULL"
 assert_contains "T39.populated_prints_session_id" "conv-xyz" "$PN_FULL"
 # --print-names short-circuits before any DB work — should succeed even without
 # a usable index. Use a non-existent --db-path to confirm.
-PN_NODB="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --db-path "/nonexistent/path.db" --print-names 2>&1)"
+PN_NODB="$(XDG_CONFIG_HOME="$TMPCFG" "$MULTIVAC" --db-path "/nonexistent/path.db" --print-names 2>&1)"
 assert_contains "T39.short_circuits_before_db" "named one" "$PN_NODB"
 rm -rf "$TMPCFG"
 
 echo
 echo "Test 40: recentConversations — saved-name overlay overrides synthesized title"
-RC_NAME_OUT="$(CCSEARCH_TEST=1 node -e '
+RC_NAME_OUT="$(MULTIVAC_TEST=1 node -e '
 const { recentConversations } = require(process.argv[1]);
 const { DatabaseSync } = require("node:sqlite");
 const db = new DatabaseSync(process.argv[2], { readOnly: true });
@@ -807,7 +820,7 @@ console.log("OTHER_NOT_OVERRIDDEN", other && other.title && other.title !== "my 
 const rowsNoStore = recentConversations(db, { limit: 10, projectFilter: null });
 const sameRow = rowsNoStore.find(r => r.sessionId === "conv-aaaa-1111-1111-1111-111111111111");
 console.log("NO_STORE_SYNTHESIZED", sameRow && sameRow.title && sameRow.title !== "my custom name" ? "yes" : "no");
-' "$CCSEARCH" "$DB" 2>&1)"
+' "$MULTIVAC" "$DB" 2>&1)"
 case "$RC_NAME_OUT" in
   *"NAMED my custom name"*"OTHER_NOT_OVERRIDDEN yes"*"NO_STORE_SYNTHESIZED yes"*)
     PASS=$((PASS+1)); echo "  PASS  T40.recent_conv_name_overlay" ;;
@@ -818,7 +831,7 @@ esac
 
 echo
 echo "Test 45: sanitizeTmuxName + shellSingleQuote — pure helpers"
-TMX_OUT="$(CCSEARCH_TEST=1 node -e '
+TMX_OUT="$(MULTIVAC_TEST=1 node -e '
 const { sanitizeTmuxName, shellSingleQuote } = require(process.argv[1])._test;
 function check(label, expected, actual) {
   if (expected === actual) console.log("OK", label);
@@ -850,7 +863,7 @@ fi
 
 echo
 echo "Test 46: buildTmuxNewWindowCommand — name resolution + cwd + inner command"
-BTW_OUT="$(CCSEARCH_TEST=1 node -e '
+BTW_OUT="$(MULTIVAC_TEST=1 node -e '
 const { buildTmuxNewWindowCommand } = require(process.argv[1])._test;
 function check(label, expected, actual) {
   const a = JSON.stringify(actual), e = JSON.stringify(expected);
@@ -882,23 +895,23 @@ fi
 
 echo
 echo "Test 47: --no-tmux parses + --help mentions Ctrl-W when relevant"
-nt_out="$(CCSEARCH_TEST=1 node -e '
+nt_out="$(MULTIVAC_TEST=1 node -e '
 const { parseArgs } = require(process.argv[1]);
 const on = parseArgs(["--no-tmux"]);
 const off = parseArgs([]);
 console.log("on", on.noTmux);
 console.log("off", off.noTmux);
-' "$CCSEARCH" 2>&1)"
+' "$MULTIVAC" 2>&1)"
 case "$nt_out" in
   *"on true"*"off false"*) PASS=$((PASS+1)); echo "  PASS  T47.parser_branch" ;;
   *)                       FAIL=$((FAIL+1)); echo "  FAIL  T47.parser_branch — got: $nt_out" >&2 ;;
 esac
-help_for_nt="$("$CCSEARCH" --help 2>&1)"
+help_for_nt="$("$MULTIVAC" --help 2>&1)"
 assert_contains "T47.help_mentions_no_tmux" "--no-tmux" "$help_for_nt"
 
 echo
 echo "Test 44: --help mentions all new picker keybindings (Ctrl-R/P/T)"
-help_out="$("$CCSEARCH" --help 2>&1)"
+help_out="$("$MULTIVAC" --help 2>&1)"
 assert_contains "T44.help_mentions_ctrl_r" "Ctrl-R" "$help_out"
 assert_contains "T44.help_mentions_ctrl_p" "Ctrl-P" "$help_out"
 assert_contains "T44.help_mentions_ctrl_t" "Ctrl-T" "$help_out"
@@ -909,23 +922,23 @@ echo "Test 51: tmuxAvailable gate — args.noTmux suppresses regardless of \$TMU
 # The gate logic in main() is: !!process.env.TMUX && !args.noTmux. We
 # replicate it here against parseArgs output so the contract holds even
 # if the inline expression is refactored.
-GATE_OUT="$(CCSEARCH_TEST=1 TMUX="/tmp/fake,1,0" node -e '
+GATE_OUT="$(MULTIVAC_TEST=1 TMUX="/tmp/fake,1,0" node -e '
 const { parseArgs } = require(process.argv[1]);
 function gate(args) { return !!process.env.TMUX && !args.noTmux; }
 console.log("default", gate(parseArgs([])));
 console.log("no_tmux", gate(parseArgs(["--no-tmux"])));
-' "$CCSEARCH" 2>&1)"
+' "$MULTIVAC" 2>&1)"
 case "$GATE_OUT" in
   *"default true"*"no_tmux false"*) PASS=$((PASS+1)); echo "  PASS  T51.gate_inside_tmux_with_no_tmux" ;;
   *)                                FAIL=$((FAIL+1)); echo "  FAIL  T51.gate_inside_tmux_with_no_tmux — got: $GATE_OUT" >&2 ;;
 esac
-GATE_OUT2="$(CCSEARCH_TEST=1 node -e '
+GATE_OUT2="$(MULTIVAC_TEST=1 node -e '
 const { parseArgs } = require(process.argv[1]);
 function gate(args) { return !!process.env.TMUX && !args.noTmux; }
 delete process.env.TMUX;
 console.log("default", gate(parseArgs([])));
 console.log("no_tmux", gate(parseArgs(["--no-tmux"])));
-' "$CCSEARCH" 2>&1)"
+' "$MULTIVAC" 2>&1)"
 case "$GATE_OUT2" in
   *"default false"*"no_tmux false"*) PASS=$((PASS+1)); echo "  PASS  T51.gate_outside_tmux" ;;
   *)                                  FAIL=$((FAIL+1)); echo "  FAIL  T51.gate_outside_tmux — got: $GATE_OUT2" >&2 ;;
@@ -933,14 +946,14 @@ esac
 
 echo
 echo "Test 52: ftsSearch unit — applyPinOrdering invoked on args.sessionStore"
-# Calling ftsSearch directly requires CCSEARCH_TEST exports, which doesn'\''t
+# Calling ftsSearch directly requires MULTIVAC_TEST exports, which doesn'\''t
 # currently include ftsSearch. Instead: verify the *contract* via the
 # recentConversations + ftsSearch sharing of applyPinOrdering. The proof
 # is structural: both functions call applyPinOrdering at the end. We
 # assert that signature exists in source so a future refactor that removes
 # either call is caught.
-RC_HAS_PIN=$(grep -c "applyPinOrdering(results, sessionStore" "$CCSEARCH" 2>/dev/null)
-FTS_HAS_PIN=$(grep -c "applyPinOrdering(filled, args.sessionStore" "$CCSEARCH" 2>/dev/null)
+RC_HAS_PIN=$(grep -c "applyPinOrdering(results, sessionStore" "$MULTIVAC" 2>/dev/null)
+FTS_HAS_PIN=$(grep -c "applyPinOrdering(filled, args.sessionStore" "$MULTIVAC" 2>/dev/null)
 if [[ "$RC_HAS_PIN" -ge 1 ]] && [[ "$FTS_HAS_PIN" -ge 1 ]]; then
   PASS=$((PASS+1)); echo "  PASS  T52.both_paths_call_applyPinOrdering"
 else
@@ -949,14 +962,18 @@ fi
 
 echo
 echo "Test 53: MANUAL.md structural invariants"
-MAN="$HERE/../MANUAL.md"
+# The MANUAL is plugin-side documentation (the npm package's own README does not
+# carry MANUAL-level depth). Resolve from this test's location upwards to the
+# repo root, then into the plugin directory.
+MAN="$HERE/../../../plugins/chat-search/MANUAL.md"
 if [[ ! -f "$MAN" ]]; then
   FAIL=$((FAIL+1)); echo "  FAIL  T53.manual_exists"
 else
   PASS=$((PASS+1)); echo "  PASS  T53.manual_exists"
-  # Exactly 11 H2 sections, in the spec order.
+  # Exactly 12 H2 sections, in the spec order. "How it's distributed" was
+  # added in 0.6.0 to document the dual marketplace-plugin vs npm-package shape.
   H2_COUNT="$(grep -cE '^## ' "$MAN")"
-  assert_eq "T53.exactly_11_h2_sections" "11" "$H2_COUNT"
+  assert_eq "T53.exactly_12_h2_sections" "12" "$H2_COUNT"
   # Spec-required section names appear in order.
   EXPECTED_ORDER="Quick start
 The picker
@@ -967,6 +984,7 @@ The slash command
 The index
 Flag reference
 Troubleshooting
+How it's distributed
 Compatibility
 Origins"
   ACTUAL_ORDER="$(grep -E '^## ' "$MAN" | sed 's/^## //')"
@@ -988,7 +1006,10 @@ fi
 
 echo
 echo "Test 54: README.md links to MANUAL.md within the first 30 lines"
-RM="$HERE/../README.md"
+# Assert on the plugin's README (the one that holds the MANUAL.md pointer
+# convention). The npm package's README at packages/multivac/README.md links
+# to the same MANUAL via a GitHub URL, which is exercised by other means.
+RM="$HERE/../../../plugins/chat-search/README.md"
 if head -30 "$RM" | grep -q '\./MANUAL\.md'; then
   PASS=$((PASS+1)); echo "  PASS  T54.readme_pointer_present"
 else
@@ -997,7 +1018,7 @@ fi
 
 echo
 echo "Test 48: buildStatusBar — wrapping, gating, category coloring"
-SB_OUT="$(CCSEARCH_TEST=1 node -e '
+SB_OUT="$(MULTIVAC_TEST=1 node -e '
 const { buildStatusBar, BINDINGS } = require(process.argv[1])._test;
 function check(label, cond) {
   if (cond) console.log("OK", label);
@@ -1042,7 +1063,7 @@ fi
 
 echo
 echo "Test 49: drift guard — every BINDINGS keystroke has an onKeypress handler"
-DRIFT_OUT="$(CCSEARCH_TEST=1 node -e '
+DRIFT_OUT="$(MULTIVAC_TEST=1 node -e '
 const fs = require("node:fs");
 const { BINDINGS } = require(process.argv[1])._test;
 const src = fs.readFileSync(process.argv[1], "utf8");
@@ -1097,7 +1118,7 @@ fi
 
 echo
 echo "Test 41: applyPinOrdering — partition, pin-order, limit, FTS-mode no-inject"
-APO_OUT="$(CCSEARCH_TEST=1 node -e '
+APO_OUT="$(MULTIVAC_TEST=1 node -e '
 const { applyPinOrdering } = require(process.argv[1]);
 const rows = [
   { sessionId: "A" }, { sessionId: "B" }, { sessionId: "C" }, { sessionId: "D" },
@@ -1115,7 +1136,7 @@ check("limit_caps_total",["A*","B*"],              shape(applyPinOrdering(rows, 
 check("limit_excludes_unpinned",["A*"],            shape(applyPinOrdering(rows, { pins: ["A"] }, 1)));
 check("fts_no_inject",  ["C*","A","B","D"],        shape(applyPinOrdering(rows, { pins: ["Z","C"] }, 10)));
 check("limit_zero_returns_empty",[],               shape(applyPinOrdering(rows, { pins: ["A"] }, 0)));
-' "$CCSEARCH" 2>&1)"
+' "$MULTIVAC" 2>&1)"
 if echo "$APO_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T41.applyPinOrdering"
@@ -1127,7 +1148,7 @@ fi
 
 echo
 echo "Test 42: recentConversations + pins — partition end-to-end with fixture DB"
-PIN_REC_OUT="$(CCSEARCH_TEST=1 node -e '
+PIN_REC_OUT="$(MULTIVAC_TEST=1 node -e '
 const { recentConversations } = require(process.argv[1]);
 const { DatabaseSync } = require("node:sqlite");
 const db = new DatabaseSync(process.argv[2], { readOnly: true });
@@ -1140,7 +1161,7 @@ console.log("REST_NOT_PINNED", rows.slice(1).every(r => !r.isPinned) ? "yes" : "
 // Without store, no pinning; recent-first order
 const rows2 = recentConversations(db, { limit: 10, projectFilter: null });
 console.log("NO_STORE_NO_PIN", rows2.every(r => !r.isPinned) ? "yes" : "no");
-' "$CCSEARCH" "$DB" 2>&1)"
+' "$MULTIVAC" "$DB" 2>&1)"
 case "$PIN_REC_OUT" in
   *"FIRST_IS_PINNED true conv-aaaa"*"REST_NOT_PINNED yes"*"NO_STORE_NO_PIN yes"*)
     PASS=$((PASS+1)); echo "  PASS  T42.recent_pinned_promoted" ;;
@@ -1151,11 +1172,11 @@ esac
 
 echo
 echo "Test 43: --unpin-all clears pins, leaves names alone, exits 0"
-TMPCFG="$(mktemp -d -t ccsearch-cfg.XXXXXX)"
+TMPCFG="$(mktemp -d -t multivac-cfg.XXXXXX)"
 mkdir -p "$TMPCFG/krmrn42-skills/chat-search"
 SESFILE="$TMPCFG/krmrn42-skills/chat-search/sessions.json"
 echo '{"version":1,"names":{"conv-x":"keep me"},"pins":["a","b","c"]}' > "$SESFILE"
-UNPIN_OUT="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --unpin-all 2>&1)"
+UNPIN_OUT="$(XDG_CONFIG_HOME="$TMPCFG" "$MULTIVAC" --unpin-all 2>&1)"
 UNPIN_RC=$?
 assert_eq "T43.exit_code" "0" "$UNPIN_RC"
 assert_contains "T43.stdout_announces" "cleared 3 pin" "$UNPIN_OUT"
@@ -1163,11 +1184,11 @@ AFTER="$(cat "$SESFILE")"
 assert_contains "T43.names_preserved" '"keep me"' "$AFTER"
 assert_contains "T43.pins_cleared" '"pins": []' "$AFTER"
 # Idempotency: re-run on empty pins
-UNPIN2_OUT="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --unpin-all 2>&1)"
+UNPIN2_OUT="$(XDG_CONFIG_HOME="$TMPCFG" "$MULTIVAC" --unpin-all 2>&1)"
 assert_contains "T43.idempotent" "cleared 0 pin" "$UNPIN2_OUT"
 # Missing file: creates one
 rm -f "$SESFILE"
-UNPIN3_OUT="$(XDG_CONFIG_HOME="$TMPCFG" "$CCSEARCH" --unpin-all 2>&1)"
+UNPIN3_OUT="$(XDG_CONFIG_HOME="$TMPCFG" "$MULTIVAC" --unpin-all 2>&1)"
 UNPIN3_RC=$?
 assert_eq "T43.create_when_missing_exit" "0" "$UNPIN3_RC"
 if [[ -f "$SESFILE" ]]; then
@@ -1182,12 +1203,12 @@ echo "Test 26: drift guard — every parser flag appears in --help"
 # Extract long-form flags from source: lines like `case "--something":`. Strip
 # line-comment lines first so `case "--flag":` appearing inside a // comment
 # (documenting the convention) doesn't get picked up as a real parser case.
-PARSER_FLAGS=$(grep -v -E '^[[:space:]]*//' "$CCSEARCH" \
+PARSER_FLAGS=$(grep -v -E '^[[:space:]]*//' "$MULTIVAC" \
   | grep -oE 'case "--[a-z][a-z-]+"' \
   | sed -E 's/case "(.*)"/\1/' \
   | sort -u)
 # Extract long-form flags from --help output (any --token)
-HELP_FLAGS=$("$CCSEARCH" --help 2>/dev/null | grep -oE -- '--[a-z][a-z-]+' | sort -u)
+HELP_FLAGS=$("$MULTIVAC" --help 2>/dev/null | grep -oE -- '--[a-z][a-z-]+' | sort -u)
 MISSING_IN_HELP=$(comm -23 <(echo "$PARSER_FLAGS") <(echo "$HELP_FLAGS"))
 EXTRA_IN_HELP=$(comm -13 <(echo "$PARSER_FLAGS") <(echo "$HELP_FLAGS"))
 if [ -z "$MISSING_IN_HELP" ]; then
@@ -1205,6 +1226,78 @@ else
 fi
 
 # --- Summary ------------------------------------------------------------
+
+echo
+echo "Test 55: init subcommand — fallback when claude is absent"
+# Strip claude from PATH (use a minimal PATH without any user-local bin dirs).
+init_out="$(PATH=/usr/bin:/bin "$MULTIVAC" init 2>&1)"
+init_code="$(PATH=/usr/bin:/bin "$MULTIVAC" init >/dev/null 2>&1; echo $?)"
+assert_eq            "T55.exit_0"              "0"                          "$init_code"
+assert_contains      "T55.mentions_claude"     "claude"                     "$init_out"
+assert_contains      "T55.shows_marketplace"   "/plugin marketplace add"    "$init_out"
+assert_contains      "T55.shows_install"       "/plugin install"            "$init_out"
+assert_not_contains  "T55.no_ccsearch_literal" "ccsearch"                   "$init_out"
+
+echo
+echo 'Test 56: -- literal-query escape — `multivac -- init` searches for the word "init"'
+# Routing must NOT dispatch the init subcommand here; instead, the CLI should
+# attempt a real query against the DB. We point at a non-existent DB so the
+# search fails with the env-error exit code (2), which itself proves the
+# query path ran (init dispatch would have returned exit 0 via the fallback).
+lit_code="$(MULTIVAC_DB=/nonexistent/no.db "$MULTIVAC" -- init >/dev/null 2>&1; echo $?)"
+assert_eq  "T56.exit_2_env_error"  "2"  "$lit_code"
+
+echo
+echo "Test 57: init --no-such-flag exits 1 (parser rejects the unknown flag before dispatch)"
+bad_code="$(PATH=/usr/bin:/bin "$MULTIVAC" init --no-such-flag >/dev/null 2>&1; echo $?)"
+assert_eq  "T57.exit_1_user_error"  "1"  "$bad_code"
+
+echo
+echo "Test 59: init invokes 'claude plugin marketplace add' + 'claude plugin install' (NOT slash-command form)"
+# Set up a shim claude that logs argv to a file and exits 0. This proves the
+# argv shape is correct without mutating any real Claude Code marketplace state.
+SHIM_DIR="$(mktemp -d -t multivac-claudeshim.XXXXXX)"
+cat > "$SHIM_DIR/claude" <<'SHIM_EOF'
+#!/bin/bash
+# Capture all argv for assertion; print a benign success line.
+printf 'SHIM-CALL:'; for a in "$@"; do printf ' %s' "$a"; done; printf '\n'
+exit 0
+SHIM_EOF
+chmod +x "$SHIM_DIR/claude"
+shim_out="$(PATH="$SHIM_DIR:/usr/bin:/bin" "$MULTIVAC" init 2>&1)"
+shim_code="$(PATH="$SHIM_DIR:/usr/bin:/bin" "$MULTIVAC" init >/dev/null 2>&1; echo $?)"
+assert_eq            "T59.exit_0"                        "0"                                                                       "$shim_code"
+assert_contains      "T59.marketplace_argv"              "SHIM-CALL: plugin marketplace add krmrn42/krmrn-skills"                  "$shim_out"
+assert_contains      "T59.install_argv"                  "SHIM-CALL: plugin install chat-search@krmrn-skills"                      "$shim_out"
+assert_not_contains  "T59.no_slash_form"                 "/plugin marketplace add"                                                 "$shim_out"
+assert_not_contains  "T59.no_slash_form_install"         "/plugin install"                                                         "$shim_out"
+rm -rf "$SHIM_DIR"
+
+echo
+echo "Test 58: detectAlreadyConfigured — heuristic match on 'already' keyword"
+DAC_OUT="$(MULTIVAC_TEST=1 node -e '
+const { detectAlreadyConfigured } = require(process.argv[1]);
+function check(label, expected, actual) {
+  if (expected === actual) console.log("OK", label);
+  else { console.log("FAIL", label, "expected", expected, "got", actual); process.exitCode = 1; }
+}
+check("empty_result",         false, detectAlreadyConfigured({ stdout: "", stderr: "" }));
+check("plain_failure",        false, detectAlreadyConfigured({ stdout: "", stderr: "plugin install failed: 500 internal" }));
+check("already_installed",    true,  detectAlreadyConfigured({ stdout: "", stderr: "plugin chat-search is already installed" }));
+check("already_added",        true,  detectAlreadyConfigured({ stdout: "marketplace already added", stderr: "" }));
+check("already_exists",       true,  detectAlreadyConfigured({ stdout: "", stderr: "already exists" }));
+check("case_insensitive",     true,  detectAlreadyConfigured({ stdout: "MARKETPLACE ALREADY ADDED", stderr: "" }));
+check("word_boundary_strict", false, detectAlreadyConfigured({ stdout: "alreadyEnabled missing word boundary", stderr: "" }));
+check("null_safe",            false, detectAlreadyConfigured({}));
+' "$MULTIVAC" 2>&1)"
+if echo "$DAC_OUT" | grep -q '^FAIL'; then
+  FAIL=$((FAIL+1))
+  echo "  FAIL  T58.detectAlreadyConfigured"
+  echo "$DAC_OUT" | sed 's/^/         /'
+else
+  PASS=$((PASS+1))
+  echo "  PASS  T58.detectAlreadyConfigured ($(echo "$DAC_OUT" | grep -c '^OK') cases ok)"
+fi
 
 echo
 echo "----------------------------------------"

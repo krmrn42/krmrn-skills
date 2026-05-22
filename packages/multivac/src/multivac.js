@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ccsearch — relevance-ranked full-text search across local Claude Code conversations.
+// multivac — relevance-ranked full-text search across local Claude Code conversations.
 //
 // Reads ~/.claude/conversation-search.db (FTS5-backed SQLite, maintained by
 // Claude Code itself). Read-only — never writes, never mutates anything under
@@ -21,12 +21,12 @@ const EXIT_INTERNAL = 3;
 // --- Runtime probes ------------------------------------------------------
 
 function dieEnv(msg) {
-  process.stderr.write("ccsearch: " + msg + "\n");
+  process.stderr.write("multivac: " + msg + "\n");
   process.exit(EXIT_ENV);
 }
 
 function dieUser(msg) {
-  process.stderr.write("ccsearch: " + msg + "\n");
+  process.stderr.write("multivac: " + msg + "\n");
   process.exit(EXIT_USER);
 }
 
@@ -78,6 +78,7 @@ try {
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 function defaultIndexPath() {
   const xdg = process.env.XDG_DATA_HOME && process.env.XDG_DATA_HOME.trim();
@@ -108,14 +109,14 @@ function loadSessionStore(configPath) {
     raw = fs.readFileSync(p, "utf8");
   } catch (e) {
     if (e && e.code === "ENOENT") return emptySessionStore();
-    process.stderr.write(`ccsearch: could not read ${p}: ${e.message}\n`);
+    process.stderr.write(`multivac: could not read ${p}: ${e.message}\n`);
     return emptySessionStore();
   }
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
-    process.stderr.write(`ccsearch: ${p} is not valid JSON (${e.message}); using empty config\n`);
+    process.stderr.write(`multivac: ${p} is not valid JSON (${e.message}); using empty config\n`);
     return emptySessionStore();
   }
   // Defensive normalization. We tolerate missing fields rather than rejecting
@@ -148,8 +149,8 @@ function saveSessionStore(store, configPath) {
 }
 
 const PLUGIN_DEFAULT_DB = defaultIndexPath();
-const DEFAULT_DB = process.env.CCSEARCH_DB || PLUGIN_DEFAULT_DB;
-// True when ccsearch is using the plugin-owned index (the path nobody overrode).
+const DEFAULT_DB = process.env.MULTIVAC_DB || PLUGIN_DEFAULT_DB;
+// True when multivac is using the plugin-owned index (the path nobody overrode).
 function isPluginOwnedDb(p) {
   return p === PLUGIN_DEFAULT_DB;
 }
@@ -191,12 +192,12 @@ function openDb(dbPath, opts = {}) {
       dieEnv(
         `${dbPath} not found.\n` +
           `Use Claude Code at least once to create the database,\n` +
-          `or pass --db-path / set CCSEARCH_DB.`
+          `or pass --db-path / set MULTIVAC_DB.`
       );
     }
   }
   // For the plugin-owned index we need a read-write connection so the indexer
-  // can refresh it. For a user-provided path (`--db-path` / CCSEARCH_DB) we
+  // can refresh it. For a user-provided path (`--db-path` / MULTIVAC_DB) we
   // stay strictly read-only (the user is opting into reading an external DB).
   const readOnly = opts.readWrite ? false : !usingPluginOwned;
   try {
@@ -327,7 +328,7 @@ function dieFts(query, err) {
       suggestion =
         `\nFTS5 treats '-' as NOT and '"…"' as a phrase. ` +
         `To search for the literal phrase, quote it:\n` +
-        `    ccsearch '"${query}"'`;
+        `    multivac '"${query}"'`;
     }
     dieUser(`FTS5 query error: ${msg}${suggestion}`);
   }
@@ -467,7 +468,7 @@ function regexScan(db, args, pattern) {
   const progressEnabled = total > progressThreshold && process.stderr.isTTY;
 
   if (progressEnabled) {
-    process.stderr.write(`ccsearch: scanning ${total.toLocaleString()} messages…\n`);
+    process.stderr.write(`multivac: scanning ${total.toLocaleString()} messages…\n`);
   }
 
   const sql = `
@@ -485,7 +486,7 @@ ORDER BY m.timestamp DESC
   for (const r of iter) {
     scanned++;
     if (progressEnabled && scanned % progressInterval === 0) {
-      process.stderr.write(`ccsearch: scanned ${scanned.toLocaleString()}/${total.toLocaleString()}…\n`);
+      process.stderr.write(`multivac: scanned ${scanned.toLocaleString()}/${total.toLocaleString()}…\n`);
     }
     if (seen.has(r.conversation_id)) continue;
     if (!r.content) continue;
@@ -791,7 +792,7 @@ function renderPreview(db, sessionId, useColor) {
 
 // --- Argument parsing ----------------------------------------------------
 
-// Single source of truth for --help. The drift-guard test in ccsearch.test.sh
+// Single source of truth for --help. The drift-guard test in multivac.test.sh
 // diffs the long-form flags in OPTIONS against the `case "--…":` lines in
 // parseArgs and fails if they disagree, so every parser flag must appear here.
 const OPTIONS = [
@@ -800,6 +801,11 @@ const OPTIONS = [
     flags: ["-h", "--help"],
     group: "Options",
     description: "Show this help message and exit.",
+  },
+  {
+    flags: ["--version"],
+    group: "Options",
+    description: "Print package version (from package.json) and exit.",
   },
   {
     flags: ["-i", "--interactive"],
@@ -897,7 +903,7 @@ const OPTIONS = [
     group: "Index management",
     description:
       "Override the index DB path. Default: " +
-      "$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db (or $CCSEARCH_DB if set).",
+      "$XDG_DATA_HOME/krmrn42-skills/chat-search/index.db (or $MULTIVAC_DB if set).",
   },
   {
     flags: ["--reindex"],
@@ -920,7 +926,7 @@ const OPTIONS = [
     description:
       "Print the picker config file (sessions.json — saved names AND pin list) to " +
       "stdout and exit. Read-only; emits `{}` when no config has been written yet. " +
-      "Useful for backups or shell pipelines (e.g., `ccsearch --print-names | jq '.pins'`).",
+      "Useful for backups or shell pipelines (e.g., `multivac --print-names | jq '.pins'`).",
   },
   {
     flags: ["--unpin-all"],
@@ -981,13 +987,13 @@ function formatOptionEntry(entry) {
 
 function buildHelp() {
   const synopsis = [
-    "usage: ccsearch [-h] [-i | -l] [--regex PAT] [--scan]",
+    "usage: multivac [-h] [--version] [-i | -l] [--regex PAT] [--scan]",
     "                [--include-tools | --only-user]",
     "                [--project SUBSTR] [--since YYYY-MM-DD] [--limit N]",
     "                [--format text|tsv] [--no-color]",
     "                [--db-path PATH] [--preview SESSION_ID]",
     "                [--reindex | --index-status]",
-    "                [query]",
+    "                [init | query]",
   ];
   const description =
     "Relevance-ranked full-text search across local Claude Code conversations.";
@@ -996,6 +1002,15 @@ function buildHelp() {
     "  query                       FTS5 query (phrases \"…\", prefix term*, NEAR,",
     "                              AND/OR/NOT). Optional when -i, --regex --scan,",
     "                              --preview, --reindex, or --index-status is used.",
+  ];
+  const subcommands = [
+    "Subcommands:",
+    "  init                        Install the matching Claude Code plugin via",
+    "                              `claude plugin marketplace add` and",
+    "                              `claude plugin install`. Falls back to",
+    "                              printing the slash commands when the `claude`",
+    "                              CLI is not on $PATH. To search for the",
+    "                              literal word \"init\", use `multivac -- init`.",
   ];
 
   // Render OPTIONS grouped, with wrapped descriptions.
@@ -1028,12 +1043,14 @@ function buildHelp() {
 
   const examples = [
     "Examples:",
-    '  ccsearch "session timeout"',
-    "  ccsearch -i",
-    '  ccsearch -i "regex parse"',
-    `  ccsearch "auth" --regex 'TOKEN_[A-F0-9]{8}'`,
-    `  ccsearch --regex 'TOKEN_[A-F0-9]{8}' --scan`,
-    '  ccsearch "deploy" --project alpha --since 2026-04-01',
+    '  multivac "session timeout"',
+    "  multivac -i",
+    '  multivac -i "regex parse"',
+    `  multivac "auth" --regex 'TOKEN_[A-F0-9]{8}'`,
+    `  multivac --regex 'TOKEN_[A-F0-9]{8}' --scan`,
+    '  multivac "deploy" --project alpha --since 2026-04-01',
+    "  multivac init                  # install the chat-search Claude Code plugin",
+    '  multivac -- init               # search for the literal word "init"',
   ];
   const notes = [
     "Notes:",
@@ -1042,7 +1059,7 @@ function buildHelp() {
     "  Constraints:  --only-user and --include-tools are mutually exclusive;",
     "                --regex without a positional query requires --scan;",
     "                --reindex and --index-status apply only to the plugin-owned",
-    "                index (cannot be combined with --db-path / $CCSEARCH_DB).",
+    "                index (cannot be combined with --db-path / $MULTIVAC_DB).",
     "  Exit codes:   0 success (zero matches is success); 1 user error (bad regex,",
     "                unparseable date, conflicting flags); 2 environment error",
     "                (DB missing, schema drift, unsupported Node, no TTY for -i);",
@@ -1056,6 +1073,8 @@ function buildHelp() {
     description,
     "",
     ...positional,
+    "",
+    ...subcommands,
     "",
     ...optionsLines,
     "",
@@ -1105,15 +1124,22 @@ function parseArgs(argv) {
   for (let i = 0; i < expanded.length; i++) {
     const a = expanded[i];
     if (a === "--") {
+      // POSIX end-of-options sentinel. Everything after `--` is a literal query
+      // token, even if it would otherwise match a reserved subcommand like `init`.
+      args.literalQuery = true;
       rest.push(...expanded.slice(i + 1));
       break;
     }
     // Long-form flag cases use `case "--flag":` on its own line. The drift-guard
-    // test (ccsearch.test.sh) scans for that idiom to compare against --help.
+    // test (multivac.test.sh) scans for that idiom to compare against --help.
     switch (a) {
       case "-h":
       case "--help":
         args.help = true;
+        break;
+      case "--version":
+        process.stdout.write(require("../package.json").version + "\n");
+        process.exit(EXIT_OK);
         break;
       case "-i":
       case "--interactive":
@@ -1211,7 +1237,7 @@ function validateArgs(args) {
   if (args.regex && !args.query && !args.scan) {
     dieUser(
       "--regex without a query requires --scan to acknowledge the full-table scan.\n" +
-        "Either add an FTS query (e.g., `ccsearch \"keyword\" --regex 'pat'`) or pass --scan."
+        "Either add an FTS query (e.g., `multivac \"keyword\" --regex 'pat'`) or pass --scan."
     );
   }
   if (args.includeTools && args.onlyUser) {
@@ -1259,8 +1285,8 @@ function runOneShot(db, args) {
     if (!args.query) {
       dieUser(
         "no query provided.\n" +
-          'Try: ccsearch "some keyword"   (on a TTY, bare `ccsearch` opens the picker)\n' +
-          "Run `ccsearch --help` for the full flag reference."
+          'Try: multivac "some keyword"   (on a TTY, bare `multivac` opens the picker)\n' +
+          "Run `multivac --help` for the full flag reference."
       );
     }
     results = ftsSearch(db, args);
@@ -1273,9 +1299,111 @@ function runOneShot(db, args) {
   }
 }
 
+// --- init subcommand -----------------------------------------------------
+//
+// `multivac init` shells out to the Claude Code CLI to install the matching
+// marketplace plugin. Per design.md D2, we never touch `~/.claude.json` or
+// other Claude Code internal state directly — `claude /plugin …` owns that.
+
+const INIT_MARKETPLACE = "krmrn42/krmrn-skills";
+const INIT_PLUGIN = "chat-search@krmrn-skills";
+
+function claudeOnPath() {
+  const PATH = process.env.PATH || "";
+  const pathSep = process.platform === "win32" ? ";" : ":";
+  const exts = process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
+  for (const dir of PATH.split(pathSep)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const candidate = path.join(dir, "claude" + ext);
+      try {
+        if (fs.statSync(candidate).isFile()) return true;
+      } catch (_) {
+        // ENOENT, EACCES — skip
+      }
+    }
+  }
+  return false;
+}
+
+function printManualInstall() {
+  process.stdout.write(
+    "Claude Code (`claude`) not on $PATH.\n" +
+      "\n" +
+      "To install manually, paste into a Claude Code session:\n" +
+      "\n" +
+      `/plugin marketplace add ${INIT_MARKETPLACE}\n` +
+      `/plugin install ${INIT_PLUGIN}\n`
+  );
+}
+
+function detectAlreadyConfigured(claudeResult) {
+  // Heuristic: any 'already' (word-boundary) in stdout/stderr signals an
+  // idempotent no-op such as 'marketplace already added' or 'plugin already
+  // installed'. Picked deliberately over a strict allowlist so unknown-but-
+  // similar wordings ('already present', 'already exists') keep working.
+  const out = (claudeResult.stdout || "") + (claudeResult.stderr || "");
+  return /already\b/i.test(out);
+}
+
+function runClaudeSubcommand(argv, label) {
+  // The Claude Code CLI exposes plugin management as a `plugin` subcommand
+  // (NOT a /plugin slash command — slash commands are REPL-only and invoking
+  // them via argv prints "/plugin isn't available in this environment." and
+  // exits 0, a silent-failure trap). See: `claude plugin --help`.
+  //
+  // Capture stdout/stderr so detectAlreadyConfigured can inspect them, then
+  // tee back to the user terminal. spawnSync batches output — fine for the
+  // short `plugin` subcommands; long-running children would need spawn() +
+  // stream piping.
+  const r = spawnSync("claude", argv, {
+    encoding: "utf8",
+    stdio: ["inherit", "pipe", "pipe"],
+  });
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  if (r.status === 0) {
+    process.stdout.write(`multivac init: ${label} — ok\n`);
+    return true;
+  }
+  if (detectAlreadyConfigured(r)) {
+    process.stdout.write(`multivac init: ${label} — already configured\n`);
+    return true;
+  }
+  process.stderr.write(
+    `multivac init: ${label} failed (claude exited ${r.status}); see output above.\n`
+  );
+  return false;
+}
+
+async function runInit() {
+  if (!claudeOnPath()) {
+    printManualInstall();
+    return EXIT_OK;
+  }
+  const marketplaceOk = runClaudeSubcommand(
+    ["plugin", "marketplace", "add", INIT_MARKETPLACE],
+    "plugin marketplace add"
+  );
+  if (!marketplaceOk) return EXIT_ENV;
+  const installOk = runClaudeSubcommand(
+    ["plugin", "install", INIT_PLUGIN],
+    "plugin install"
+  );
+  if (!installOk) return EXIT_ENV;
+  return EXIT_OK;
+}
+
 async function main(argv) {
   const args = parseArgs(argv);
   validateArgs(args);
+
+  // `init` is a reserved subcommand. It is recognized only when it is the sole
+  // positional and `--` was not used (otherwise it is a literal search query).
+  // Per design.md D3, the escape is `multivac -- init`.
+  if (!args.literalQuery && args.query === "init") {
+    return await runInit();
+  }
 
   // --print-names is a read-only short-circuit. No DB, no index work; just
   // dump the JSON file (or `{}` when none exists) and exit 0.
@@ -1303,7 +1431,7 @@ async function main(argv) {
     const oldLen = store.pins.length;
     store.pins = [];
     saveSessionStore(store);
-    process.stdout.write(`ccsearch: cleared ${oldLen} pin${oldLen === 1 ? "" : "s"}\n`);
+    process.stdout.write(`multivac: cleared ${oldLen} pin${oldLen === 1 ? "" : "s"}\n`);
     return EXIT_OK;
   }
 
@@ -1354,12 +1482,12 @@ async function main(argv) {
     if (args.reindex && !args.query && !args.interactive && !args.preview) {
       const c = db.prepare("SELECT COUNT(*) AS c, COUNT(DISTINCT conversation_id) AS conv, COUNT(DISTINCT project_path) AS proj FROM messages").get();
       process.stderr.write(
-        `ccsearch: indexed ${(c.c || 0).toLocaleString()} messages across ${(c.conv || 0).toLocaleString()} conversations / ${c.proj || 0} projects\n`
+        `multivac: indexed ${(c.c || 0).toLocaleString()} messages across ${(c.conv || 0).toLocaleString()} conversations / ${c.proj || 0} projects\n`
       );
       return EXIT_OK;
     }
   } else if (args.reindex || args.indexStatus) {
-    dieUser("--reindex and --index-status apply only to the plugin-owned index. Remove --db-path / CCSEARCH_DB to use them.");
+    dieUser("--reindex and --index-status apply only to the plugin-owned index. Remove --db-path / MULTIVAC_DB to use them.");
   }
 
   args.sinceTs *= detectTimestampScale(db);
@@ -1422,19 +1550,19 @@ if (require.main === module) {
     .then((code) => process.exit(code))
     .catch((e) => {
       if (e && e.code === "SQLITE_READONLY") {
-        process.stderr.write(`ccsearch: ${e.message}\n`);
+        process.stderr.write(`multivac: ${e.message}\n`);
         process.exit(EXIT_INTERNAL);
       }
       process.stderr.write(
-        `ccsearch: internal error: ${e && e.stack ? e.stack : e}\n`
+        `multivac: internal error: ${e && e.stack ? e.stack : e}\n`
       );
       process.exit(EXIT_INTERNAL);
     });
 }
 
 // Test-only exports. Guarded so production behavior is unaffected; the tests
-// in bin/ccsearch.test.sh set CCSEARCH_TEST=1 before requiring this file.
-if (process.env.CCSEARCH_TEST) {
+// in ../test/multivac.test.sh set MULTIVAC_TEST=1 before requiring this file.
+if (process.env.MULTIVAC_TEST) {
   module.exports = {
     parseArgs,
     selectMode,
@@ -1448,5 +1576,6 @@ if (process.env.CCSEARCH_TEST) {
     saveSessionStore,
     emptySessionStore,
     applyPinOrdering,
+    detectAlreadyConfigured,
   };
 }

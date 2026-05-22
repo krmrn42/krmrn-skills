@@ -1,0 +1,42 @@
+{
+  "name": "@krmrn42/multivac",
+  "version": "0.6.0",
+  "description": "Cross-project full-text search across local Claude Code conversations. Zero-deps Node CLI using built-in node:sqlite (Node 22.5+). TUI picker, resume in original cwd, `multivac init` installs the companion Claude Code plugin.",
+  "keywords": [
+    "claude-code",
+    "search",
+    "fts",
+    "fts5",
+    "sqlite",
+    "conversation",
+    "history",
+    "resume",
+    "tui",
+    "node-sqlite",
+    "zero-deps"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "krmrn42"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/krmrn42/krmrn-skills.git",
+    "directory": "packages/multivac"
+  },
+  "bugs": {
+    "url": "https://github.com/krmrn42/krmrn-skills/issues"
+  },
+  "homepage": "https://github.com/krmrn42/krmrn-skills/tree/main/packages/multivac#readme",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "bin": {
+    "multivac": "src/multivac.js"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ]
+}
