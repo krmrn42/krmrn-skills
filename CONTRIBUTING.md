@@ -101,7 +101,14 @@ A reviewer will check, in order:
 
 ## Releasing
 
-Until we cut a v1, version bumps happen per-plugin. Update the version in `plugins/<name>/.claude-plugin/plugin.json` *and* the matching entry in `.claude-plugin/marketplace.json` in the same PR (the linter checks this). Use SemVer.
+Until we cut a v1, version bumps happen per-plugin and use SemVer.
+
+See [**RELEASING.md**](./RELEASING.md) for the full procedure. The short version:
+
+- **Plugin-only release** (most plugins): bump two version sites (`plugins/<name>/.claude-plugin/plugin.json` + the matching `marketplace.json` entry), open a PR, squash-merge, then `claude plugin tag plugins/<name> --push` from `main` to create the `{plugin-name}--v{version}` tag.
+- **`chat-search` joint release** (also publishes `@krmrn42/multivac` to npm): bump *three* version sites (the package's `packages/multivac/package.json` joins the two above), open a PR, squash-merge, then create both `chat-search--vX.Y.Z` (via `claude plugin tag`) and `multivac-vX.Y.Z` (manually with `git tag`) from `main`. The latter triggers the npm publish workflow.
+
+Tag **on `main` after merge**, not on the feature branch — squash-merge creates a new SHA, and tagging the branch SHA leaves the tag pointing at a commit unreachable from `main`. The relevant lint rules (`marketplace.plugin.version-sync` and, for `chat-search`, `marketplace.plugin.package-version-sync`) catch version skew in CI before merge.
 
 ## Code of conduct
 

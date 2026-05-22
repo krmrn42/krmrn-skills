@@ -16,6 +16,15 @@ Currently ships these plugins:
 
 The `chat-search` plugin and the `@krmrn42/multivac` npm package ship the **same code** from the same source tree. Canonical files live at `packages/multivac/src/`; the plugin's `bin/multivac`, `bin/indexer.js`, and `bin/picker.js` are git-tracked symlinks into that directory. A single version string lives in three files — `packages/multivac/package.json`, `plugins/chat-search/.claude-plugin/plugin.json`, and the matching entry in `marketplace.json` — and the lint enforces all three agree (rule `marketplace.plugin.package-version-sync`).
 
+## Releasing
+
+See [`RELEASING.md`](./RELEASING.md) for the full procedure. Two flows:
+
+- **Plugin-only release** (e.g., `skill-linting`, `prdspec`): bump two version sites, PR, squash-merge, then `claude plugin tag plugins/<name> --push` from `main` → creates `{plugin-name}--v{version}` tag.
+- **`chat-search` joint release** (also publishes `@krmrn42/multivac` to npm): bump three version sites, PR, squash-merge, then from `main` create *both* `chat-search--vX.Y.Z` (via `claude plugin tag`) and `multivac-vX.Y.Z` (manually via `git tag`). The latter triggers `.github/workflows/publish-multivac.yml`.
+
+**Always tag on `main` after squash-merge**, not on the feature branch — squash creates a new SHA and a branch-side tag would be unreachable from `main`.
+
 ## Authoring rules
 
 Defer to the `skill-authoring` skill from the [`krmrn42/skills`](https://github.com/krmrn42/skills) marketplace whenever creating or editing a SKILL.md / plugin manifest here. It encodes Anthropic's published constraints and the conventions used across both marketplaces.
