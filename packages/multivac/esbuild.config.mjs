@@ -9,7 +9,7 @@ await build({
   bundle: true,
   platform: "node",
   target: "node22.5",
-  format: "cjs",
+  format: "esm",
   outfile: "dist/multivac.js",
   banner: { js: "#!/usr/bin/env node" },
   external: ["node:*"],
