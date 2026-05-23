@@ -45,8 +45,15 @@ export function App(props: AppProps) {
   const selectedRow: ResultRow | undefined = state.results[state.cursor];
   const useColor = !props.args.noColor;
   const cols = state.dims.cols;
-  const listWidth = Math.floor(cols * 0.55);
-  const previewWidth = Math.max(20, cols - listWidth - 1);
+  // Preview is shown only when the terminal is wide enough — matches v0.6.0
+  // (picker.js:530-532). Below 100 cols the list takes the full width.
+  const showPreview = cols >= 100 && state.results.length > 0;
+  const listWidth = showPreview ? Math.floor(cols * 0.4) : cols;
+  const previewWidth = showPreview ? Math.max(20, cols - listWidth - 1) : 0;
+  // Body rows = total rows minus prompt (1) and status bar (up to 2).
+  // Subtract 1 more in rename mode to leave room for the RenameModal hint line.
+  const reservedRows = state.mode === "rename" ? 4 : 3;
+  const bodyRows = Math.max(4, state.dims.rows - reservedRows);
 
   const previewText = usePreview({
     db: props.db,
@@ -208,20 +215,22 @@ export function App(props: AppProps) {
       {state.mode === "help" ? (
         <HelpOverlay />
       ) : (
-        <Box flexDirection="row" flexGrow={1}>
-          <Box width={listWidth}>
+        <Box flexDirection="row" height={bodyRows}>
+          <Box width={listWidth} height={bodyRows}>
             <ResultList
               results={state.results}
               cursor={state.cursor}
               noColor={props.args.noColor}
               listWidth={listWidth}
-              maxRows={Math.max(4, state.dims.rows - 4)}
+              maxRows={bodyRows}
               dimRows={state.mode === "rename"}
             />
           </Box>
-          <Box width={previewWidth}>
-            <PreviewPane previewText={previewText} width={previewWidth} />
-          </Box>
+          {showPreview ? (
+            <Box width={previewWidth} height={bodyRows}>
+              <PreviewPane previewText={previewText} width={previewWidth} maxRows={bodyRows} />
+            </Box>
+          ) : null}
         </Box>
       )}
       <StatusBar deps={deps} selectedRow={selectedRow} cols={cols} />

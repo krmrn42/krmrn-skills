@@ -34897,9 +34897,10 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
 
 // src/tui/components/PreviewPane.tsx
 var import_react25 = __toESM(require_react(), 1);
-function PreviewPane({ previewText, width }) {
-  const lines = previewText.split("\n").flatMap((l) => wrapToWidth(l, Math.max(1, width - 2)));
-  return /* @__PURE__ */ import_react25.default.createElement(Box_default, { flexDirection: "column", width }, lines.map((line, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, "\u2502 "), line)));
+function PreviewPane({ previewText, width, maxRows }) {
+  const wrapped = previewText.split("\n").flatMap((l) => wrapToWidth(l, Math.max(1, width - 2)));
+  const lines = wrapped.slice(0, Math.max(0, maxRows));
+  return /* @__PURE__ */ import_react25.default.createElement(Box_default, { flexDirection: "column", width, height: maxRows }, lines.map((line, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, "\u2502 "), line)));
 }
 
 // src/tui/components/HelpOverlay.tsx
@@ -35160,8 +35161,11 @@ function App2(props) {
   const selectedRow = state.results[state.cursor];
   const useColor = !props.args.noColor;
   const cols = state.dims.cols;
-  const listWidth = Math.floor(cols * 0.55);
-  const previewWidth = Math.max(20, cols - listWidth - 1);
+  const showPreview = cols >= 100 && state.results.length > 0;
+  const listWidth = showPreview ? Math.floor(cols * 0.4) : cols;
+  const previewWidth = showPreview ? Math.max(20, cols - listWidth - 1) : 0;
+  const reservedRows = state.mode === "rename" ? 4 : 3;
+  const bodyRows = Math.max(4, state.dims.rows - reservedRows);
   const previewText = usePreview({
     db: props.db,
     row: selectedRow,
@@ -35305,17 +35309,17 @@ function App2(props) {
       renameBuffer: state.renameBuffer,
       searchPending: state.searchPending
     }
-  ), state.mode === "rename" ? /* @__PURE__ */ import_react32.default.createElement(RenameModal, null) : null, state.mode === "help" ? /* @__PURE__ */ import_react32.default.createElement(HelpOverlay, null) : /* @__PURE__ */ import_react32.default.createElement(Box_default, { flexDirection: "row", flexGrow: 1 }, /* @__PURE__ */ import_react32.default.createElement(Box_default, { width: listWidth }, /* @__PURE__ */ import_react32.default.createElement(
+  ), state.mode === "rename" ? /* @__PURE__ */ import_react32.default.createElement(RenameModal, null) : null, state.mode === "help" ? /* @__PURE__ */ import_react32.default.createElement(HelpOverlay, null) : /* @__PURE__ */ import_react32.default.createElement(Box_default, { flexDirection: "row", height: bodyRows }, /* @__PURE__ */ import_react32.default.createElement(Box_default, { width: listWidth, height: bodyRows }, /* @__PURE__ */ import_react32.default.createElement(
     ResultList,
     {
       results: state.results,
       cursor: state.cursor,
       noColor: props.args.noColor,
       listWidth,
-      maxRows: Math.max(4, state.dims.rows - 4),
+      maxRows: bodyRows,
       dimRows: state.mode === "rename"
     }
-  )), /* @__PURE__ */ import_react32.default.createElement(Box_default, { width: previewWidth }, /* @__PURE__ */ import_react32.default.createElement(PreviewPane, { previewText, width: previewWidth }))), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow, cols }));
+  )), showPreview ? /* @__PURE__ */ import_react32.default.createElement(Box_default, { width: previewWidth, height: bodyRows }, /* @__PURE__ */ import_react32.default.createElement(PreviewPane, { previewText, width: previewWidth, maxRows: bodyRows })) : null), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow, cols }));
 }
 
 // src/cli/main.ts
