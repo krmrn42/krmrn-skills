@@ -1,0 +1,4 @@
+node_modules/
+# dist/ is intentionally NOT ignored — removed in a later task.
+# During development, commit dist/ only after a green test:all run.
+dist/
