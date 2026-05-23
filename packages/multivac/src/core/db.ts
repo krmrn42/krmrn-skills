@@ -48,7 +48,8 @@ export function probeSchema(db: DatabaseSync): void {
   if (missingTables.length) {
     dieEnv(
       `schema does not match expected layout — missing table(s): ${missingTables.join(", ")}.\n` +
-        `This usually means Claude Code has been updated and chat-search needs to update too.`
+        `This usually means Claude Code has been updated and chat-search\n` +
+        `needs to update too. File an issue or \`git pull\` and reinstall.`
     );
   }
   const cols = new Set(
@@ -58,7 +59,9 @@ export function probeSchema(db: DatabaseSync): void {
   if (missingCols.length) {
     dieEnv(
       `schema does not match expected layout — missing column(s) in \`messages\`: ` +
-        `${missingCols.join(", ")}.`
+        `${missingCols.join(", ")}.\n` +
+        `This usually means Claude Code has been updated and chat-search\n` +
+        `needs to update too. File an issue or \`git pull\` and reinstall.`
     );
   }
 }
