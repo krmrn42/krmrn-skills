@@ -1,7 +1,7 @@
 {
   "name": "chat-search",
   "description": "Cross-project full-text search across local Claude Code conversations. Maintains its own SQLite FTS5 index at $XDG_DATA_HOME/krmrn42-skills/chat-search/index.db, refreshed lazily from ~/.claude/projects/**/*.jsonl. Three surfaces: TUI picker by default on a TTY (Enter resume, Ctrl-F fork, Ctrl-R rename, Ctrl-P pin, Ctrl-T remote-control, Ctrl-W tmux-window inside $TMUX, Alt-Enter dangerous when armed, ? help overlay), one-shot CLI for piping (`multivac <query> --list` / `--format tsv`), and `/chat-search:find` inline rendering. Saved names + pins persist in $XDG_CONFIG_HOME/krmrn42-skills/chat-search/sessions.json and propagate as `claude --name`. Zero external deps — one Node script using node:sqlite (Node 22.5+); no fzf, no Python. `/chat-search:setup` symlinks `bin/multivac` into ~/.local/bin; also installable as `npm install -g @krmrn42/multivac && multivac init`. Flags: `--regex`, `--scan`, `--project`, `--since`, `--limit`, `--reindex`, `--index-status`, `--dangerously-skip-permissions`, `--print-names`, `--unpin-all`, `--no-tmux`. See MANUAL.md for the user guide. Trigger on \"find that chat where I figured out X\", \"search history for Y\".",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": {
     "name": "krmrn42"
   },
