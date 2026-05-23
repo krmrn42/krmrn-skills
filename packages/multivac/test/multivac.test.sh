@@ -14,7 +14,7 @@
 set -u  # NB: -e is intentionally OFF — we test exit codes explicitly.
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-MULTIVAC="$HERE/../src/multivac.js"
+MULTIVAC="$HERE/../dist/multivac.js"
 
 # Resolve sqlite3 once (some installs have it bundled with Python only)
 if ! command -v sqlite3 >/dev/null 2>&1; then
@@ -90,12 +90,14 @@ CREATE TABLE messages (
   tool_operations TEXT,
   message_uuid TEXT NOT NULL,
   parent_uuid TEXT,
+  source TEXT NOT NULL DEFAULT 'claude',
   created_at INTEGER DEFAULT (unixepoch())
 );
 CREATE INDEX idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX idx_messages_project ON messages(project_path);
 CREATE INDEX idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX idx_messages_type ON messages(type);
+CREATE INDEX idx_messages_source ON messages(source);
 CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
 
 CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
@@ -114,39 +116,39 @@ END;
 -- Conversation A: in project alpha, talks about "session timeout"
 INSERT INTO messages VALUES
   ('m1', 'conv-aaaa-1111-1111-1111-111111111111', '/home/u/projects/alpha', 'alpha',
-   1735689600000, 'user', 'how do I configure session timeout for the auth service', NULL, NULL, 'u1', NULL, 0),
+   1735689600000, 'user', 'how do I configure session timeout for the auth service', NULL, NULL, 'u1', NULL, 'claude', 0),
   ('m2', 'conv-aaaa-1111-1111-1111-111111111111', '/home/u/projects/alpha', 'alpha',
-   1735689610000, 'assistant', 'set SESSION_TIMEOUT_SECONDS in your env. there is no timeout for refresh tokens.', NULL, NULL, 'a1', 'u1', 0),
+   1735689610000, 'assistant', 'set SESSION_TIMEOUT_SECONDS in your env. there is no timeout for refresh tokens.', NULL, NULL, 'a1', 'u1', 'claude', 0),
   ('m3', 'conv-aaaa-1111-1111-1111-111111111111', '/home/u/projects/alpha', 'alpha',
-   1735689620000, 'tool_use', NULL, NULL, '{"command":"grep -r SESSION_TIMEOUT_SECONDS"}', 't1', 'a1', 0);
+   1735689620000, 'tool_use', NULL, NULL, '{"command":"grep -r SESSION_TIMEOUT_SECONDS"}', 't1', 'a1', 'claude', 0);
 
 -- Conversation B: in project alpha, talks about regex parsing — has a TOKEN_DEADBEEF marker
 INSERT INTO messages VALUES
   ('m4', 'conv-bbbb-2222-2222-2222-222222222222', '/home/u/projects/alpha', 'alpha',
-   1735776000000, 'user', 'I need to write a regex to parse log timestamps', NULL, NULL, 'u2', NULL, 0),
+   1735776000000, 'user', 'I need to write a regex to parse log timestamps', NULL, NULL, 'u2', NULL, 'claude', 0),
   ('m5', 'conv-bbbb-2222-2222-2222-222222222222', '/home/u/projects/alpha', 'alpha',
-   1735776010000, 'assistant', 'try this regex ^[A-Z]{3} and validate with TOKEN_DEADBEEF as a sentinel', NULL, NULL, 'a2', 'u2', 0);
+   1735776010000, 'assistant', 'try this regex ^[A-Z]{3} and validate with TOKEN_DEADBEEF as a sentinel', NULL, NULL, 'a2', 'u2', 'claude', 0);
 
 -- Conversation C: in project beta, talks about session timeout (different project)
 INSERT INTO messages VALUES
   ('m6', 'conv-cccc-3333-3333-3333-333333333333', '/home/u/projects/beta', 'beta',
-   1735862400000, 'user', 'why does my session timeout differ between staging and prod', NULL, NULL, 'u3', NULL, 0),
+   1735862400000, 'user', 'why does my session timeout differ between staging and prod', NULL, NULL, 'u3', NULL, 'claude', 0),
   ('m7', 'conv-cccc-3333-3333-3333-333333333333', '/home/u/projects/beta', 'beta',
-   1735862410000, 'assistant', 'check your load balancer idle session timeout — it overrides app config', NULL, NULL, 'a3', 'u3', 0);
+   1735862410000, 'assistant', 'check your load balancer idle session timeout — it overrides app config', NULL, NULL, 'a3', 'u3', 'claude', 0);
 
 -- Conversation D: in project beta, much older — for --since testing
 INSERT INTO messages VALUES
   ('m8', 'conv-dddd-4444-4444-4444-444444444444', '/home/u/projects/beta', 'beta',
-   1700000000000, 'user', 'what does session affinity do', NULL, NULL, 'u4', NULL, 0),
+   1700000000000, 'user', 'what does session affinity do', NULL, NULL, 'u4', NULL, 'claude', 0),
   ('m9', 'conv-dddd-4444-4444-4444-444444444444', '/home/u/projects/beta', 'beta',
-   1700000010000, 'assistant', 'session affinity pins requests to the same backend pod', NULL, NULL, 'a4', 'u4', 0);
+   1700000010000, 'assistant', 'session affinity pins requests to the same backend pod', NULL, NULL, 'a4', 'u4', 'claude', 0);
 
 -- Conversation E: tool_use only — testing default-excludes-tools
 INSERT INTO messages VALUES
   ('m10', 'conv-eeee-5555-5555-5555-555555555555', '/home/u/projects/alpha', 'alpha',
-    1735948800000, 'user', 'unrelated query about deployment', NULL, NULL, 'u5', NULL, 0),
+    1735948800000, 'user', 'unrelated query about deployment', NULL, NULL, 'u5', NULL, 'claude', 0),
   ('m11', 'conv-eeee-5555-5555-5555-555555555555', '/home/u/projects/alpha', 'alpha',
-    1735948810000, 'tool_result', 'output: PROCESS_KILLED_OOM', NULL, NULL, 't5', 'u5', 0);
+    1735948810000, 'tool_result', 'output: PROCESS_KILLED_OOM', NULL, NULL, 't5', 'u5', 'claude', 0);
 SQL
 
 # All output below is captured for assertion. Run multivac with --no-color and explicit --format text.
@@ -326,6 +328,7 @@ CREATE TABLE messages (
   tool_operations TEXT,
   message_uuid TEXT NOT NULL,
   parent_uuid TEXT,
+  source TEXT NOT NULL DEFAULT 'claude',
   created_at INTEGER DEFAULT (unixepoch())
 );
 CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
@@ -335,8 +338,8 @@ CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
 END;
 -- conversation with empty project_path
 INSERT INTO messages VALUES
-  ('mx1', 'conv-x', '', '', 1735689600000, 'user', 'pathless conversation about widgets', NULL, NULL, 'ux1', NULL, 0),
-  ('mx2', 'conv-x', '', '', 1735689610000, 'assistant', 'widgets are great', NULL, NULL, 'ax1', 'ux1', 0);
+  ('mx1', 'conv-x', '', '', 1735689600000, 'user', 'pathless conversation about widgets', NULL, NULL, 'ux1', NULL, 'claude', 0),
+  ('mx2', 'conv-x', '', '', 1735689610000, 'assistant', 'widgets are great', NULL, NULL, 'ax1', 'ux1', 'claude', 0);
 SQL
 out="$(MULTIVAC_DB="$DB3" "$MULTIVAC" --no-color --format text widgets 2>&1)"
 assert_contains "T20.degraded_oneliner" "claude --resume conv-x  # original project path unknown" "$out"
@@ -476,8 +479,13 @@ assert_contains  "T25.help_printed"    "usage:" "$out"
 
 echo
 echo "Test 27: selectMode dispatch matrix (unit-style, via MULTIVAC_TEST export)"
-SELECT_MODE_OUT="$(MULTIVAC_TEST=1 node -e '
-const { selectMode } = require(process.argv[1]);
+SELECT_MODE_OUT="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+// The dist bundle is ESM; use dynamic import() so we can load it and then
+// read selectMode from the globalThis stash the bundle populates when
+// MULTIVAC_TEST=1 is set. process.argv[1] is unavailable with --input-type=module
+// so we inline the path directly.
+await import("${MULTIVAC}");
+const { selectMode } = globalThis.__multivac_test_exports__;
 function check(label, expected, actual) {
   if (expected === actual) {
     console.log("OK", label);
@@ -504,7 +512,8 @@ check("regex-on-tty",        "one-shot", selectMode({interactive:false,list:fals
 check("dash-i-on-tty",       "picker",   selectMode({interactive:true, list:false,format:null,regex:null},{stdinTTY:true,stdoutTTY:true}));
 // -i forces picker even on non-TTY (picker itself will then EXIT_ENV; the dispatch correctly chooses picker)
 check("dash-i-non-tty",      "picker",   selectMode({interactive:true, list:false,format:null,regex:null},{stdinTTY:false,stdoutTTY:false}));
-' "$MULTIVAC" 2>&1)"
+EOF
+2>&1)"
 if echo "$SELECT_MODE_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T27.selectMode_matrix"
@@ -562,6 +571,7 @@ CREATE TABLE messages (
   tool_operations TEXT,
   message_uuid TEXT NOT NULL,
   parent_uuid TEXT,
+  source TEXT NOT NULL DEFAULT 'claude',
   created_at INTEGER DEFAULT (unixepoch())
 );
 CREATE INDEX idx_messages_conversation ON messages(conversation_id);
@@ -577,39 +587,41 @@ END;
 -- Conversation A (oldest): simple first-user-message
 INSERT INTO messages VALUES
   ('rA1', 'conv-A', '/p/a', 'a', 1000000, 'user',
-   'how do I write a custom Claude Code skill?', NULL, NULL, 'uA1', NULL, 0),
+   'how do I write a custom Claude Code skill?', NULL, NULL, 'uA1', NULL, 'claude', 0),
   ('rA2', 'conv-A', '/p/a', 'a', 1000010, 'assistant',
-   'create a SKILL.md file…', NULL, NULL, 'aA1', 'uA1', 0);
+   'create a SKILL.md file…', NULL, NULL, 'aA1', 'uA1', 'claude', 0);
 
 -- Conversation B (newest): first user message is a wrapper, second is real
 INSERT INTO messages VALUES
   ('rB1', 'conv-B', '/p/b', 'b', 2000000, 'user',
-   '<command-name>opsx:propose</command-name>', NULL, NULL, 'uB1', NULL, 0),
+   '<command-name>opsx:propose</command-name>', NULL, NULL, 'uB1', NULL, 'claude', 0),
   ('rB2', 'conv-B', '/p/b', 'b', 2000005, 'user',
-   'actual user question about something', NULL, NULL, 'uB2', 'uB1', 0),
+   'actual user question about something', NULL, NULL, 'uB2', 'uB1', 'claude', 0),
   ('rB3', 'conv-B', '/p/b', 'b', 2000010, 'assistant',
-   'last assistant message in B with some content', NULL, NULL, 'aB1', 'uB2', 0);
+   'last assistant message in B with some content', NULL, NULL, 'aB1', 'uB2', 'claude', 0);
 
 -- Conversation C (middle age): first user message is 200+ chars of x
 INSERT INTO messages VALUES
   ('rC1', 'conv-C', '/p/c', 'c', 1500000, 'user',
    'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-   NULL, NULL, 'uC1', NULL, 0),
+   NULL, NULL, 'uC1', NULL, 'claude', 0),
   ('rC2', 'conv-C', '/p/c', 'c', 1500010, 'assistant',
-   'reply', NULL, NULL, 'aC1', 'uC1', 0);
+   'reply', NULL, NULL, 'aC1', 'uC1', 'claude', 0);
 SQL
 
-OUT="$(MULTIVAC_TEST=1 node -e '
-const { recentConversations } = require(process.argv[1]);
-const { DatabaseSync } = require("node:sqlite");
-const db = new DatabaseSync(process.argv[2], { readOnly: true });
+OUT="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { recentConversations } = globalThis.__multivac_test_exports__;
+const { DatabaseSync } = await import("node:sqlite");
+const db = new DatabaseSync("${DB_REC}", { readOnly: true });
 const rows = recentConversations(db, { limit: 10, projectFilter: null });
 console.log("LEN", rows.length);
 for (let i = 0; i < rows.length; i++) {
   const r = rows[i];
   console.log(i, "sid=" + r.sessionId, "title=" + (r.title === null ? "<null>" : JSON.stringify(r.title)), "tail=" + JSON.stringify((r.snippet || "").slice(0,60)));
 }
-' "$MULTIVAC" "$DB_REC" 2>&1)"
+EOF
+2>&1)"
 # Order: B (2M ts) → C (1.5M ts) → A (1M ts)
 case "$OUT" in
   *"LEN 3"*)            PASS=$((PASS+1)); echo "  PASS  T32.three_rows" ;;
@@ -650,17 +662,21 @@ CREATE TABLE messages (
   id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, project_path TEXT NOT NULL,
   project_name TEXT NOT NULL, timestamp INTEGER NOT NULL, type TEXT NOT NULL,
   content TEXT, raw_content TEXT, tool_operations TEXT,
-  message_uuid TEXT NOT NULL, parent_uuid TEXT, created_at INTEGER DEFAULT (unixepoch())
+  message_uuid TEXT NOT NULL, parent_uuid TEXT,
+  source TEXT NOT NULL DEFAULT 'claude',
+  created_at INTEGER DEFAULT (unixepoch())
 );
 CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
 SQL
-OUT_EMPTY="$(MULTIVAC_TEST=1 node -e '
-const { recentConversations } = require(process.argv[1]);
-const { DatabaseSync } = require("node:sqlite");
-const db = new DatabaseSync(process.argv[2], { readOnly: true });
+OUT_EMPTY="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { recentConversations } = globalThis.__multivac_test_exports__;
+const { DatabaseSync } = await import("node:sqlite");
+const db = new DatabaseSync("${DB_EMPTY}", { readOnly: true });
 const rows = recentConversations(db, { limit: 10, projectFilter: null });
 console.log("LEN", rows.length);
-' "$MULTIVAC" "$DB_EMPTY" 2>&1)"
+EOF
+2>&1)"
 case "$OUT_EMPTY" in
   *"LEN 0"*)            PASS=$((PASS+1)); echo "  PASS  T33.empty_returns_empty_array" ;;
   *)                    FAIL=$((FAIL+1)); echo "  FAIL  T33.empty_returns_empty_array — got: $OUT_EMPTY" >&2 ;;
@@ -669,8 +685,9 @@ rm -f "$DB_EMPTY"
 
 echo
 echo "Test 34: isWrapperContent — unit tests for the wrapper-detection helper"
-WRAP_OUT="$(MULTIVAC_TEST=1 node -e '
-const { isWrapperContent } = require(process.argv[1]);
+WRAP_OUT="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { isWrapperContent } = globalThis.__multivac_test_exports__;
 function check(label, expected, actual) {
   if (expected === actual) console.log("OK", label);
   else { console.log("FAIL", label, "expected", expected, "got", actual); process.exitCode = 1; }
@@ -683,7 +700,8 @@ check("real-user",            false, isWrapperContent("how do I write a skill"))
 check("empty",                true,  isWrapperContent(""));
 check("null",                 true,  isWrapperContent(null));
 check("not-wrapper-but-tag",  false, isWrapperContent("<html>not one of ours</html>"));
-' "$MULTIVAC" 2>&1)"
+EOF
+2>&1)"
 if echo "$WRAP_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T34.isWrapperContent_cases"
@@ -700,13 +718,15 @@ assert_contains "T35.help_mentions_flag" "--dangerously-skip-permissions" "$out_
 assert_contains "T35.help_mentions_alt_enter" "Alt+Enter" "$out_help"
 
 # parseArgs flips the bool
-PARSE_OUT="$(MULTIVAC_TEST=1 node -e '
-const { parseArgs } = require(process.argv[1]);
+PARSE_OUT="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { parseArgs } = globalThis.__multivac_test_exports__;
 const on  = parseArgs(["--dangerously-skip-permissions"]);
 const off = parseArgs([]);
 console.log("on", on.dangerouslySkipPermissions);
 console.log("off", off.dangerouslySkipPermissions);
-' "$MULTIVAC" 2>&1)"
+EOF
+2>&1)"
 case "$PARSE_OUT" in
   *"on true"*"off false"*) PASS=$((PASS+1)); echo "  PASS  T35.parser_branch" ;;
   *)                       FAIL=$((FAIL+1)); echo "  FAIL  T35.parser_branch — got: $PARSE_OUT" >&2 ;;
@@ -726,8 +746,9 @@ esac
 
 echo
 echo "Test 37: buildClaudeArgs — all action shapes (without + with saved name)"
-BCA_OUT="$(MULTIVAC_TEST=1 node -e '
-const { buildClaudeArgs } = require(process.argv[1])._test;
+BCA_OUT="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { buildClaudeArgs } = globalThis.__multivac_test_exports__._test;
 const row = { sessionId: "abc" };
 function check(label, expected, actual) {
   const a = JSON.stringify(actual), e = JSON.stringify(expected);
@@ -738,13 +759,14 @@ check("resume_no_name",          ["--resume","abc"],                            
 check("resume_with_name",        ["--name","my chat","--resume","abc"],            buildClaudeArgs("resume", row, "my chat"));
 check("fork_no_name",            ["--fork-session","--resume","abc"],              buildClaudeArgs("fork", row, null));
 check("fork_with_name",          ["--fork-session","--name","f","--resume","abc"], buildClaudeArgs("fork", row, "f"));
-check("dangerous_no_name",       ["--dangerously-skip-permissions","--resume","abc"], buildClaudeArgs("resume-dangerous", row, null));
-check("dangerous_with_name",     ["--dangerously-skip-permissions","--name","d","--resume","abc"], buildClaudeArgs("resume-dangerous", row, "d"));
-check("remote_no_name",          ["--remote-control","--resume","abc"],            buildClaudeArgs("resume-remote-control", row, null));
-check("remote_with_name",        ["--remote-control","rc","--resume","abc"],       buildClaudeArgs("resume-remote-control", row, "rc"));
-check("remote_suppresses_name",  true, !buildClaudeArgs("resume-remote-control", row, "x").includes("--name"));
+check("dangerous_no_name",       ["--dangerously-skip-permissions","--resume","abc"], buildClaudeArgs("dangerous", row, null));
+check("dangerous_with_name",     ["--dangerously-skip-permissions","--name","d","--resume","abc"], buildClaudeArgs("dangerous", row, "d"));
+check("remote_no_name",          ["--remote-control","--resume","abc"],            buildClaudeArgs("remote-control", row, null));
+check("remote_with_name",        ["--remote-control","rc","--resume","abc"],       buildClaudeArgs("remote-control", row, "rc"));
+check("remote_suppresses_name",  true, !buildClaudeArgs("remote-control", row, "x").includes("--name"));
 check("empty_name_treated_null", ["--resume","abc"],                               buildClaudeArgs("resume", row, ""));
-' "$HERE/picker.js" 2>&1)"
+EOF
+2>&1)"
 if echo "$BCA_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T37.buildClaudeArgs"
@@ -757,30 +779,33 @@ fi
 echo
 echo "Test 38: sessions.json — load/save round-trip + corrupt-file recovery"
 TMPCFG="$(mktemp -d -t multivac-cfg.XXXXXX)"
-SES_OUT="$(MULTIVAC_TEST=1 node -e '
-const { loadSessionStore, saveSessionStore, emptySessionStore } = require(process.argv[1]);
-const fs = require("node:fs"); const p = process.argv[2];
+SES_OUT="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { loadSessionStore, saveSessionStore, emptySessionStore } = globalThis.__multivac_test_exports__;
+const { readFileSync, writeFileSync, existsSync } = await import("node:fs");
+const p = "${TMPCFG}/sessions.json";
 // load on missing file
 let s = loadSessionStore(p);
 console.log("EMPTY", s.version, Object.keys(s.names).length, s.pins.length);
-// round-trip
-s.names["conv-a"] = "alpha"; s.names["conv-b"] = "beta"; s.pins.push("conv-a");
+// round-trip — keys must be source-prefixed (source:sessionId format)
+s.names["claude:conv-a"] = "alpha"; s.names["claude:conv-b"] = "beta"; s.pins.push("claude:conv-a");
 saveSessionStore(s, p);
-console.log("EXISTS", fs.existsSync(p) ? "yes" : "no");
-console.log("NO_TMP", fs.existsSync(p + ".tmp") ? "yes" : "no");
+console.log("EXISTS", existsSync(p) ? "yes" : "no");
+console.log("NO_TMP", existsSync(p + ".tmp") ? "yes" : "no");
 const reloaded = loadSessionStore(p);
-console.log("RELOADED", reloaded.names["conv-a"], reloaded.names["conv-b"], reloaded.pins[0]);
+console.log("RELOADED", reloaded.names["claude:conv-a"], reloaded.names["claude:conv-b"], reloaded.pins[0]);
 // corrupt-file recovery
-fs.writeFileSync(p, "{not valid");
+writeFileSync(p, "{not valid");
 const rec = loadSessionStore(p);
 console.log("RECOVERED", rec.version, Object.keys(rec.names).length, rec.pins.length);
-// type-defensive: non-string name values must be filtered
-fs.writeFileSync(p, JSON.stringify({ version: 1, names: { a: "ok", b: 42, c: "" }, pins: ["x", null] }));
+// type-defensive: non-string name values must be filtered; use source-prefixed keys
+writeFileSync(p, JSON.stringify({ version: 1, names: { "claude:a": "ok", "claude:b": 42, "claude:c": "" }, pins: ["claude:x", null] }));
 const filt = loadSessionStore(p);
-console.log("FILTERED", filt.names.a, filt.names.b, filt.names.c, filt.pins.join(","));
-' "$MULTIVAC" "$TMPCFG/sessions.json" 2>&1)"
+console.log("FILTERED", filt.names["claude:a"], filt.names["claude:b"], filt.names["claude:c"], filt.pins.join(","));
+EOF
+2>&1)"
 case "$SES_OUT" in
-  *"EMPTY 1 0 0"*"EXISTS yes"*"NO_TMP no"*"RELOADED alpha beta conv-a"*"RECOVERED 1 0 0"*"FILTERED ok undefined undefined x"*)
+  *"EMPTY 1 0 0"*"EXISTS yes"*"NO_TMP no"*"RELOADED alpha beta claude:conv-a"*"RECOVERED 1 0 0"*"FILTERED ok undefined undefined claude:x"*)
     PASS=$((PASS+1)); echo "  PASS  T38.sessions_json_round_trip" ;;
   *)
     FAIL=$((FAIL+1)); echo "  FAIL  T38.sessions_json_round_trip — got:" >&2
@@ -806,11 +831,13 @@ rm -rf "$TMPCFG"
 
 echo
 echo "Test 40: recentConversations — saved-name overlay overrides synthesized title"
-RC_NAME_OUT="$(MULTIVAC_TEST=1 node -e '
-const { recentConversations } = require(process.argv[1]);
-const { DatabaseSync } = require("node:sqlite");
-const db = new DatabaseSync(process.argv[2], { readOnly: true });
-const store = { version: 1, names: { "conv-aaaa-1111-1111-1111-111111111111": "my custom name" }, pins: [] };
+RC_NAME_OUT="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { recentConversations } = globalThis.__multivac_test_exports__;
+const { DatabaseSync } = await import("node:sqlite");
+const db = new DatabaseSync("${DB}", { readOnly: true });
+// Names are keyed as "source:sessionId" (e.g. "claude:conv-aaaa-...").
+const store = { version: 1, names: { "claude:conv-aaaa-1111-1111-1111-111111111111": "my custom name" }, pins: [] };
 const rows = recentConversations(db, { limit: 10, projectFilter: null, sessionStore: store });
 const named = rows.find(r => r.sessionId === "conv-aaaa-1111-1111-1111-111111111111");
 const other = rows.find(r => r.sessionId !== "conv-aaaa-1111-1111-1111-111111111111");
@@ -820,7 +847,8 @@ console.log("OTHER_NOT_OVERRIDDEN", other && other.title && other.title !== "my 
 const rowsNoStore = recentConversations(db, { limit: 10, projectFilter: null });
 const sameRow = rowsNoStore.find(r => r.sessionId === "conv-aaaa-1111-1111-1111-111111111111");
 console.log("NO_STORE_SYNTHESIZED", sameRow && sameRow.title && sameRow.title !== "my custom name" ? "yes" : "no");
-' "$MULTIVAC" "$DB" 2>&1)"
+EOF
+2>&1)"
 case "$RC_NAME_OUT" in
   *"NAMED my custom name"*"OTHER_NOT_OVERRIDDEN yes"*"NO_STORE_SYNTHESIZED yes"*)
     PASS=$((PASS+1)); echo "  PASS  T40.recent_conv_name_overlay" ;;
@@ -831,8 +859,9 @@ esac
 
 echo
 echo "Test 45: sanitizeTmuxName + shellSingleQuote — pure helpers"
-TMX_OUT="$(MULTIVAC_TEST=1 node -e '
-const { sanitizeTmuxName, shellSingleQuote } = require(process.argv[1])._test;
+TMX_OUT="$(MULTIVAC="$MULTIVAC" MULTIVAC_TEST=1 node --input-type=module <<'JSEOF'
+await import(process.env.MULTIVAC);
+const { sanitizeTmuxName, shellSingleQuote } = globalThis.__multivac_test_exports__._test;
 function check(label, expected, actual) {
   if (expected === actual) console.log("OK", label);
   else { console.log("FAIL", label, "expected", JSON.stringify(expected), "got", JSON.stringify(actual)); process.exitCode = 1; }
@@ -848,10 +877,11 @@ check("truncate_long",     "a".repeat(39) + "…", sanitizeTmuxName("a".repeat(5
 check("exactly_40_ok",     "a".repeat(40), sanitizeTmuxName("a".repeat(40)));
 check("strip_then_empty",  "claude", sanitizeTmuxName("\x01\x02\x03"));
 // shellSingleQuote
-check("sq_plain",          "'\''foo'\''", shellSingleQuote("foo"));
-check("sq_with_space",     "'\''hello world'\''", shellSingleQuote("hello world"));
-check("sq_with_sq",        "'\''foo'\''\\'\'''\''bar'\''", shellSingleQuote("foo'\''bar"));
-' "$HERE/picker.js" 2>&1)"
+check("sq_plain",          "'foo'", shellSingleQuote("foo"));
+check("sq_with_space",     "'hello world'", shellSingleQuote("hello world"));
+check("sq_with_sq",        "'foo'\\''bar'", shellSingleQuote("foo'bar"));
+JSEOF
+2>&1)"
 if echo "$TMX_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T45.tmux_helpers"
@@ -863,27 +893,29 @@ fi
 
 echo
 echo "Test 46: buildTmuxNewWindowCommand — name resolution + cwd + inner command"
-BTW_OUT="$(MULTIVAC_TEST=1 node -e '
-const { buildTmuxNewWindowCommand } = require(process.argv[1])._test;
+BTW_OUT="$(MULTIVAC="$MULTIVAC" MULTIVAC_TEST=1 node --input-type=module <<'JSEOF'
+await import(process.env.MULTIVAC);
+const { buildTmuxNewWindowCommand } = globalThis.__multivac_test_exports__._test;
 function check(label, expected, actual) {
   const a = JSON.stringify(actual), e = JSON.stringify(expected);
   if (a === e) console.log("OK", label);
   else { console.log("FAIL", label, "expected", e, "got", a); process.exitCode = 1; }
 }
 const row1 = { sessionId: "abc", projectPath: "/p/alpha", projectName: "alpha" };
-check("saved_name_wins", ["new-window","-n","my chat","-c","/p/alpha","'\''claude'\'' '\''--name'\'' '\''my chat'\'' '\''--resume'\'' '\''abc'\''"],
+check("saved_name_wins", ["new-window","-n","my chat","-c","/p/alpha","'claude' '--name' 'my chat' '--resume' 'abc'"],
   buildTmuxNewWindowCommand(row1, { savedName: "my chat" }));
-check("no_name_projectName", ["new-window","-n","alpha","-c","/p/alpha","'\''claude'\'' '\''--resume'\'' '\''abc'\''"],
+check("no_name_projectName", ["new-window","-n","alpha","-c","/p/alpha","'claude' '--resume' 'abc'"],
   buildTmuxNewWindowCommand(row1, { savedName: null }));
-check("no_projectName_basename", ["new-window","-n","beta","-c","/p/beta","'\''claude'\'' '\''--resume'\'' '\''xyz'\''"],
+check("no_projectName_basename", ["new-window","-n","beta","-c","/p/beta","'claude' '--resume' 'xyz'"],
   buildTmuxNewWindowCommand({ sessionId: "xyz", projectPath: "/p/beta" }, { savedName: null }));
-check("no_path_fallback_claude", ["new-window","-n","claude","-c",process.cwd(),"'\''claude'\'' '\''--resume'\'' '\''qqq'\''"],
+check("no_path_fallback_claude", ["new-window","-n","claude","-c",process.cwd(),"'claude' '--resume' 'qqq'"],
   buildTmuxNewWindowCommand({ sessionId: "qqq" }, { savedName: null }));
 check("long_name_truncated", "a".repeat(39) + "…",
   buildTmuxNewWindowCommand(row1, { savedName: "a".repeat(50) })[2]);
 check("control_name_stripped", "clean",
   buildTmuxNewWindowCommand(row1, { savedName: "clean\x07\x00" })[2]);
-' "$HERE/picker.js" 2>&1)"
+JSEOF
+2>&1)"
 if echo "$BTW_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T46.buildTmuxNewWindowCommand"
@@ -895,13 +927,15 @@ fi
 
 echo
 echo "Test 47: --no-tmux parses + --help mentions Ctrl-W when relevant"
-nt_out="$(MULTIVAC_TEST=1 node -e '
-const { parseArgs } = require(process.argv[1]);
+nt_out="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { parseArgs } = globalThis.__multivac_test_exports__;
 const on = parseArgs(["--no-tmux"]);
 const off = parseArgs([]);
 console.log("on", on.noTmux);
 console.log("off", off.noTmux);
-' "$MULTIVAC" 2>&1)"
+EOF
+2>&1)"
 case "$nt_out" in
   *"on true"*"off false"*) PASS=$((PASS+1)); echo "  PASS  T47.parser_branch" ;;
   *)                       FAIL=$((FAIL+1)); echo "  FAIL  T47.parser_branch — got: $nt_out" >&2 ;;
@@ -922,23 +956,27 @@ echo "Test 51: tmuxAvailable gate — args.noTmux suppresses regardless of \$TMU
 # The gate logic in main() is: !!process.env.TMUX && !args.noTmux. We
 # replicate it here against parseArgs output so the contract holds even
 # if the inline expression is refactored.
-GATE_OUT="$(MULTIVAC_TEST=1 TMUX="/tmp/fake,1,0" node -e '
-const { parseArgs } = require(process.argv[1]);
+GATE_OUT="$(MULTIVAC_TEST=1 TMUX="/tmp/fake,1,0" node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { parseArgs } = globalThis.__multivac_test_exports__;
 function gate(args) { return !!process.env.TMUX && !args.noTmux; }
 console.log("default", gate(parseArgs([])));
 console.log("no_tmux", gate(parseArgs(["--no-tmux"])));
-' "$MULTIVAC" 2>&1)"
+EOF
+2>&1)"
 case "$GATE_OUT" in
   *"default true"*"no_tmux false"*) PASS=$((PASS+1)); echo "  PASS  T51.gate_inside_tmux_with_no_tmux" ;;
   *)                                FAIL=$((FAIL+1)); echo "  FAIL  T51.gate_inside_tmux_with_no_tmux — got: $GATE_OUT" >&2 ;;
 esac
-GATE_OUT2="$(MULTIVAC_TEST=1 node -e '
-const { parseArgs } = require(process.argv[1]);
+GATE_OUT2="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
+await import("${MULTIVAC}");
+const { parseArgs } = globalThis.__multivac_test_exports__;
 function gate(args) { return !!process.env.TMUX && !args.noTmux; }
 delete process.env.TMUX;
 console.log("default", gate(parseArgs([])));
 console.log("no_tmux", gate(parseArgs(["--no-tmux"])));
-' "$MULTIVAC" 2>&1)"
+EOF
+2>&1)"
 case "$GATE_OUT2" in
   *"default false"*"no_tmux false"*) PASS=$((PASS+1)); echo "  PASS  T51.gate_outside_tmux" ;;
   *)                                  FAIL=$((FAIL+1)); echo "  FAIL  T51.gate_outside_tmux — got: $GATE_OUT2" >&2 ;;
@@ -1018,17 +1056,26 @@ fi
 
 echo
 echo "Test 48: buildStatusBar — wrapping, gating, category coloring"
-SB_OUT="$(MULTIVAC_TEST=1 node -e '
-const { buildStatusBar, BINDINGS } = require(process.argv[1])._test;
+SB_OUT="$(MULTIVAC="$MULTIVAC" MULTIVAC_TEST=1 node --input-type=module <<'JSEOF'
+await import(process.env.MULTIVAC);
+const { buildStatusBar, BINDINGS } = globalThis.__multivac_test_exports__._test;
 function check(label, cond) {
   if (cond) console.log("OK", label);
   else { console.log("FAIL", label); process.exitCode = 1; }
 }
-const wide  = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true }, 1000);
-const mid   = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true }, 60);
-const lean  = buildStatusBar({}, 1000);
-const armed = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: false }, 1000);
-const tmuxed = buildStatusBar({ tmuxAvailable: true }, 1000);
+// Action-gated bindings (Enter, Alt-Enter, Ctrl-F, Ctrl-W) are only visible
+// when getSource returns a source with the relevant action AND a row is provided.
+// Provide a full-capability mock source so all bindings can render.
+const allActions = ["resume", "fork", "dangerous", "remote-control", "tmux-window"];
+const mockSource = { id: "claude", displayName: "Claude", resume: { actions: allActions }, discover: async () => [], parse: async function*(){} };
+function makeGetSource() { return (id) => mockSource; }
+const mockRow = { source: "claude", sessionId: "abc", projectPath: "/p", projectName: "p", lastActivity: 0, msgCount: 1, snippet: "", score: 0, title: null };
+
+const wide   = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true, getSource: makeGetSource() }, mockRow, 1000);
+const mid    = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true, getSource: makeGetSource() }, mockRow, 60);
+const lean   = buildStatusBar({ dangerouslySkipPermissions: false, tmuxAvailable: false, getSource: makeGetSource() }, mockRow, 1000);
+const armed  = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: false, getSource: makeGetSource() }, mockRow, 1000);
+const tmuxed = buildStatusBar({ dangerouslySkipPermissions: false, tmuxAvailable: true, getSource: makeGetSource() }, mockRow, 1000);
 // Visibility gating
 check("wide_has_alt",    wide.join(" ").includes("Alt-Enter"));
 check("wide_has_ctrlw",  wide.join(" ").includes("Ctrl-W"));
@@ -1038,20 +1085,22 @@ check("armed_has_alt",   armed.join(" ").includes("Alt-Enter"));
 check("armed_no_ctrlw",  !armed.join(" ").includes("Ctrl-W"));
 check("tmuxed_has_ctrlw", tmuxed.join(" ").includes("Ctrl-W"));
 check("tmuxed_no_alt",   !tmuxed.join(" ").includes("Alt-Enter"));
-// Always-present
+// Always-present (with a row that has resume action)
 check("has_enter",       wide.join(" ").includes("Enter resume"));
 check("has_ctrl_f",      wide.join(" ").includes("Ctrl-F"));
 check("has_help_marker", wide.join(" ").includes("? help"));
 // Wrapping
 check("wide_one_line",   lean.length === 1);
 check("mid_two_lines",   mid.length === 2);
-// Category styling — yellow ANSI for dangerous when armed
-check("dangerous_yellow", wide.join(" ").includes("\x1b[33m") && armed.join(" ").includes("\x1b[33m"));
-// Action category cyan
-check("action_cyan",     wide.join(" ").includes("\x1b[36m"));
-// Navigation dim — check on the wrapped variant where nav is on line 2.
-check("nav_dim",         mid.length === 2 && mid[1].includes("\x1b[2m"));
-' "$HERE/picker.js" 2>&1)"
+// Dangerous category present in both wide (all flags) and armed (no tmux).
+// The TS buildStatusBar uses React/Ink for coloring — check text, not ANSI.
+check("dangerous_in_wide",  wide.join(" ").includes("dangerous") && armed.join(" ").includes("dangerous"));
+// Action category bindings present
+check("action_in_wide",  wide.join(" ").includes("rename") && wide.join(" ").includes("pin"));
+// Navigation wraps to line 2
+check("nav_on_line2",    mid.length === 2 && mid[1].includes("nav"));
+JSEOF
+2>&1)"
 if echo "$SB_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T48.buildStatusBar"
@@ -1063,30 +1112,36 @@ fi
 
 echo
 echo "Test 49: drift guard — every BINDINGS keystroke has an onKeypress handler"
-DRIFT_OUT="$(MULTIVAC_TEST=1 node -e '
-const fs = require("node:fs");
-const { BINDINGS } = require(process.argv[1])._test;
-const src = fs.readFileSync(process.argv[1], "utf8");
+# Read App.tsx (the Ink useInput handler) for key patterns — the bundle minifies
+# variable names so we check the TS source directly.
+APP_SRC="$HERE/../src/tui/App.tsx"
+DRIFT_OUT="$(MULTIVAC="$MULTIVAC" APP_SRC="$APP_SRC" MULTIVAC_TEST=1 node --input-type=module <<'JSEOF'
+await import(process.env.MULTIVAC);
+const { BINDINGS } = globalThis.__multivac_test_exports__._test;
+const { readFileSync } = await import("node:fs");
+const src = readFileSync(process.env.APP_SRC, "utf8");
 // Mapping: BINDINGS key string → source pattern that onKeypress uses.
 // The drift guard is one-directional: every BINDINGS keystroke must have
 // a corresponding source pattern. The reverse (every source pattern in
 // BINDINGS) is intentionally relaxed — internal handlers (Ctrl-C, Ctrl-K,
-// Ctrl-J, Ctrl-U, Backspace) are not user-facing actions and don'\''t
-// belong in BINDINGS.
+// Ctrl-J, Ctrl-U, Backspace) are not user-facing actions and don't belong
+// in BINDINGS.
+// Ink Key object uses boolean props (key.return, key.escape) and input string,
+// not readline-style key.name === "return".
 const PATTERNS = {
-  "Enter":       /key\.name === "return"/,
-  "Esc":         /key\.name === "escape"/,
-  "Alt-Enter":   /key\.meta.*key\.name === "return"|key\.meta \|\| key\.shift/,
-  "Shift-Enter": /key\.shift.*key\.name === "return"|key\.meta \|\| key\.shift/,
-  "Ctrl-F":      /key\.ctrl && key\.name === "f"/,
-  "Ctrl-R":      /key\.ctrl && key\.name === "r"/,
-  "Ctrl-P":      /key\.ctrl && key\.name === "p"/,
-  "Ctrl-T":      /key\.ctrl && key\.name === "t"/,
-  "Ctrl-W":      /key\.ctrl && key\.name === "w"/,
-  "Ctrl-O":      /key\.ctrl && key\.name === "o"/,
-  "Ctrl-D":      /key\.ctrl && key\.name === "d"/,
-  "Up/Down":     /key\.name === "up"|key\.name === "down"/,
-  "?":           /str === "\?"/,
+  "Enter":       /key\.return/,
+  "Esc":         /key\.escape/,
+  "Alt-Enter":   /key\.meta.*key\.return|key\.meta \|\| key\.shift/,
+  "Shift-Enter": /key\.shift.*key\.return|key\.meta \|\| key\.shift/,
+  "Ctrl-F":      /key\.ctrl && input === "f"/,
+  "Ctrl-R":      /key\.ctrl && input === "r"/,
+  "Ctrl-P":      /key\.ctrl && input === "p"/,
+  "Ctrl-T":      /key\.ctrl && input === "t"/,
+  "Ctrl-W":      /key\.ctrl && input === "w"/,
+  "Ctrl-O":      /key\.ctrl && input === "o"/,
+  "Ctrl-D":      /key\.ctrl && input === "d"/,
+  "Up/Down":     /key\.upArrow|key\.downArrow/,
+  "?":           /input === "\?"/,
 };
 let ok = true;
 for (const b of BINDINGS) {
@@ -1106,7 +1161,8 @@ for (const b of BINDINGS) {
   }
 }
 if (!ok) process.exitCode = 1;
-' "$HERE/picker.js" 2>&1)"
+JSEOF
+2>&1)"
 if echo "$DRIFT_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T49.BINDINGS_drift_guard"
@@ -1118,10 +1174,13 @@ fi
 
 echo
 echo "Test 41: applyPinOrdering — partition, pin-order, limit, FTS-mode no-inject"
-APO_OUT="$(MULTIVAC_TEST=1 node -e '
-const { applyPinOrdering } = require(process.argv[1]);
+APO_OUT="$(MULTIVAC="$MULTIVAC" MULTIVAC_TEST=1 node --input-type=module <<'JSEOF'
+await import(process.env.MULTIVAC);
+const { applyPinOrdering } = globalThis.__multivac_test_exports__;
+// Rows must have source field; pins are keyed as "source:sessionId".
 const rows = [
-  { sessionId: "A" }, { sessionId: "B" }, { sessionId: "C" }, { sessionId: "D" },
+  { source: "claude", sessionId: "A" }, { source: "claude", sessionId: "B" },
+  { source: "claude", sessionId: "C" }, { source: "claude", sessionId: "D" },
 ];
 function check(label, expected, actual) {
   const a = JSON.stringify(actual), e = JSON.stringify(expected);
@@ -1131,12 +1190,13 @@ function check(label, expected, actual) {
 function shape(rows) { return rows.map(r => r.sessionId + (r.isPinned ? "*" : "")); }
 check("no_pins",        ["A","B","C","D"],         shape(applyPinOrdering(rows, { pins: [] }, 10)));
 check("no_store",       ["A","B","C","D"],         shape(applyPinOrdering(rows, null, 10)));
-check("pinned_order",   ["B*","A*","C","D"],       shape(applyPinOrdering(rows, { pins: ["B","A"] }, 10)));
-check("limit_caps_total",["A*","B*"],              shape(applyPinOrdering(rows, { pins: ["A","B"] }, 2)));
-check("limit_excludes_unpinned",["A*"],            shape(applyPinOrdering(rows, { pins: ["A"] }, 1)));
-check("fts_no_inject",  ["C*","A","B","D"],        shape(applyPinOrdering(rows, { pins: ["Z","C"] }, 10)));
-check("limit_zero_returns_empty",[],               shape(applyPinOrdering(rows, { pins: ["A"] }, 0)));
-' "$MULTIVAC" 2>&1)"
+check("pinned_order",   ["B*","A*","C","D"],       shape(applyPinOrdering(rows, { pins: ["claude:B","claude:A"] }, 10)));
+check("limit_caps_total",["A*","B*"],              shape(applyPinOrdering(rows, { pins: ["claude:A","claude:B"] }, 2)));
+check("limit_excludes_unpinned",["A*"],            shape(applyPinOrdering(rows, { pins: ["claude:A"] }, 1)));
+check("fts_no_inject",  ["C*","A","B","D"],        shape(applyPinOrdering(rows, { pins: ["claude:Z","claude:C"] }, 10)));
+check("limit_zero_returns_empty",[],               shape(applyPinOrdering(rows, { pins: ["claude:A"] }, 0)));
+JSEOF
+2>&1)"
 if echo "$APO_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T41.applyPinOrdering"
@@ -1148,20 +1208,22 @@ fi
 
 echo
 echo "Test 42: recentConversations + pins — partition end-to-end with fixture DB"
-PIN_REC_OUT="$(MULTIVAC_TEST=1 node -e '
-const { recentConversations } = require(process.argv[1]);
-const { DatabaseSync } = require("node:sqlite");
-const db = new DatabaseSync(process.argv[2], { readOnly: true });
+PIN_REC_OUT="$(MULTIVAC="$MULTIVAC" DB="$DB" MULTIVAC_TEST=1 node --input-type=module <<'JSEOF'
+await import(process.env.MULTIVAC);
+const { recentConversations } = globalThis.__multivac_test_exports__;
+const { DatabaseSync } = await import("node:sqlite");
+const db = new DatabaseSync(process.env.DB, { readOnly: true });
 // Pin the OLDEST conversation (conv-aaaa). Expect: conv-aaaa first (pinned),
-// then the rest in recency order.
-const store = { version: 1, names: {}, pins: ["conv-aaaa-1111-1111-1111-111111111111"] };
+// then the rest in recency order. Pins are stored as "source:sessionId".
+const store = { version: 1, names: {}, pins: ["claude:conv-aaaa-1111-1111-1111-111111111111"] };
 const rows = recentConversations(db, { limit: 10, projectFilter: null, sessionStore: store });
 console.log("FIRST_IS_PINNED", rows[0].isPinned, rows[0].sessionId.slice(0, 9));
 console.log("REST_NOT_PINNED", rows.slice(1).every(r => !r.isPinned) ? "yes" : "no");
 // Without store, no pinning; recent-first order
 const rows2 = recentConversations(db, { limit: 10, projectFilter: null });
 console.log("NO_STORE_NO_PIN", rows2.every(r => !r.isPinned) ? "yes" : "no");
-' "$MULTIVAC" "$DB" 2>&1)"
+JSEOF
+2>&1)"
 case "$PIN_REC_OUT" in
   *"FIRST_IS_PINNED true conv-aaaa"*"REST_NOT_PINNED yes"*"NO_STORE_NO_PIN yes"*)
     PASS=$((PASS+1)); echo "  PASS  T42.recent_pinned_promoted" ;;
@@ -1275,21 +1337,24 @@ rm -rf "$SHIM_DIR"
 
 echo
 echo "Test 58: detectAlreadyConfigured — heuristic match on 'already' keyword"
-DAC_OUT="$(MULTIVAC_TEST=1 node -e '
-const { detectAlreadyConfigured } = require(process.argv[1]);
+DAC_OUT="$(MULTIVAC="$MULTIVAC" MULTIVAC_TEST=1 node --input-type=module <<'JSEOF'
+await import(process.env.MULTIVAC);
+const { detectAlreadyConfigured } = globalThis.__multivac_test_exports__;
 function check(label, expected, actual) {
   if (expected === actual) console.log("OK", label);
   else { console.log("FAIL", label, "expected", expected, "got", actual); process.exitCode = 1; }
 }
-check("empty_result",         false, detectAlreadyConfigured({ stdout: "", stderr: "" }));
-check("plain_failure",        false, detectAlreadyConfigured({ stdout: "", stderr: "plugin install failed: 500 internal" }));
-check("already_installed",    true,  detectAlreadyConfigured({ stdout: "", stderr: "plugin chat-search is already installed" }));
-check("already_added",        true,  detectAlreadyConfigured({ stdout: "marketplace already added", stderr: "" }));
-check("already_exists",       true,  detectAlreadyConfigured({ stdout: "", stderr: "already exists" }));
-check("case_insensitive",     true,  detectAlreadyConfigured({ stdout: "MARKETPLACE ALREADY ADDED", stderr: "" }));
-check("word_boundary_strict", false, detectAlreadyConfigured({ stdout: "alreadyEnabled missing word boundary", stderr: "" }));
-check("null_safe",            false, detectAlreadyConfigured({}));
-' "$MULTIVAC" 2>&1)"
+// TS detectAlreadyConfigured takes a single combined string (not an object).
+check("empty_result",         false, detectAlreadyConfigured(""));
+check("plain_failure",        false, detectAlreadyConfigured("plugin install failed: 500 internal"));
+check("already_installed",    true,  detectAlreadyConfigured("plugin chat-search is already installed"));
+check("already_added",        true,  detectAlreadyConfigured("marketplace already added"));
+check("already_exists",       true,  detectAlreadyConfigured("already exists"));
+check("case_insensitive",     true,  detectAlreadyConfigured("MARKETPLACE ALREADY ADDED"));
+check("word_boundary_strict", false, detectAlreadyConfigured("alreadyEnabled missing word boundary"));
+check("null_safe",            false, detectAlreadyConfigured(""));
+JSEOF
+2>&1)"
 if echo "$DAC_OUT" | grep -q '^FAIL'; then
   FAIL=$((FAIL+1))
   echo "  FAIL  T58.detectAlreadyConfigured"

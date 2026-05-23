@@ -25,7 +25,7 @@ export const WRAPPER_TAGS = new Set([
   "system-reminder",
 ]);
 
-function isWrapperContent(s: string | null | undefined): boolean {
+export function isWrapperContent(s: string | null | undefined): boolean {
   if (!s) return true;
   const trimmed = s.replace(/^\s+/, "");
   const m = trimmed.match(/^<([a-zA-Z0-9_-]+)>/);
@@ -33,7 +33,7 @@ function isWrapperContent(s: string | null | undefined): boolean {
   return WRAPPER_TAGS.has(m[1]);
 }
 
-function synthesizeTitle(rawContent: string | null | undefined): string | null {
+export function synthesizeTitle(rawContent: string | null | undefined): string | null {
   if (!rawContent) return null;
   const firstLine = rawContent.split("\n", 1)[0].replace(/\s+/g, " ").trim();
   if (firstLine.length === 0) return null;
@@ -41,7 +41,7 @@ function synthesizeTitle(rawContent: string | null | undefined): string | null {
   return firstLine.length > CAP ? firstLine.slice(0, CAP) + "…" : firstLine;
 }
 
-function normalizeTailContent(rawContent: string | null | undefined): string {
+export function normalizeTailContent(rawContent: string | null | undefined): string {
   if (!rawContent) return "";
   // Strip ANSI escapes (defensive — JSONL content shouldn't contain them,
   // but indexed content has surprised us before). Constructed char class to

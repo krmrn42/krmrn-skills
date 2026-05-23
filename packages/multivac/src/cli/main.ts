@@ -18,16 +18,46 @@ import { runInit } from "../sources/claude/install.js";
 import { projectsRoot, listJsonlFiles } from "../sources/claude/discover.js";
 import { App } from "../tui/App.js";
 import { getDesiredExitCode, resetDesiredExitCode } from "../tui/hooks/useResume.js";
+import { recentConversations, isWrapperContent, synthesizeTitle, normalizeTailContent, WRAPPER_TAGS } from "../core/search/recent.js";
+import { applyPinOrdering } from "../core/search/pin-ordering.js";
+import { emptySessionStore } from "../core/sessions.js";
+import { detectAlreadyConfigured } from "../sources/claude/install.js";
+import { buildClaudeArgs } from "../sources/claude/resume.js";
+import { sanitizeTmuxName, shellSingleQuote, buildTmuxNewWindowCommand } from "../sources/claude/tmux.js";
+import { BINDINGS, buildStatusBar } from "../tui/state/keybindings.js";
 
 // Test-only exports. Guarded so production behavior is unaffected; the tests
 // in ../test/multivac.test.sh set MULTIVAC_TEST=1 before importing this file.
 if (process.env.MULTIVAC_TEST) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).__multivac_test_exports__ = {
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const testExports: any = {
+    // Original JS exports (parity with multivac.js MULTIVAC_TEST block)
     parseArgs,
     selectMode,
     buildHelp,
+    recentConversations,
+    isWrapperContent,
+    synthesizeTitle,
+    normalizeTailContent,
+    WRAPPER_TAGS,
+    sessionsConfigPath,
+    loadSessionStore,
+    saveSessionStore,
+    emptySessionStore,
+    applyPinOrdering,
+    detectAlreadyConfigured,
+    // TS-specific helpers exposed via ._test (were in picker.js in legacy JS)
+    _test: {
+      buildClaudeArgs,
+      sanitizeTmuxName,
+      shellSingleQuote,
+      buildTmuxNewWindowCommand,
+      BINDINGS,
+      buildStatusBar,
+    },
   };
+  (globalThis as any).__multivac_test_exports__ = testExports;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -156,6 +186,16 @@ async function main(argv: string[]): Promise<number> {
   });
 
   if (mode === "picker") {
+    // Ink requires raw mode which only works on a real TTY. When the user
+    // explicitly passed -i but stdin/stdout are not TTYs (e.g., piped in a
+    // script), die with a clear message rather than letting Ink crash with
+    // an unhelpful "Raw mode is not supported" error.
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      process.stderr.write(
+        "multivac: -i requires a TTY; for non-TTY callers use one-shot mode.\n"
+      );
+      return EXIT_ENV;
+    }
     const sessionStore = loadSessionStore();
     const tmuxAvailable = !!process.env.TMUX && !args.noTmux;
     resetDesiredExitCode();
@@ -205,13 +245,15 @@ async function main(argv: string[]): Promise<number> {
   return EXIT_OK;
 }
 
-main(process.argv.slice(2))
-  .then((code) => process.exit(code))
-  .catch((e: any) => {
-    if (e?.code === "SQLITE_READONLY") {
-      process.stderr.write(`multivac: ${e.message}\n`);
+if (!process.env.MULTIVAC_TEST) {
+  main(process.argv.slice(2))
+    .then((code) => process.exit(code))
+    .catch((e: any) => {
+      if (e?.code === "SQLITE_READONLY") {
+        process.stderr.write(`multivac: ${e.message}\n`);
+        process.exit(EXIT_INTERNAL);
+      }
+      process.stderr.write(`multivac: internal error: ${e?.stack ?? e}\n`);
       process.exit(EXIT_INTERNAL);
-    }
-    process.stderr.write(`multivac: internal error: ${e?.stack ?? e}\n`);
-    process.exit(EXIT_INTERNAL);
-  });
+    });
+}
