@@ -1,7 +1,7 @@
 {
   "name": "@krmrn42/multivac",
   "version": "0.7.0",
-  "description": "Cross-project full-text search across local Claude Code conversations. Zero-deps Node CLI using built-in node:sqlite (Node 22.5+). TUI picker, resume in original cwd, `multivac init` installs the companion Claude Code plugin.",
+  "description": "Cross-project full-text search across local Claude Code conversations. Bundled-dependencies Node CLI using built-in node:sqlite (Node 22.5+). TUI picker, resume in original cwd, `multivac init` installs the companion Claude Code plugin.",
   "keywords": [
     "claude-code",
     "search",
@@ -12,8 +12,7 @@
     "history",
     "resume",
     "tui",
-    "node-sqlite",
-    "zero-deps"
+    "node-sqlite"
   ],
   "license": "MIT",
   "author": {

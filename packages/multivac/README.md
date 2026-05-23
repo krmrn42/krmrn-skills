@@ -1,6 +1,6 @@
 # multivac
 
-Cross-project full-text search across local Claude Code conversations — zero-dependency Node CLI, plus a one-shot `multivac init` that installs the matching Claude Code plugin (`chat-search`).
+Cross-project full-text search across local Claude Code conversations — bundled-dependencies Node CLI (single file at install time), plus a one-shot `multivac init` that installs the matching Claude Code plugin (`chat-search`).
 
 The CLI maintains its own SQLite FTS5 index built from `~/.claude/projects/**/*.jsonl` and exposes a relevance-ranked search over message bodies across all your projects. With no arguments on a TTY it opens a built-in TUI picker; with a query and `--list`/`--format` it prints results for piping; with `--reindex` it rebuilds.
 
