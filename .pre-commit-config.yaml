@@ -7,3 +7,9 @@ repos:
         language: system
         files: '^(plugins/.*\.md|plugins/.*/\.claude-plugin/plugin\.json|\.claude-plugin/marketplace\.json)$'
         pass_filenames: false
+      - id: multivac-build-clean
+        name: Verify packages/multivac/dist/ matches src/
+        language: system
+        entry: bash -c 'cd packages/multivac && npm run build && git diff --exit-code dist/'
+        files: '^packages/multivac/(src/|esbuild\.config\.mjs|package\.json)'
+        pass_filenames: false
