@@ -356,8 +356,7 @@ export function parseArgs(argv: readonly string[]): Args {
         args.help = true;
         break;
       case "--version":
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        process.stdout.write(require("../../package.json").version + "\n");
+        process.stdout.write((process.env.MULTIVAC_VERSION ?? "0.0.0-dev") + "\n");
         process.exit(EXIT_OK);
         break;
       case "-i":

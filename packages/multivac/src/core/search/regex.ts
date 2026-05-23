@@ -1,8 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Args, ResultRow } from "../types.js";
 import { SNIPPET_OPEN, SNIPPET_CLOSE } from "../format.js";
-import { typeFilterClause, buildWhereExtras, fillMeta } from "./fts.js";
-import { dieFts } from "./fts.js";
+import { typeFilterClause, buildWhereExtras, fillMeta, dieFts } from "./fts.js";
 
 export function regexPostfilter(db: DatabaseSync, args: Args, pattern: RegExp): ResultRow[] {
   const { sql: typeSql, params: typeParams } = typeFilterClause(args.includeTools, args.onlyUser);
