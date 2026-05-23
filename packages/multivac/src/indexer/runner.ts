@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { basename } from "node:path";
 import type { ChatSource, SourceFile } from "../sources/types.js";
 import { getRegistry } from "../sources/registry.js";
 import { ensureSchema, getState, setState } from "./state.js";
@@ -30,6 +31,22 @@ async function indexSource(
   opts: RunIndexerOpts
 ): Promise<void> {
   const files = await source.discover();
+
+  // Sweep _indexer_state for jsonl files that have disappeared since the last
+  // run (e.g. a `~/.claude/projects/*/*.jsonl` was deleted). Drop their
+  // messages_fts/messages rows and their state row so they don't linger in the
+  // index. Matches v0.6.0 indexer behavior at indexer.js:328-340.
+  const discovered = new Set(files.map((f) => f.path));
+  const stateRows = db
+    .prepare("SELECT jsonl_path FROM _indexer_state WHERE source = ?")
+    .all(source.id) as Array<{ jsonl_path: string }>;
+  for (const r of stateRows) {
+    if (discovered.has(r.jsonl_path)) continue;
+    const sid = basename(r.jsonl_path, ".jsonl");
+    db.prepare("DELETE FROM messages WHERE source = ? AND conversation_id = ?").run(source.id, sid);
+    db.prepare("DELETE FROM _indexer_state WHERE source = ? AND jsonl_path = ?").run(source.id, r.jsonl_path);
+  }
+
   for (const file of files) {
     counters.total += 1;
     const state = getState(db, source.id, file.path);
@@ -54,7 +71,6 @@ async function indexSource(
 async function indexFile(db: DatabaseSync, source: ChatSource, file: SourceFile): Promise<number> {
   // Derive the conversation id from the JSONL filename (basename without .jsonl).
   // This matches the JS indexer's approach.
-  const { basename } = await import("node:path");
   const conversationId = basename(file.path, ".jsonl");
 
   // Delete all existing messages for this conversation from this source.

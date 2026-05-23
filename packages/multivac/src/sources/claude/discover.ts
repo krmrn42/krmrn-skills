@@ -23,7 +23,9 @@ export async function discover(): Promise<SourceFile[]> {
     for (const sub of entries) {
       if (sub.isFile() && sub.name.endsWith(".jsonl")) {
         const p = path.join(projectDir, sub.name);
-        const stat = fs.statSync(p);
+        let stat: fs.Stats;
+        try { stat = fs.statSync(p); }
+        catch { continue; }
         files.push({ path: p, mtimeMs: Math.floor(stat.mtimeMs) });
       }
     }
