@@ -4,6 +4,8 @@ import { recordToRows, INDEXABLE_TYPES, parse } from "../../src/sources/claude/p
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { ensureSchema } from "../../src/indexer/state.js";
 
 async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
   const out: T[] = [];
@@ -130,4 +132,23 @@ test("parse: missing gitBranch yields undefined", async () => {
     const rows = await collect(parse({ path: p, mtimeMs: 0 }));
     assert.equal(rows[0].gitBranch, undefined);
   } finally { fs.unlinkSync(p); }
+});
+
+test("indexer schema accepts new columns (subtype, git_branch, attribution_skill)", () => {
+  const db = new DatabaseSync(":memory:");
+  ensureSchema(db);
+  const stmt = db.prepare(
+    "INSERT INTO messages (id, conversation_id, project_path, project_name, " +
+      "timestamp, type, content, message_uuid, parent_uuid, source, " +
+      "subtype, git_branch, attribution_skill) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  );
+  stmt.run("id1", "conv1", "/p", "p", 1700000000, "system", "recap",
+           "u1", null, "claude", "away_summary", "main", "superpowers:tdd");
+  const row = db.prepare(
+    "SELECT subtype, git_branch, attribution_skill FROM messages WHERE id = 'id1'"
+  ).get() as { subtype: string; git_branch: string; attribution_skill: string };
+  assert.equal(row.subtype, "away_summary");
+  assert.equal(row.git_branch, "main");
+  assert.equal(row.attribution_skill, "superpowers:tdd");
 });

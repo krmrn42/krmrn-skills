@@ -34036,7 +34036,7 @@ async function indexFile(db, source, file) {
     "DELETE FROM messages WHERE source = ? AND conversation_id = ?"
   ).run(source.id, conversationId);
   const insert = db.prepare(
-    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source, subtype, git_branch, attribution_skill) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
   const blockCounters = /* @__PURE__ */ new Map();
   let rows = 0;
@@ -34058,7 +34058,10 @@ async function indexFile(db, source, file) {
           row.content,
           row.messageUuid,
           row.parentUuid,
-          source.id
+          source.id,
+          row.subtype ?? null,
+          row.gitBranch ?? null,
+          row.attributionSkill ?? null
         );
         rows++;
       } catch (_) {
