@@ -34918,10 +34918,38 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
 
 // src/tui/components/PreviewPane.tsx
 var import_react25 = __toESM(require_react(), 1);
-function PreviewPane({ previewText, width, maxRows }) {
+
+// src/tui/lib/box.ts
+var ROUNDED = {
+  topLeft: "\u256D",
+  topRight: "\u256E",
+  bottomLeft: "\u2570",
+  bottomRight: "\u256F",
+  horizontal: "\u2500",
+  vertical: "\u2502"
+};
+var ASCII = {
+  topLeft: "+",
+  topRight: "+",
+  bottomLeft: "+",
+  bottomRight: "+",
+  horizontal: "-",
+  vertical: "|"
+};
+function pickBox(noColor) {
+  return noColor ? ASCII : ROUNDED;
+}
+
+// src/tui/components/PreviewPane.tsx
+function PreviewPane({ previewText, width, maxRows, noColor = false }) {
+  const box = pickBox(noColor);
+  const horiz = box.horizontal.repeat(Math.max(0, width - 2));
+  const top = box.topLeft + horiz + box.topRight;
+  const bottom = box.bottomLeft + horiz + box.bottomRight;
   const wrapped = previewText.split("\n").flatMap((l) => wrapToWidth(l, Math.max(1, width - 2)));
-  const lines = wrapped.slice(0, Math.max(0, maxRows));
-  return /* @__PURE__ */ import_react25.default.createElement(Box_default, { flexDirection: "column", width, height: maxRows }, lines.map((line, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, "\u2502 "), line)));
+  const bodyRows = Math.max(0, maxRows - 2);
+  const lines = wrapped.slice(0, bodyRows);
+  return /* @__PURE__ */ import_react25.default.createElement(Box_default, { flexDirection: "column", width, height: maxRows }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, top), lines.map((line, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, box.vertical, " "), line)), Array.from({ length: Math.max(0, bodyRows - lines.length) }).map((_, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: "pad-" + i }, " ")), /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, bottom));
 }
 
 // src/tui/components/HelpOverlay.tsx
@@ -35377,7 +35405,15 @@ function App2(props) {
       maxRows: bodyRows,
       dimRows: state.mode === "rename"
     }
-  )), showPreview ? /* @__PURE__ */ import_react32.default.createElement(Box_default, { width: previewWidth, height: bodyRows }, /* @__PURE__ */ import_react32.default.createElement(PreviewPane, { previewText, width: previewWidth, maxRows: bodyRows })) : null), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow, cols }));
+  )), showPreview ? /* @__PURE__ */ import_react32.default.createElement(Box_default, { width: previewWidth, height: bodyRows }, /* @__PURE__ */ import_react32.default.createElement(
+    PreviewPane,
+    {
+      previewText,
+      width: previewWidth,
+      maxRows: bodyRows,
+      noColor: props.args.noColor
+    }
+  )) : null), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow, cols }));
 }
 
 // src/cli/main.ts

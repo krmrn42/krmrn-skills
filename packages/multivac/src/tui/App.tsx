@@ -228,7 +228,8 @@ export function App(props: AppProps) {
           </Box>
           {showPreview ? (
             <Box width={previewWidth} height={bodyRows}>
-              <PreviewPane previewText={previewText} width={previewWidth} maxRows={bodyRows} />
+              <PreviewPane previewText={previewText} width={previewWidth} maxRows={bodyRows}
+                           noColor={props.args.noColor} />
             </Box>
           ) : null}
         </Box>
