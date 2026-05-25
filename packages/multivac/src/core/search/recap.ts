@@ -2,6 +2,9 @@ import type { DatabaseSync } from "node:sqlite";
 
 const RECAP_MAX_LINES = 5;
 
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = new RegExp(String.fromCharCode(0x1b) + "\\[[0-?]*[ -/]*[@-~]", "g");
+
 /**
  * Resolve the "recap" text for a conversation, used in row preview lines and
  * preview-pane headers. Priority:
@@ -40,9 +43,7 @@ export function getRecapText(
 
 /** Strip ANSI, take first `n` non-empty lines, trimmed. */
 function headLines(text: string, n: number): string {
-  // eslint-disable-next-line no-control-regex
-  const ansi = new RegExp(String.fromCharCode(0x1b) + "\\[[0-?]*[ -/]*[@-~]", "g");
-  const cleaned = text.replace(ansi, "");
+  const cleaned = text.replace(ANSI_RE, "");
   const out: string[] = [];
   for (const raw of cleaned.split("\n")) {
     const line = raw.trim();

@@ -49,11 +49,24 @@ test("getRecapText: returns empty string when no assistant + no away_summary", (
   assert.equal(getRecapText(db, "c", "claude"), "");
 });
 
-test("getRecapText: away_summary fresh (no later user message) wins", () => {
+test("getRecapText: away_summary with timestamp equal to last user message is treated as stale", () => {
+  // The fresh check uses strict `>` so a recap at the SAME timestamp as
+  // the user message is stale (the user could have edited the message
+  // after the recap was generated).
   const db = seedDb();
-  insertRow(db, { id: "1", conv: "c", ts: 100, type: "user", content: "Q1" });
-  insertRow(db, { id: "2", conv: "c", ts: 200, type: "assistant", content: "A1" });
-  insertRow(db, { id: "3", conv: "c", ts: 300, type: "system",
-                  subtype: "away_summary", content: "FRESH RECAP" });
-  assert.equal(getRecapText(db, "c", "claude"), "FRESH RECAP");
+  insertRow(db, { id: "1", conv: "c", ts: 200, type: "user", content: "Q1" });
+  insertRow(db, { id: "2", conv: "c", ts: 200, type: "system",
+                  subtype: "away_summary", content: "STALE RECAP" });
+  insertRow(db, { id: "3", conv: "c", ts: 100, type: "assistant", content: "old assistant" });
+  // away_summary.ts (200) is NOT strictly > lastUserTs (200), so it falls back
+  // to the assistant message.
+  assert.equal(getRecapText(db, "c", "claude"), "old assistant");
+});
+
+test("getRecapText: scopes by conversation_id and source (ignores rows from siblings)", () => {
+  const db = seedDb();
+  insertRow(db, { id: "1", conv: "c", ts: 100, type: "assistant", content: "TARGET" });
+  insertRow(db, { id: "2", conv: "other", ts: 200, type: "assistant", content: "WRONG" });
+  insertRow(db, { id: "3", conv: "c", ts: 150, type: "assistant", content: "TARGET-LATER", source: "aider" });
+  assert.equal(getRecapText(db, "c", "claude"), "TARGET");
 });
