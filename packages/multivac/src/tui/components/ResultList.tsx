@@ -104,7 +104,7 @@ export function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRo
     if (r.gitBranch) metaParts.push("(" + r.gitBranch + ")");
     if (r.skill) metaParts.push(r.skill);
     if (metaParts.length > 0) {
-      const metaText = truncateToWidth(metaParts.join(" · "), listWidth - 6);
+      const metaText = truncateToWidth(metaParts.join(" · "), listWidth - 4);
       nodes.push(
         <Text key={"m-" + i} dimColor>
           {"    "}

@@ -34909,7 +34909,7 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
     if (r.gitBranch) metaParts.push("(" + r.gitBranch + ")");
     if (r.skill) metaParts.push(r.skill);
     if (metaParts.length > 0) {
-      const metaText = truncateToWidth(metaParts.join(" \xB7 "), listWidth - 6);
+      const metaText = truncateToWidth(metaParts.join(" \xB7 "), listWidth - 4);
       nodes.push(
         /* @__PURE__ */ import_react24.default.createElement(Text, { key: "m-" + i, dimColor: true }, "    ", metaText)
       );

@@ -90,3 +90,25 @@ test("ResultList: chat row omits meta strip when branch and skill are absent", (
   const frame = lastFrame() ?? "";
   assert.ok(!frame.includes("()"));
 });
+
+test("ResultList: skill-only meta strip renders without parens", () => {
+  const rows = [row("a", { skill: "superpowers:tdd" })];
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={0} noColor={true} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  const frame = lastFrame() ?? "";
+  assert.ok(frame.includes("superpowers:tdd"), "expected skill in meta strip");
+  assert.ok(!frame.includes("("), "no parens when gitBranch is absent");
+});
+
+test("ResultList: pure FTS row (no recapText) shows snippet on line 3", () => {
+  const rows = [row("a", { snippet: "MATCH context", recapText: undefined })];
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={0} noColor={true} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  const frame = lastFrame() ?? "";
+  assert.ok(frame.includes("MATCH"));
+  assert.ok(!frame.includes("recap:"));
+});
