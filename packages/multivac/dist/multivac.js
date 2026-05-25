@@ -34867,7 +34867,7 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
   }
   const hasDivider = results.length > 0 && firstUnpinnedIdx > 0 && firstUnpinnedIdx < results.length;
   const dividerText = "\u2500\u2500 recent \u2500\u2500";
-  const rowsPerResult = 2;
+  const rowsPerResult = 3;
   const usableHeight = hasDivider ? maxRows - 1 : maxRows;
   const maxVisible = Math.max(1, Math.floor(usableHeight / rowsPerResult));
   let scrollOffset = 0;
@@ -34899,18 +34899,28 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
     const pinPart = isPinned ? pinMarker : "";
     const head = pinPart + headBody;
     const headTrunc = truncateToWidth(head, listWidth - 2);
-    const snippet = colorizeSnippet(r.snippet || "", !noColor);
-    const snipTrunc = snippet ? truncateToWidth(snippet, listWidth - 4) : "";
+    const snippetText = colorizeSnippet(r.snippet || "", !noColor);
+    const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4) : "";
     const dim = dimRows;
     nodes.push(
-      /* @__PURE__ */ import_react24.default.createElement(Text, { key: `h-${i}`, bold: isCur && !dimRows, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
+      /* @__PURE__ */ import_react24.default.createElement(Text, { key: "h-" + i, bold: isCur && !dimRows, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
     );
-    if (snipTrunc) {
+    const metaParts = [];
+    if (r.gitBranch) metaParts.push("(" + r.gitBranch + ")");
+    if (r.skill) metaParts.push(r.skill);
+    if (metaParts.length > 0) {
+      const metaText = truncateToWidth(metaParts.join(" \xB7 "), listWidth - 6);
       nodes.push(
-        /* @__PURE__ */ import_react24.default.createElement(Text, { key: `s-${i}`, dimColor: true }, "    ", snipTrunc)
+        /* @__PURE__ */ import_react24.default.createElement(Text, { key: "m-" + i, dimColor: true }, "    ", metaText)
+      );
+    }
+    const previewLine = snipTrunc || (r.recapText ? truncateToWidth("recap: " + r.recapText.replace(/\n/g, " \u23CE "), listWidth - 4) : "");
+    if (previewLine) {
+      nodes.push(
+        /* @__PURE__ */ import_react24.default.createElement(Text, { key: "s-" + i, dimColor: true }, "    ", previewLine)
       );
     } else {
-      nodes.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `s-${i}` }, ""));
+      nodes.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: "s-" + i }, ""));
     }
   }
   return /* @__PURE__ */ import_react24.default.createElement(Box_default, { flexDirection: "column" }, nodes);
