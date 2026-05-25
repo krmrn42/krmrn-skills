@@ -152,3 +152,22 @@ test("indexer schema accepts new columns (subtype, git_branch, attribution_skill
   assert.equal(row.git_branch, "main");
   assert.equal(row.attribution_skill, "superpowers:tdd");
 });
+
+test("indexer schema: new columns accept and return NULL", () => {
+  const db = new DatabaseSync(":memory:");
+  ensureSchema(db);
+  const stmt = db.prepare(
+    "INSERT INTO messages (id, conversation_id, project_path, project_name, " +
+      "timestamp, type, content, message_uuid, parent_uuid, source, " +
+      "subtype, git_branch, attribution_skill) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  );
+  stmt.run("id2", "conv2", "/p", "p", 1700000001, "user", "hello",
+           "u2", null, "claude", null, null, null);
+  const row = db.prepare(
+    "SELECT subtype, git_branch, attribution_skill FROM messages WHERE id = 'id2'"
+  ).get() as { subtype: string | null; git_branch: string | null; attribution_skill: string | null };
+  assert.equal(row.subtype, null);
+  assert.equal(row.git_branch, null);
+  assert.equal(row.attribution_skill, null);
+});
