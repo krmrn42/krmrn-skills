@@ -33570,16 +33570,15 @@ function setState(db, sourceId, jsonlPath, mtimeMs, rows) {
 function runMigrations(db, silent) {
   const needed = detectMigrationNeeded(db);
   if (needed === 0) return;
-  if (needed === 2) {
-    if (!silent) {
-      process.stderr.write(
-        "multivac: index schema migration v2 (adding `source` column). This triggers a one-time full reindex; subsequent runs are incremental.\n"
-      );
-    }
-    db["exec"]("DROP TABLE IF EXISTS messages_fts;");
-    db["exec"]("DROP TABLE IF EXISTS messages;");
-    db["exec"]("DROP TABLE IF EXISTS _indexer_state;");
+  if (!silent) {
+    process.stderr.write(
+      `multivac: index schema migration v${needed}. This triggers a one-time full reindex; subsequent runs are incremental.
+`
+    );
   }
+  db["exec"]("DROP TABLE IF EXISTS messages_fts;");
+  db["exec"]("DROP TABLE IF EXISTS messages;");
+  db["exec"]("DROP TABLE IF EXISTS _indexer_state;");
 }
 
 // src/indexer/runner.ts
