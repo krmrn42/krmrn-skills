@@ -34568,12 +34568,18 @@ function renderPreview(db, sessionId, source, useColor) {
   const bold = useColor ? ANSI_BOLD : "";
   const dim = useColor ? ANSI_DIM : "";
   const reset = useColor ? ANSI_RESET : "";
+  const W = 70;
+  const horiz = "\u2500".repeat(W - 2);
   const lines = [];
-  lines.push(
-    `${bold}${proj}${reset}  ${dim}(${fmtDate(head.first_ts)} \u2192 ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}
-`
-  );
-  lines.push(`${dim}session ${sessionId}${reset}
+  lines.push(`${dim}\u256D${horiz}\u256E${reset}
+`);
+  lines.push(`${dim}\u2502 ${reset}${bold}${proj}${reset}
+`);
+  lines.push(`${dim}\u2502 ${reset}${dim}(${fmtDate(head.first_ts)} \u2192 ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}
+`);
+  lines.push(`${dim}\u2502 ${reset}${dim}session ${sessionId}${reset}
+`);
+  lines.push(`${dim}\u2570${horiz}\u256F${reset}
 
 `);
   const rows = db.prepare(

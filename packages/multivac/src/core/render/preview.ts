@@ -39,11 +39,16 @@ export function renderPreview(
   const dim = useColor ? ANSI_DIM : "";
   const reset = useColor ? ANSI_RESET : "";
 
+  // v0.8: rounded box header. Width 70 is the historical default for --preview
+  // output (which humans typically pipe into a pager).
+  const W = 70;
+  const horiz = "─".repeat(W - 2);
   const lines: string[] = [];
-  lines.push(
-    `${bold}${proj}${reset}  ${dim}(${fmtDate(head.first_ts)} → ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}\n`
-  );
-  lines.push(`${dim}session ${sessionId}${reset}\n\n`);
+  lines.push(`${dim}╭${horiz}╮${reset}\n`);
+  lines.push(`${dim}│ ${reset}${bold}${proj}${reset}\n`);
+  lines.push(`${dim}│ ${reset}${dim}(${fmtDate(head.first_ts)} → ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}\n`);
+  lines.push(`${dim}│ ${reset}${dim}session ${sessionId}${reset}\n`);
+  lines.push(`${dim}╰${horiz}╯${reset}\n\n`);
 
   const rows = db
     .prepare(
