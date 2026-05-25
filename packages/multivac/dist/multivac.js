@@ -33763,7 +33763,10 @@ async function* parse(file) {
         type: r.type,
         content: r.content,
         messageUuid: r.message_uuid,
-        parentUuid: r.parent_uuid
+        parentUuid: r.parent_uuid,
+        subtype: r.type === "system" ? rec["subtype"] : void 0,
+        gitBranch: typeof rec["gitBranch"] === "string" ? rec["gitBranch"] : void 0,
+        attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : void 0
       };
     }
   }

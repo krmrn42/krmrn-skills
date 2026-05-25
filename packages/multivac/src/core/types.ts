@@ -18,6 +18,9 @@ export interface MessageRow {
   content: string;
   messageUuid: string;
   parentUuid: string | null;
+  subtype?: string;            // v0.8: 'away_summary' for system rows; undefined otherwise
+  gitBranch?: string;          // v0.8: extracted from JSONL top-level gitBranch
+  attributionSkill?: string;   // v0.8: extracted from JSONL top-level attributionSkill
 }
 
 export interface ResultRow {

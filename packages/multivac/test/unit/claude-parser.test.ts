@@ -1,6 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { recordToRows, INDEXABLE_TYPES } from "../../src/sources/claude/parse.js";
+import { recordToRows, INDEXABLE_TYPES, parse } from "../../src/sources/claude/parse.js";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
+  const out: T[] = [];
+  for await (const item of it) out.push(item);
+  return out;
+}
+
+function writeJsonl(lines: object[]): string {
+  const tmp = path.join(os.tmpdir(), `multivac-parse-${Date.now()}-${Math.random()}.jsonl`);
+  fs.writeFileSync(tmp, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  return tmp;
+}
 
 test("INDEXABLE_TYPES includes 'system' (for away_summary)", () => {
   assert.ok(INDEXABLE_TYPES.has("system"));
@@ -54,4 +69,53 @@ test("recordToRows: system/away_summary missing sessionId returns null (malforme
   };
   const rows = recordToRows(rec);
   assert.equal(rows, null);
+});
+
+test("parse: extracts gitBranch from JSONL top-level", async () => {
+  const p = writeJsonl([
+    { type: "user", sessionId: "s", uuid: "u1", gitBranch: "main",
+      message: { content: "hello" }, timestamp: "2026-01-01T00:00:00Z" },
+  ]);
+  try {
+    const rows = await collect(parse({ path: p, mtimeMs: 0 }));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].gitBranch, "main");
+  } finally { fs.unlinkSync(p); }
+});
+
+test("parse: extracts attributionSkill", async () => {
+  const p = writeJsonl([
+    { type: "assistant", sessionId: "s", uuid: "u1",
+      attributionSkill: "superpowers:tdd",
+      message: { content: [{ type: "text", text: "ack" }] },
+      timestamp: "2026-01-01T00:00:00Z" },
+  ]);
+  try {
+    const rows = await collect(parse({ path: p, mtimeMs: 0 }));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].attributionSkill, "superpowers:tdd");
+  } finally { fs.unlinkSync(p); }
+});
+
+test("parse: extracts subtype for system rows", async () => {
+  const p = writeJsonl([
+    { type: "system", subtype: "away_summary", sessionId: "s", uuid: "u1",
+      content: "recap text", timestamp: "2026-01-01T00:00:00Z" },
+  ]);
+  try {
+    const rows = await collect(parse({ path: p, mtimeMs: 0 }));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].subtype, "away_summary");
+  } finally { fs.unlinkSync(p); }
+});
+
+test("parse: missing gitBranch yields undefined", async () => {
+  const p = writeJsonl([
+    { type: "user", sessionId: "s", uuid: "u1",
+      message: { content: "hello" }, timestamp: "2026-01-01T00:00:00Z" },
+  ]);
+  try {
+    const rows = await collect(parse({ path: p, mtimeMs: 0 }));
+    assert.equal(rows[0].gitBranch, undefined);
+  } finally { fs.unlinkSync(p); }
 });
