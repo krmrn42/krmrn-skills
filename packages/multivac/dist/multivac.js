@@ -33004,20 +33004,27 @@ var EXPECTED_COLUMNS = /* @__PURE__ */ new Set([
   "content",
   "message_uuid",
   "parent_uuid",
-  "source"
+  "source",
+  "subtype",
+  "git_branch",
+  "attribution_skill"
+  // v3 additions
 ]);
 var SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS messages (
-  id              TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL,
-  project_path    TEXT NOT NULL,
-  project_name    TEXT NOT NULL,
-  timestamp       INTEGER NOT NULL,
-  type            TEXT NOT NULL,
-  content         TEXT,
-  message_uuid    TEXT NOT NULL,
-  parent_uuid     TEXT,
-  source          TEXT NOT NULL DEFAULT 'claude'
+  id                TEXT PRIMARY KEY,
+  conversation_id   TEXT NOT NULL,
+  project_path      TEXT NOT NULL,
+  project_name      TEXT NOT NULL,
+  timestamp         INTEGER NOT NULL,
+  type              TEXT NOT NULL,
+  content           TEXT,
+  message_uuid      TEXT NOT NULL,
+  parent_uuid       TEXT,
+  source            TEXT NOT NULL DEFAULT 'claude',
+  subtype           TEXT NULL,
+  git_branch        TEXT NULL,
+  attribution_skill TEXT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp    ON messages(timestamp);
@@ -33049,7 +33056,10 @@ function detectMigrationNeeded(db) {
   if (tables.length === 0) return 0;
   const cols = db.prepare("PRAGMA table_info(messages)").all();
   const hasSource = cols.some((c) => c.name === "source");
-  return hasSource ? 0 : 2;
+  if (!hasSource) return 2;
+  const hasSubtype = cols.some((c) => c.name === "subtype");
+  if (!hasSubtype) return 3;
+  return 0;
 }
 
 // src/core/db.ts

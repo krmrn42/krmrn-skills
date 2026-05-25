@@ -26,7 +26,7 @@ test("legacy schema (no source column) → migration v2 needed", () => {
   assert.equal(detectMigrationNeeded(db), 2);
 });
 
-test("current schema (with source) → no migration needed", () => {
+test("v2 schema (with source, no subtype) → migration v3 needed", () => {
   const db = new DatabaseSync(":memory:");
   db.exec(`
     CREATE TABLE messages (
@@ -40,6 +40,28 @@ test("current schema (with source) → no migration needed", () => {
       message_uuid TEXT NOT NULL,
       parent_uuid TEXT,
       source TEXT NOT NULL DEFAULT 'claude'
+    );
+  `);
+  assert.equal(detectMigrationNeeded(db), 3);
+});
+
+test("v3 schema (has subtype) → no migration needed", () => {
+  const db = new DatabaseSync(":memory:");
+  db["exec"](`
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      project_path TEXT NOT NULL,
+      project_name TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      content TEXT,
+      message_uuid TEXT NOT NULL,
+      parent_uuid TEXT,
+      source TEXT NOT NULL DEFAULT 'claude',
+      subtype TEXT NULL,
+      git_branch TEXT NULL,
+      attribution_skill TEXT NULL
     );
   `);
   assert.equal(detectMigrationNeeded(db), 0);
