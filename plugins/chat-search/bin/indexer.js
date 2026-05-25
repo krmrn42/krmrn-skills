@@ -1,1 +1,0 @@
-../../../packages/multivac/src/indexer.js

@@ -1,7 +1,7 @@
 {
   "name": "@krmrn42/multivac",
-  "version": "0.6.0",
-  "description": "Cross-project full-text search across local Claude Code conversations. Zero-deps Node CLI using built-in node:sqlite (Node 22.5+). TUI picker, resume in original cwd, `multivac init` installs the companion Claude Code plugin.",
+  "version": "0.7.0",
+  "description": "Cross-project full-text search across local Claude Code conversations. Bundled-dependencies Node CLI using built-in node:sqlite (Node 22.5+). TUI picker, resume in original cwd, `multivac init` installs the companion Claude Code plugin.",
   "keywords": [
     "claude-code",
     "search",
@@ -12,8 +12,7 @@
     "history",
     "resume",
     "tui",
-    "node-sqlite",
-    "zero-deps"
+    "node-sqlite"
   ],
   "license": "MIT",
   "author": {
@@ -32,11 +31,32 @@
     "node": ">=22.5.0"
   },
   "bin": {
-    "multivac": "src/multivac.js"
+    "multivac": "dist/multivac.js"
+  },
+  "scripts": {
+    "build": "node esbuild.config.mjs && chmod +x dist/multivac.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test 'test/unit/**/*.test.ts' 'test/tui/**/*.test.tsx'",
+    "test:sh": "bash test/multivac.test.sh",
+    "test:all": "npm run typecheck && npm run test && npm run build && npm run test:sh",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "ink": "^5.0.1",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@types/react": "^18.3.3",
+    "esbuild": "^0.23.0",
+    "ink-testing-library": "^4.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
   },
   "files": [
-    "src/",
+    "dist/",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "type": "module"
 }
