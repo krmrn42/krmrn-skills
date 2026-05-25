@@ -34555,6 +34555,27 @@ function renderTsv(results) {
   return out.length ? out.join("\n") + "\n" : "";
 }
 
+// src/tui/lib/box.ts
+var ROUNDED = {
+  topLeft: "\u256D",
+  topRight: "\u256E",
+  bottomLeft: "\u2570",
+  bottomRight: "\u256F",
+  horizontal: "\u2500",
+  vertical: "\u2502"
+};
+var ASCII = {
+  topLeft: "+",
+  topRight: "+",
+  bottomLeft: "+",
+  bottomRight: "+",
+  horizontal: "-",
+  vertical: "|"
+};
+function pickBox(noColor) {
+  return noColor ? ASCII : ROUNDED;
+}
+
 // src/core/render/preview.ts
 function renderPreview(db, sessionId, source, useColor) {
   const head = db.prepare(
@@ -34569,17 +34590,18 @@ function renderPreview(db, sessionId, source, useColor) {
   const dim = useColor ? ANSI_DIM : "";
   const reset = useColor ? ANSI_RESET : "";
   const W = 70;
-  const horiz = "\u2500".repeat(W - 2);
+  const box = pickBox(!useColor);
+  const horiz = box.horizontal.repeat(W - 2);
   const lines = [];
-  lines.push(`${dim}\u256D${horiz}\u256E${reset}
+  lines.push(`${dim}${box.topLeft}${horiz}${box.topRight}${reset}
 `);
-  lines.push(`${dim}\u2502 ${reset}${bold}${proj}${reset}
+  lines.push(`${dim}${box.vertical} ${reset}${bold}${proj}${reset}
 `);
-  lines.push(`${dim}\u2502 ${reset}${dim}(${fmtDate(head.first_ts)} \u2192 ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}
+  lines.push(`${dim}${box.vertical} ${reset}${dim}(${fmtDate(head.first_ts)} \u2192 ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}
 `);
-  lines.push(`${dim}\u2502 ${reset}${dim}session ${sessionId}${reset}
+  lines.push(`${dim}${box.vertical} ${reset}${dim}session ${sessionId}${reset}
 `);
-  lines.push(`${dim}\u2570${horiz}\u256F${reset}
+  lines.push(`${dim}${box.bottomLeft}${horiz}${box.bottomRight}${reset}
 
 `);
   const rows = db.prepare(
@@ -34934,29 +34956,6 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
 
 // src/tui/components/PreviewPane.tsx
 var import_react25 = __toESM(require_react(), 1);
-
-// src/tui/lib/box.ts
-var ROUNDED = {
-  topLeft: "\u256D",
-  topRight: "\u256E",
-  bottomLeft: "\u2570",
-  bottomRight: "\u256F",
-  horizontal: "\u2500",
-  vertical: "\u2502"
-};
-var ASCII = {
-  topLeft: "+",
-  topRight: "+",
-  bottomLeft: "+",
-  bottomRight: "+",
-  horizontal: "-",
-  vertical: "|"
-};
-function pickBox(noColor) {
-  return noColor ? ASCII : ROUNDED;
-}
-
-// src/tui/components/PreviewPane.tsx
 function PreviewPane({ previewText, width, maxRows, noColor = false }) {
   const box = pickBox(noColor);
   const horiz = box.horizontal.repeat(Math.max(0, width - 2));
