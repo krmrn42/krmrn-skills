@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { ResultRow, SessionStore } from "../types.js";
 import { applyPinOrdering } from "./pin-ordering.js";
+import { getRecapText } from "./recap.js";
 
 // Wrapper tags Claude Code uses to embed non-user content inside a
 // `type: 'user'` JSONL row. When synthesizing a conversation title we skip
@@ -116,6 +117,12 @@ LIMIT ?
       "WHERE conversation_id = ? AND type IN ('user', 'assistant') " +
       "ORDER BY timestamp DESC LIMIT 1"
   );
+  // Step 4: v0.8 metadata (git_branch, attribution_skill from most recent row).
+  const metaStmt = db.prepare(
+    "SELECT git_branch, attribution_skill FROM messages " +
+      "WHERE conversation_id = ? AND source = ? " +
+      "ORDER BY timestamp DESC LIMIT 1"
+  );
 
   // Saved-name overlay: when a sessionStore is passed and has a name for
   // this conversation_id, it overrides the synthesized title. Synthesis still
@@ -143,6 +150,10 @@ LIMIT ?
     const tailRow = tailStmt.get(conv.conversation_id) as { content: string | null } | undefined;
     const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
 
+    const recapText = getRecapText(db, conv.conversation_id, source);
+    const metaRow = metaStmt.get(conv.conversation_id, source) as
+      { git_branch: string | null; attribution_skill: string | null } | undefined;
+
     results.push({
       source,
       sessionId: conv.conversation_id,
@@ -153,6 +164,9 @@ LIMIT ?
       snippet: tail,
       score: 0,
       title,
+      recapText,
+      gitBranch: metaRow?.git_branch ?? null,
+      skill: metaRow?.attribution_skill ?? null,
     });
   }
   // Pinned rows (from sessionStore.pins) sort to the top in pin-order. Rows

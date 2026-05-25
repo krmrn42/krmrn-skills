@@ -34,6 +34,10 @@ export interface ResultRow {
   score: number;
   title?: string | null;
   isPinned?: boolean;
+  // v0.8 additions:
+  recapText?: string;          // from getRecapText() — used in non-FTS browse
+  gitBranch?: string | null;   // most recent git_branch seen in the conversation
+  skill?: string | null;       // most recent attribution_skill seen
 }
 
 export interface SessionStore {

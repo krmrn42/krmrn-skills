@@ -34945,6 +34945,35 @@ function RenameModal() {
 // src/tui/hooks/useSearch.ts
 var import_react28 = __toESM(require_react(), 1);
 
+// src/core/search/recap.ts
+var RECAP_MAX_LINES = 5;
+var ANSI_RE = new RegExp(String.fromCharCode(27) + "\\[[0-?]*[ -/]*[@-~]", "g");
+function getRecapText(db, conversationId, source) {
+  const lastUserTs = db.prepare(
+    "SELECT COALESCE(MAX(timestamp), 0) AS ts FROM messages WHERE conversation_id = ? AND source = ? AND type = 'user'"
+  ).get(conversationId, source);
+  const summary = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'system' AND subtype = 'away_summary' AND timestamp > ? ORDER BY timestamp DESC LIMIT 1"
+  ).get(conversationId, source, lastUserTs?.ts ?? 0);
+  if (summary?.content) return summary.content;
+  const assistant = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'assistant' ORDER BY timestamp DESC LIMIT 1"
+  ).get(conversationId, source);
+  if (!assistant?.content) return "";
+  return headLines(assistant.content, RECAP_MAX_LINES);
+}
+function headLines(text, n) {
+  const cleaned = text.replace(ANSI_RE, "");
+  const out = [];
+  for (const raw of cleaned.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    out.push(line);
+    if (out.length >= n) break;
+  }
+  return out.join("\n");
+}
+
 // src/core/search/recent.ts
 var WRAPPER_TAGS = /* @__PURE__ */ new Set([
   "command-name",
@@ -35013,6 +35042,9 @@ LIMIT ?
   const tailStmt = db.prepare(
     "SELECT content FROM messages WHERE conversation_id = ? AND type IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT 1"
   );
+  const metaStmt = db.prepare(
+    "SELECT git_branch, attribution_skill FROM messages WHERE conversation_id = ? AND source = ? ORDER BY timestamp DESC LIMIT 1"
+  );
   const namesMap = sessionStore && sessionStore.names || {};
   const results = [];
   for (const conv of recent) {
@@ -35033,6 +35065,8 @@ LIMIT ?
     }
     const tailRow = tailStmt.get(conv.conversation_id);
     const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
+    const recapText = getRecapText(db, conv.conversation_id, source);
+    const metaRow = metaStmt.get(conv.conversation_id, source);
     results.push({
       source,
       sessionId: conv.conversation_id,
@@ -35042,7 +35076,10 @@ LIMIT ?
       msgCount: conv.msg_count || 0,
       snippet: tail,
       score: 0,
-      title
+      title,
+      recapText,
+      gitBranch: metaRow?.git_branch ?? null,
+      skill: metaRow?.attribution_skill ?? null
     });
   }
   return applyPinOrdering(results, sessionStore, Math.max(1, limit | 0));
