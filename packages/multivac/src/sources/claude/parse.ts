@@ -6,7 +6,7 @@ import type { MessageRow } from "../../core/types.js";
 
 const TOOL_USE_INPUT_CAP = 8 * 1024;
 
-const INDEXABLE_TYPES = new Set(["user", "assistant", "tool_result", "tool_use"]);
+const INDEXABLE_TYPES = new Set(["user", "assistant", "tool_result", "tool_use", "system"]);
 
 function decodeProjectPathFromCwd(cwd: unknown, fallbackDirName: string): string {
   if (cwd && typeof cwd === "string") return cwd;
@@ -61,7 +61,7 @@ function clipToolUseInput(input: unknown): string {
 }
 
 interface ParsedRow {
-  type: "user" | "assistant" | "tool_use" | "tool_result";
+  type: "user" | "assistant" | "tool_use" | "tool_result" | "system";
   content: string;
   message_uuid: string;
   parent_uuid: string | null;
@@ -120,6 +120,16 @@ function recordToRows(rec: Record<string, unknown>): ParsedRow[] | null {
       flattenContentString(rec["content"]);
     if (!content) return [];
     return [{ type: "tool_result", content, message_uuid: baseUuid, parent_uuid: parentUuid, block_idx: 0 }];
+  }
+
+  if (type === "system") {
+    // Only away_summary is indexed; other system subtypes (hook_success,
+    // skill_listing, mcp_instructions_delta, command_permissions, etc.) are
+    // operational noise and silently skipped.
+    if (rec["subtype"] !== "away_summary") return [];
+    const content = typeof rec["content"] === "string" ? rec["content"] : "";
+    if (!content) return [];
+    return [{ type: "system" as const, content, message_uuid: baseUuid, parent_uuid: parentUuid, block_idx: 0 }];
   }
 
   return [];

@@ -33631,7 +33631,7 @@ import * as fs4 from "node:fs";
 import * as path3 from "node:path";
 import * as readline from "node:readline";
 var TOOL_USE_INPUT_CAP = 8 * 1024;
-var INDEXABLE_TYPES = /* @__PURE__ */ new Set(["user", "assistant", "tool_result", "tool_use"]);
+var INDEXABLE_TYPES = /* @__PURE__ */ new Set(["user", "assistant", "tool_result", "tool_use", "system"]);
 function decodeProjectPathFromCwd(cwd2, fallbackDirName) {
   if (cwd2 && typeof cwd2 === "string") return cwd2;
   if (!fallbackDirName) return "";
@@ -33723,6 +33723,12 @@ function recordToRows(rec) {
     const content = flattenContentString(message && message["content"]) || flattenContentString(rec["content"]);
     if (!content) return [];
     return [{ type: "tool_result", content, message_uuid: baseUuid, parent_uuid: parentUuid, block_idx: 0 }];
+  }
+  if (type === "system") {
+    if (rec["subtype"] !== "away_summary") return [];
+    const content = typeof rec["content"] === "string" ? rec["content"] : "";
+    if (!content) return [];
+    return [{ type: "system", content, message_uuid: baseUuid, parent_uuid: parentUuid, block_idx: 0 }];
   }
   return [];
 }

@@ -14,7 +14,7 @@ export interface MessageRow {
   projectPath: string;
   projectName: string;
   timestamp: number;
-  type: "user" | "assistant" | "tool_use" | "tool_result";
+  type: "user" | "assistant" | "tool_use" | "tool_result" | "system";
   content: string;
   messageUuid: string;
   parentUuid: string | null;
