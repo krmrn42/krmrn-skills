@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { detectMigrationNeeded } from "../../src/core/schema.js";
+import { runMigrations, ensureSchema } from "../../src/indexer/state.js";
 
 test("fresh DB → no migration needed", () => {
   const db = new DatabaseSync(":memory:");
@@ -66,8 +67,6 @@ test("v3 schema (has subtype) → no migration needed", () => {
   `);
   assert.equal(detectMigrationNeeded(db), 0);
 });
-
-import { runMigrations, ensureSchema } from "../../src/indexer/state.js";
 
 test("runMigrations: v2 db is migrated to v3 (subtype column appears)", () => {
   const db = new DatabaseSync(":memory:");
