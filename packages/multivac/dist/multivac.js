@@ -35043,7 +35043,7 @@ LIMIT ?
     "SELECT content FROM messages WHERE conversation_id = ? AND type IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT 1"
   );
   const metaStmt = db.prepare(
-    "SELECT git_branch, attribution_skill FROM messages WHERE conversation_id = ? AND source = ? ORDER BY timestamp DESC LIMIT 1"
+    "SELECT git_branch, attribution_skill FROM messages WHERE conversation_id = ? ORDER BY timestamp DESC LIMIT 1"
   );
   const namesMap = sessionStore && sessionStore.names || {};
   const results = [];
@@ -35066,7 +35066,7 @@ LIMIT ?
     const tailRow = tailStmt.get(conv.conversation_id);
     const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
     const recapText = getRecapText(db, conv.conversation_id, source);
-    const metaRow = metaStmt.get(conv.conversation_id, source);
+    const metaRow = metaStmt.get(conv.conversation_id);
     results.push({
       source,
       sessionId: conv.conversation_id,

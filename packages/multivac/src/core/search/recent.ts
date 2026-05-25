@@ -120,7 +120,7 @@ LIMIT ?
   // Step 4: v0.8 metadata (git_branch, attribution_skill from most recent row).
   const metaStmt = db.prepare(
     "SELECT git_branch, attribution_skill FROM messages " +
-      "WHERE conversation_id = ? AND source = ? " +
+      "WHERE conversation_id = ? " +
       "ORDER BY timestamp DESC LIMIT 1"
   );
 
@@ -151,7 +151,7 @@ LIMIT ?
     const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
 
     const recapText = getRecapText(db, conv.conversation_id, source);
-    const metaRow = metaStmt.get(conv.conversation_id, source) as
+    const metaRow = metaStmt.get(conv.conversation_id) as
       { git_branch: string | null; attribution_skill: string | null } | undefined;
 
     results.push({

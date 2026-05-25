@@ -52,3 +52,15 @@ test("recentConversations: populates skill from the most recent attribution", ()
   const out = recentConversations(db, { limit: 5, projectFilter: null });
   assert.equal(out[0].skill, "superpowers:tdd");
 });
+
+test("recentConversations: gitBranch and skill are null when no rows carry them", () => {
+  const db = new DatabaseSync(":memory:");
+  ensureSchema(db);
+  seed(db, [
+    { id: "1", conv: "c", ts: 100, type: "user", content: "Q" },
+    { id: "2", conv: "c", ts: 200, type: "assistant", content: "A" },
+  ]);
+  const out = recentConversations(db, { limit: 5, projectFilter: null });
+  assert.equal(out[0].gitBranch, null);
+  assert.equal(out[0].skill, null);
+});
