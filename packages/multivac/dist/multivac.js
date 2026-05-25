@@ -34949,7 +34949,7 @@ function PreviewPane({ previewText, width, maxRows, noColor = false }) {
   const wrapped = previewText.split("\n").flatMap((l) => wrapToWidth(l, Math.max(1, width - 2)));
   const bodyRows = Math.max(0, maxRows - 2);
   const lines = wrapped.slice(0, bodyRows);
-  return /* @__PURE__ */ import_react25.default.createElement(Box_default, { flexDirection: "column", width, height: maxRows }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, top), lines.map((line, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, box.vertical, " "), line)), Array.from({ length: Math.max(0, bodyRows - lines.length) }).map((_, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: "pad-" + i }, " ")), /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, bottom));
+  return /* @__PURE__ */ import_react25.default.createElement(Box_default, { flexDirection: "column", width, height: maxRows }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, top), lines.map((line, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, box.vertical, " "), line)), Array.from({ length: Math.max(0, bodyRows - lines.length) }).map((_, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: "pad-" + i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, box.vertical, " "))), /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, bottom));
 }
 
 // src/tui/components/HelpOverlay.tsx

@@ -12,6 +12,7 @@ test("PreviewPane renders rounded box characters when not noColor", () => {
   const f = lastFrame() ?? "";
   assert.ok(f.includes("╭") || f.includes("╮"),
     "expected rounded box chars, got: " + f);
+  assert.ok(f.includes("hello"), "expected body content 'hello' to render");
 });
 
 test("PreviewPane renders ASCII box when noColor=true", () => {

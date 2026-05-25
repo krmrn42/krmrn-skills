@@ -32,7 +32,9 @@ export function PreviewPane({ previewText, width, maxRows, noColor = false }: Pr
         </Text>
       ))}
       {Array.from({ length: Math.max(0, bodyRows - lines.length) }).map((_, i) => (
-        <Text key={"pad-" + i}> </Text>
+        <Text key={"pad-" + i}>
+          <Text dimColor>{box.vertical} </Text>
+        </Text>
       ))}
       <Text dimColor>{bottom}</Text>
     </Box>
