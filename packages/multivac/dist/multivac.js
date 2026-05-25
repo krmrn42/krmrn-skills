@@ -33764,7 +33764,7 @@ async function* parse(file) {
         content: r.content,
         messageUuid: r.message_uuid,
         parentUuid: r.parent_uuid,
-        subtype: r.type === "system" ? rec["subtype"] : void 0,
+        subtype: r.type === "system" && typeof rec["subtype"] === "string" ? rec["subtype"] : void 0,
         gitBranch: typeof rec["gitBranch"] === "string" ? rec["gitBranch"] : void 0,
         attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : void 0
       };

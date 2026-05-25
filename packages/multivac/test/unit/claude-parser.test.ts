@@ -109,6 +109,18 @@ test("parse: extracts subtype for system rows", async () => {
   } finally { fs.unlinkSync(p); }
 });
 
+test("parse: subtype is undefined for non-system rows even if present in JSONL", async () => {
+  const p = writeJsonl([
+    { type: "user", subtype: "should_be_ignored", sessionId: "s", uuid: "u1",
+      message: { content: "hi" }, timestamp: "2026-01-01T00:00:00Z" },
+  ]);
+  try {
+    const rows = await collect(parse({ path: p, mtimeMs: 0 }));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].subtype, undefined);
+  } finally { fs.unlinkSync(p); }
+});
+
 test("parse: missing gitBranch yields undefined", async () => {
   const p = writeJsonl([
     { type: "user", sessionId: "s", uuid: "u1",

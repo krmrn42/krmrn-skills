@@ -169,9 +169,11 @@ export async function* parse(file: SourceFile): AsyncGenerator<Omit<MessageRow, 
         content: r.content,
         messageUuid: r.message_uuid,
         parentUuid: r.parent_uuid,
-        subtype: r.type === "system" ? (rec["subtype"] as string | undefined) : undefined,
-        gitBranch: typeof rec["gitBranch"] === "string" ? (rec["gitBranch"] as string) : undefined,
-        attributionSkill: typeof rec["attributionSkill"] === "string" ? (rec["attributionSkill"] as string) : undefined,
+        subtype: r.type === "system" && typeof rec["subtype"] === "string"
+          ? rec["subtype"]
+          : undefined,
+        gitBranch: typeof rec["gitBranch"] === "string" ? rec["gitBranch"] : undefined,
+        attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : undefined,
       };
     }
   }
