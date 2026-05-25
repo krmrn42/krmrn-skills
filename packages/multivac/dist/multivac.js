@@ -33414,7 +33414,7 @@ function parseArgs(argv) {
         args.help = true;
         break;
       case "--version":
-        process.stdout.write("0.7.0\n");
+        process.stdout.write("0.8.0\n");
         process.exit(EXIT_OK);
         break;
       case "-i":

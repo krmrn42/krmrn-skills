@@ -5,6 +5,31 @@ The CLI shipped inside this plugin is also published to npm as
 [`@krmrn42/multivac`](https://www.npmjs.com/package/@krmrn42/multivac); the
 two carry the same version string.
 
+## [0.8.0] — 2026-05-24
+
+### Added
+
+- Schema v3 migration adds three nullable columns: `subtype`, `git_branch`, `attribution_skill`. Triggers a one-time full reindex.
+- Parser indexes `type=system, subtype=away_summary` rows — Claude Code's "away" recap content, surfaced as the chat preview when fresh.
+- Per-message `gitBranch` and `attributionSkill` extracted from JSONL and stored on each row.
+- New helper `getRecapText()` resolves the best-available recap for a conversation: fresh away_summary first, falling back to the head of the most recent assistant message.
+
+### Changed
+
+- TUI chat row layout is now 3 lines (header / metadata strip / recap-or-snippet) instead of 2 lines. The metadata strip surfaces `(branch) · skill` when present.
+- `PreviewPane` and one-shot `--preview` output use rounded box borders (`╭─╮ ╰─╯`), degrading to ASCII (`+---+`) when `--no-color` is set.
+- Layout dimensioning: `rowsPerResult` bumps from 2 → 3.
+
+### Compatibility
+
+- All v0.7 keybindings preserved.
+- Existing one-shot output (`--format=text`, `--format=tsv`) unchanged in shape.
+- Sessions config (`sessions.json`) schema unchanged.
+
+### Spec
+
+[docs/superpowers/specs/2026-05-24-multivac-dashboard-design.md](https://github.com/krmrn42/krmrn-skills/blob/main/docs/superpowers/specs/2026-05-24-multivac-dashboard-design.md) (D2, D3, D6, D7, D11).
+
 ## [0.6.0] — 2026-05-21
 
 ### Renamed (BREAKING)
