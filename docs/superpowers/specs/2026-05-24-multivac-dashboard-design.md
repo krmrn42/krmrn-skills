@@ -35,9 +35,9 @@ This spec redesigns that experience into a **thread-management dashboard**. The 
 
 ### Non-goals
 
-- **Multi-source detection** (Aider, Codex CLI, Gemini CLI) is deferred to phase 2. The `ActiveThreadSource` interface accommodates it; the v1 implementation hard-codes Claude.
+- **Multi-source detection** (Aider, Codex CLI, Gemini CLI) is deferred to phase 2 (post-v0.8.2). The `ActiveThreadSource` interface accommodates it; the v0.8.x implementation hard-codes Claude.
 - **Subagent JSONLs** (`~/.claude/projects/<dir>/subagents/*.jsonl`) remain unindexed. Out of scope for the foreseeable future; tracked as a known limitation.
-- **Daemon / always-open dashboard mode.** v1 closes on action like today; if the user wants a persistent dashboard, that's a separate piece of work.
+- **Daemon / always-open dashboard mode.** The v0.8.x series closes on action like today; if the user wants a persistent dashboard, that's a separate piece of work.
 - **Filesystem watchers.** Recursive `fs.watch` on `~/.claude/projects/` is platform-fragile (Linux `inotify` limits, macOS FSEvents semantics). Polling-only.
 - **IDE-embedded chat sources** (Cursor, Copilot Chat). Same exclusion as the v0.6 → v0.7 refactor spec.
 - **Mouse support, alternate-screen toggling, or kitty-graphics-based renderings.** Keyboard-first, alt-screen-on (today's behavior), pure text glyphs.
@@ -548,19 +548,19 @@ Example output for `multivac --list "frontend"`:
 
 **Alternative considered:** Keep `--list` as today's text format; add `--format=markdown` as a new value. Rejected because today's `--list` text format and `--format=text` already produce identical output — there's no behavioral distinction. Repurposing `--list` for markdown is the cleanest possible split.
 
-### D14 — Phasing: v0.8 / v0.9 / v1.0
+### D14 — Phasing: v0.8 / v0.8.1 / v0.8.2
 
-Three independently mergeable releases. Each ships value on its own and is reviewable in isolation:
+Three independently mergeable releases. Each ships value on its own and is reviewable in isolation. The series uses patch-version bumps (rather than minor bumps to v0.9 / v1.0) because all three releases serve the same dashboard-redesign goal and the public CLI surface stays additive — no breaking changes to flags, output shapes, or DB consumers between them.
 
 | Release | Scope | Risk |
 |---|---|---|
-| **v0.8 — Indexer + theme refresh** | Schema v3 migration · away_summary indexing · gitBranch / attributionSkill columns · rounded borders · focus-aware accent · new chat-row preview (recap + metadata strip) | Low — pure rendering + parser additions; existing layout unchanged |
-| **v0.9 — Unified search** | DirRow + DirectorySource · unified search with section dividers · `N` new-chat key · dir row preview content · `--list` becomes markdown | Medium — touches the results model and reducer |
-| **v1.0 — Active thread header** | ActiveThreadSource (Claude only) · header strip render · `Tab`/`Shift-Tab` focus cycling · `r` refresh · tmux pane correlation | Higher — process discovery has per-OS forks; tmux integration depends on `$TMUX` |
+| **v0.8 — Indexer + theme refresh** ✅ shipped | Schema v3 migration · away_summary indexing · gitBranch / attributionSkill columns · rounded borders · focus-aware accent · new chat-row preview (recap + metadata strip) | Low — pure rendering + parser additions; existing layout unchanged |
+| **v0.8.1 — Unified search** | DirRow + DirectorySource · unified search with section dividers · `N` new-chat key · dir row preview content · `--list` becomes markdown | Medium — touches the results model and reducer |
+| **v0.8.2 — Active thread header** | ActiveThreadSource (Claude only) · header strip render · `Tab`/`Shift-Tab` focus cycling · `r` refresh · tmux pane correlation | Higher — process discovery has per-OS forks; tmux integration depends on `$TMUX` |
 
-**Phase 2 (out of v1):** Aider source · Codex CLI source · Gemini CLI source · subagent JSONL indexing · pin folders/groups · daemon mode for persistent dashboard.
+**Phase 2 (post-v0.8.2):** Aider source · Codex CLI source · Gemini CLI source · subagent JSONL indexing · pin folders/groups · daemon mode for persistent dashboard.
 
-**Rationale:** Each release maps to a self-contained engineering chunk and a testable surface. Risk increases monotonically. The phasing means a regression in v1.0 doesn't block the value of v0.8 and v0.9 from already being in users' hands.
+**Rationale:** Each release maps to a self-contained engineering chunk and a testable surface. Risk increases monotonically. The phasing means a regression in v0.8.2 doesn't block the value of v0.8 and v0.8.1 from already being in users' hands.
 
 ## Testing strategy
 
@@ -573,14 +573,14 @@ The v0.7 test surface (128 shell tests + 43 unit tests) extends rather than repl
 - Smart preview query: returns away_summary when fresh, falls back to head-of-last-assistant when stale, falls back again when no assistant message.
 - Visual snapshot tests at 80/120/200 cols (ink-testing-library).
 
-**v0.9 additions:**
+**v0.8.1 additions:**
 - DirectorySource query against fixture DB returns expected aggregation.
 - Substring filter on dir rows is case-insensitive on both path and name.
 - Section divider rendering: present when multiple sections, absent when one.
 - `N` keybinding spawns `claude` (no `--resume`) in the row's dir.
 - `--list` markdown output: sectioned format, embedded resume one-liners, BFS structure validated.
 
-**v1.0 additions:**
+**v0.8.2 additions:**
 - Linux: mock `/proc/${pid}/cwd` via a fake fs layer; assert PID → cwd → JSONL mapping.
 - macOS: mock `lsof` output; assert same mapping.
 - Tmux: mock `tmux list-panes` output; assert PID correlation against PPID chain.
