@@ -63,7 +63,7 @@ test("searchDirectories: topChatTitles picks 3 most-recent conversations", () =>
   const [dir] = searchDirectories(db, { limit: 10, projectFilter: null });
   assert.equal(dir.topChatTitles.length, 3);
   // Recency order: c4, c3, c2.
-  assert.ok(dir.topChatTitles[0].includes("c4") || dir.topChatTitles[0].length > 0);
+  assert.equal(dir.topChatTitles[0], "c4");
 });
 
 test("searchDirectories: ignores non-user/assistant rows in the count", () => {

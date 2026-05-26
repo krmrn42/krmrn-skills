@@ -54,7 +54,7 @@ LIMIT ?
 `;
   const rows = db
     .prepare(aggSql)
-    .all(...filterParams, Math.max(1, limit | 0)) as DirAggRow[];
+    .all(...filterParams, Math.max(1, limit | 0)) as unknown as DirAggRow[];
 
   const topStmt = db.prepare(
     "SELECT conversation_id FROM messages " +
@@ -70,7 +70,7 @@ LIMIT ?
 
   const out: DirRow[] = [];
   for (const r of rows) {
-    const tops = topStmt.all(r.project_path) as TopChatRow[];
+    const tops = topStmt.all(r.project_path) as unknown as TopChatRow[];
     const titles: string[] = [];
     for (const t of tops) {
       const cands = titleStmt.all(t.conversation_id) as Array<{ content: string | null }>;
