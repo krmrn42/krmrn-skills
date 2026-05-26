@@ -24,31 +24,27 @@ export function buildUnifiedResults(
   sessionStore: SessionStore | null,
 ): Selectable[] {
   const query = args.query.trim();
-  const dirFilter = query.length > 0 ? query : null;
-  const dirLimit = query.length > 0 ? FILTERED_DIR_LIMIT : DIR_LIMIT;
+  const isFiltered = query.length > 0;
+  const dirFilter = isFiltered ? query : null;
+  const dirLimit = isFiltered ? FILTERED_DIR_LIMIT : DIR_LIMIT;
 
   const dirs = searchDirectories(db, { limit: dirLimit, projectFilter: dirFilter });
 
-  let chats;
-  if (query.length === 0) {
-    chats = recentConversations(db, {
-      limit: args.limit,
-      projectFilter: args.project,
-      sessionStore,
-    });
-  } else {
-    chats = ftsSearch(db, { ...args, sessionStore });
-  }
+  const chats = isFiltered
+    ? ftsSearch(db, { ...args, sessionStore })
+    : recentConversations(db, {
+        limit: args.limit,
+        projectFilter: args.project,
+        sessionStore,
+      });
 
-  const sectionsWithRows: Array<Selectable[]> = [];
-  if (dirs.length > 0) sectionsWithRows.push(dirs);
-  if (chats.length > 0) sectionsWithRows.push(chats);
-  const showHeaders = sectionsWithRows.length > 1;
+  const nonEmptySections = (dirs.length > 0 ? 1 : 0) + (chats.length > 0 ? 1 : 0);
+  const showHeaders = nonEmptySections > 1;
 
   const out: Selectable[] = [];
   if (dirs.length > 0) {
     if (showHeaders) {
-      const label = query.length > 0
+      const label = isFiltered
         ? `working dirs (${dirs.length})`
         : `working dirs (recent ${dirs.length})`;
       out.push({ kind: "section", label } satisfies SectionHeader);
@@ -57,7 +53,7 @@ export function buildUnifiedResults(
   }
   if (chats.length > 0) {
     if (showHeaders) {
-      const label = query.length > 0
+      const label = isFiltered
         ? `chats (${chats.length}, by relevance)`
         : `chats (recent ${chats.length})`;
       out.push({ kind: "section", label } satisfies SectionHeader);
