@@ -1,4 +1,4 @@
-# Multivac dashboard redesign: header strip, unified search, smart previews
+# Multivac dashboard redesign: project-grouped picker, smart previews, inline active threads
 
 **Status:** Design · **Date:** 2026-05-24 · **Authors:** Shavkat Aynurin (brainstormed with Claude Code)
 
@@ -27,16 +27,16 @@ This spec redesigns that experience into a **thread-management dashboard**. The 
 
 ### Goals
 
-1. **Header strip showing active threads.** Always-visible top region listing running `claude` processes mapped to their project dir, active session, and tmux window when present. Empty-collapsible.
-2. **Unified search across chats and working dirs.** One query, three result classes (active threads, working dirs, chats), interleaved with section dividers in the result list.
+1. **Project-grouped picker.** The primary surface is a single list of **projects** (working directories that contain at least one chat), each project followed by its most-recent chats inline. The previous "two-section" picker (working dirs ↑ chats ↓) is replaced.
+2. **Active threads in-context (v0.8.2).** Running `claude` processes appear inside their project's group — mapped to a specific chat row when possible, listed above the project's chats when not. There is no separate header strip.
 3. **Smart row previews.** When `away_summary` exists for a chat, surface it. Otherwise show the head of the most recent assistant message. Add a metadata strip per row (branch, active skill, permission mode).
 4. **Visual refresh.** Rounded borders, focus-aware accent colors, NO_COLOR conformance, predictable degradation down to 60-col terminals.
-5. **Preserve every v0.7 keybinding.** New keys only (`N`, `Tab`, `Shift-Tab`, `r`) — no rebindings. Existing scripts and slash commands keep working.
+5. **Preserve every v0.7 keybinding.** New keys only (`N`, `r` in v0.8.2) — no rebindings. Existing scripts and slash commands keep working.
 
 ### Non-goals
 
 - **Multi-source detection** (Aider, Codex CLI, Gemini CLI) is deferred to phase 2 (post-v0.8.2). The `ActiveThreadSource` interface accommodates it; the v0.8.x implementation hard-codes Claude.
-- **Subagent JSONLs** (`~/.claude/projects/<dir>/subagents/*.jsonl`) remain unindexed. Out of scope for the foreseeable future; tracked as a known limitation.
+- **Subagent JSONLs as their own "projects".** Subagent transcripts live at `~/.claude/projects/<encoded-cwd>/<conv-id>/subagents/agent-*.jsonl`. Each subagent message carries the `cwd` the subagent happened to run in (often a subdirectory like `packages/multivac`). Indexing those `cwd` values verbatim creates phantom "projects" that are really just subdirectories the controller walked into. **v0.8.1 coerces every row from a subagent JSONL to the parent session's project_path at parse time** (see §D15). The subagent content remains FTS-searchable; it just doesn't manufacture new project groups.
 - **Daemon / always-open dashboard mode.** The v0.8.x series closes on action like today; if the user wants a persistent dashboard, that's a separate piece of work.
 - **Filesystem watchers.** Recursive `fs.watch` on `~/.claude/projects/` is platform-fragile (Linux `inotify` limits, macOS FSEvents semantics). Polling-only.
 - **IDE-embedded chat sources** (Cursor, Copilot Chat). Same exclusion as the v0.6 → v0.7 refactor spec.
@@ -48,66 +48,69 @@ This spec redesigns that experience into a **thread-management dashboard**. The 
 ```mermaid
 graph TB
   TUI["TUI (Ink + React)<br/>App.tsx + components/*"]
-  Surfaces["Surface layer<br/>ActiveSurface · ResultsSurface · PreviewSurface"]
-  SourcesAbs["Source layer (abstract)"]
-  ChatSource["ChatSource (Claude)<br/>existing v0.7, extended parser"]
-  ActiveSource["ActiveThreadSource (Claude)<br/>NEW — process scan + tmux"]
-  DirSource["DirectorySource<br/>NEW — SQL-derived, no external state"]
-  Index["SQLite FTS5 index — schema v3<br/>NEW columns: subtype, git_branch, attribution_skill"]
+  Producer["buildProjectGroups()<br/>emits ProjectHeader + 0..N ChatRow + optional MoreRow per project"]
+  ChatSource["ChatSource (Claude)<br/>v0.7 parser + subagent project_path coercion (v0.8.1, §D15)"]
+  ProjectsSource["ProjectsSource<br/>SQL-derived from the shared index — no external state"]
+  ActiveSource["ActiveThreadSource (Claude) — v0.8.2<br/>process scan + tmux; results placed INSIDE the matching project group"]
+  Index["SQLite FTS5 index — schema v4<br/>columns: subtype, git_branch, attribution_skill (v3) + subagent-aware project_path (v4)"]
   OS["OS<br/>pgrep · /proc/PID/cwd · lsof · tmux list-panes"]
 
-  TUI --> Surfaces
-  Surfaces --> SourcesAbs
-  SourcesAbs --> ChatSource
-  SourcesAbs --> ActiveSource
-  SourcesAbs --> DirSource
+  TUI --> Producer
+  Producer --> ProjectsSource
+  Producer --> ChatSource
+  Producer -. v0.8.2 .-> ActiveSource
   ChatSource --> Index
-  DirSource --> Index
+  ProjectsSource --> Index
   ActiveSource -. live scan .-> OS
   ActiveSource -. correlate session id .-> Index
 ```
 
-The `Surface` layer is the new abstraction: a Surface knows how to fetch a row collection on demand and contribute it to the unified results list (or to the header strip). `Source` is the v0.7 concept extended with two optional capabilities (`discoverActiveThreads`, `discoverDirs`) — DirectorySource is implemented once because it derives from the shared index; ActiveThreadSource is per-source because the process / cwd mapping is tool-specific.
+`buildProjectGroups()` is the single producer that the TUI hook (`useSearch`) and the one-shot `--list` path both call. It interleaves project headers and their chat rows in one flat `Selectable[]`. `ProjectsSource` is a pure SQL aggregator over the existing `messages` table — no separate state. `ActiveThreadSource` (v0.8.2) injects its rows INSIDE each project's group; there is no separate header strip.
 
 ## Decisions
 
-### D1 — Hybrid layout: header strip + unified results + preview pane
+### D1 — Project-grouped picker + preview pane
 
-The new full-width (`cols ≥ 100`) screen anatomy:
+The new full-width (`cols ≥ 100`) screen anatomy. Projects are the top-level entries; each project's recent chats are listed underneath, with an optional dim "Y more" footer when chats are elided.
 
 ```
-multivac >  frontend                                              [12 results]
-╭─ Active threads (2) ─────────────────────────────────────────────────────╮
-│ 🟢 react-router-fix    ~/work/frontend     tmux:3       12m ago          │
-│ 🟢 multivac-redesign   ~/krmrn-skills      pid 41523    just now         │
-╰──────────────────────────────────────────────────────────────────────────╯
-╭─ Results (focused) ───────────────┬─ Preview ───────────────────────────╮
-│ 📁 ~/work/frontend           12   │ ╭ react-router-fix                  │
-│    chats: react-router-fix, …    │ │ (main) · superpowers:tdd          │
-│                                   │ │ 2026-05-20 → 2026-05-23 · 47 msgs │
-│ ▌💬 react-router-fix      47 msgs │ ╰                                    │
-│    recap: refactored Router to    │                                      │
-│    add error boundary; tested on  │ ▶ user 12:14                         │
-│    /settings; merged via PR #142  │   investigate the navigation crash   │
-│                                   │   on /settings                       │
-│   💬 oauth-debug          12 msgs │ ◀ assistant 12:14                    │
-│    ask: frontend OAuth flow…      │   I see three options. (1) add an    │
-│    ans: use PKCE with refresh…    │   error boundary at the Route…      │
-│                                   │                                      │
-│ ── recent (5 more) ──             │                                      │
-│   📌 oauth-design          pinned │                                      │
-╰───────────────────────────────────┴──────────────────────────────────────╯
+multivac >  frontend                                              [3 projects · 18 chats]
+╭─ Projects (focused) ──────────────────────┬─ Preview ───────────────────────────╮
+│ 📁 ~/work/frontend         12 chats  3h   │ ╭─ react-router-fix ────────────────╮│
+│   ▌💬 react-router-fix     47 msgs        │ │ (main) · superpowers:tdd          ││
+│     recap: refactored Router to add an    │ │ 2026-05-20 → 2026-05-23 · 47 msgs ││
+│     error boundary; merged via PR #142    │ ╰───────────────────────────────────╯│
+│    💬 oauth-debug          12 msgs        │                                       │
+│     ask: frontend OAuth flow…             │ ▶ user 12:14                          │
+│    💬 deploy-staging        8 msgs        │   investigate the navigation crash on │
+│     ans: blue/green via gh actions        │   /settings                           │
+│      9 more                               │ ◀ assistant 12:14                     │
+│                                           │   I see three options. (1) add an     │
+│ 📁 ~/work/backend           4 chats  2d   │   error boundary at the Route…        │
+│    💬 auth-refresh         18 msgs        │                                       │
+│     ask: refresh token rotation           │                                       │
+│      3 more                               │                                       │
+│                                           │                                       │
+│ 📁 ~/krmrn-skills          24 chats  10m  │                                       │
+│   …                                       │                                       │
+╰───────────────────────────────────────────┴───────────────────────────────────────╯
  Enter resume   N new-chat   Ctrl-F fork   Ctrl-T remote   Ctrl-R rename   ?
 ```
 
-**Rationale:** This is the hybrid of two layouts I considered:
+**v0.8.2 layout** (active threads inline, no separate header strip):
 
-- *Multi-panel dashboard (lazygit-shaped)* — too heavy for a tool invoked for 10 seconds at a time; departs too far from v0.7 muscle memory.
-- *Search-first with mode cycling (atuin-shaped)* — preserves muscle memory but never lets the user *see* what's running without an extra keystroke.
+```
+│ 📁 ~/work/frontend         12 chats  3h   │
+│   🟢 react-router-fix      tmux:3  live   │  ← mapped active thread; replaces the chat row's normal icon
+│     recap: refactored Router…             │
+│   🟢 (no chat yet)         pid 41523       │  ← unmapped active thread (no chat created yet)
+│   💬 oauth-debug          12 msgs         │
+│   …                                       │
+```
 
-The hybrid puts active threads at the top where they're always visible at a glance, keeps the search-first interaction unchanged (typing immediately filters the results list below), and degrades cleanly when the screen is narrow or when no threads are active.
+**Rationale:** The user reaches for multivac to navigate among **the projects they're working in** and the **chats inside each**. The old two-section layout (working dirs ↑ chats ↓) repeated the same information twice — a chat row already tells you what dir it's in. Grouping by project answers the dashboard's primary question ("what am I working on?") with one glance and lets each project be browsed in place.
 
-**Alternative considered:** Stacking the header strip below the prompt vs. above the result list. Above is correct: the prompt and the header strip together form the "what's happening" zone at the top of the screen; the results + preview are the "what can I do" zone below.
+**Alternative considered:** A flat by-relevance list (today's chat-only view) augmented with a `[+ start a new chat in ~/work/frontend]` row at the top of each project's group of chats. Rejected because that flattens the visual hierarchy — the project becomes a tiny annotation rather than the structural element you scan first.
 
 ### D2 — Schema v3 migration
 
@@ -150,66 +153,105 @@ The away_summary content lives in the JSONL top-level `content` field (a string)
 
 **Rationale:** Per-message metadata enables the smart preview (D6) and the row metadata strip (D4) without touching the storage layer. Index-time extraction is cheaper than render-time JSON re-parsing and keeps the SQL queries dumb.
 
-### D4 — Three row types with a shared Selectable interface
+### D4 — Row types with a shared Selectable interface
 
-The result list ingests three row kinds, distinguished by `kind: "chat" | "dir" | "active"`. All three implement `Selectable` so the cursor, key dispatcher, status bar binding filter, and preview pane work uniformly.
+The picker ingests four row kinds, distinguished by `kind: "project" | "chat" | "more" | "active"`. Selectable behavior:
+
+| Kind | Cursor lands on it? | `Enter` does | Preview pane |
+|---|---|---|---|
+| `"project"` | yes | `newchat` in that dir | project-header preview (D7) |
+| `"chat"` | yes | `resume` that chat | chat preview (D7) |
+| `"more"` | **no** — cursor skips it on ↑/↓ | n/a (informational) | empty (preview is from neighbour) |
+| `"active"` (v0.8.2) | yes | switch to tmux window (when present) or print PID+cwd | active-thread preview |
 
 ```typescript
-type Selectable = ChatRow | DirRow | ActiveThreadRow;
+type Selectable = ProjectHeader | ChatRow | MoreRow | ActiveThreadRow;
+
+interface ProjectHeader {
+  kind: "project";
+  projectPath: string;
+  projectName: string;
+  chatCount: number;          // TOTAL chats in this project (not just shown)
+  lastActivity: number;
+  topChatTitles: string[];    // up to 3, for header secondary line when chats below are NOT shown
+}
 
 interface ChatRow extends ResultRow {
   kind: "chat";
   gitBranch?: string;
   skill?: string;
   permissionMode?: string;
-  recapText?: string;   // away_summary | head-of-last-assistant
+  recapText?: string;         // away_summary | head-of-last-assistant
 }
 
-interface DirRow {
-  kind: "dir";
-  projectPath: string;
-  projectName: string;
-  chatCount: number;
-  lastActivity: number;
-  topChatTitles: string[];  // first 3 by recency
+interface MoreRow {
+  kind: "more";
+  projectPath: string;        // the project this footer belongs to
+  remainingCount: number;     // chatCount − shown chats in this project's group
 }
 
-interface ActiveThreadRow {
+interface ActiveThreadRow {   // v0.8.2 only
   kind: "active";
   source: SourceId;
   pid: number;
   cwd: string;
-  sessionId: string | null;        // null when JSONL not yet identifiable
+  sessionId: string | null;   // null when JSONL not yet identifiable
+  chatRowId?: string;         // when mapped to an existing chat, the conversation_id; otherwise undefined
   tmuxPaneId?: string;
   tmuxWindow?: { index: number; name: string };
   lastActivityMs: number;
-  status: "live" | "idle";          // mtime-based
+  status: "live" | "idle";    // mtime-based
 }
 ```
 
-**Visual specs per row** (rendered in the results list — preview pane has its own per-kind layout, see D7):
+**Visual specs per row** (preview pane has its own per-kind layout, see D7):
 
 ```
-Chat row (3 lines):
- 💬 react-router-fix              ~/work/frontend  3h ago  47 msgs
+Project header (2 lines):
+ 📁 ~/work/frontend                       12 chats   3h ago
+    main · feat/router-fix · superpowers:tdd
+
+Chat row (3 lines, unchanged from v0.8):
+ 💬 react-router-fix       3h ago   47 msgs   abc-123
     (main) · superpowers:tdd · permission=dangerous
     recap: refactored Router to add error boundary; merged via PR #142
 
-Directory row (2 lines):
- 📁 ~/work/frontend                              12 chats   3h ago
-    react-router-fix · oauth-debug · deploy-staging · 9 more
+More row (1 line, dim):
+      9 more
 
-Active thread row (1 line, header strip only):
- 🟢 react-router-fix    ~/work/frontend     tmux:3       12m ago
+Active thread row (v0.8.2, inline replacement for the chat row OR injected above chats):
+ 🟢 react-router-fix        tmux:3  live  47 msgs
+    (main) · 12s ago
 ```
 
 When matched by an FTS query, the chat row's third line is replaced with the BM25 snippet (today's `<<<>>>` highlighted span) rather than the recap.
 
-**Rationale:** A shared interface keeps the action dispatcher and binding filter declarative. The three visual specs differ deliberately — different row kinds carry different information density and warrant different vertical space.
+**Rationale:** Four kinds — but `more` rows are non-interactive structure (the cursor flies over them) and `active` rows are v0.8.2. The day-one v0.8.1 surface is effectively two interactive kinds (`project` and `chat`) plus one cosmetic kind (`more`).
 
-### D5 — ActiveThreadSource: process discovery + tmux correlation
+### D5 — ActiveThreadSource: process discovery + tmux correlation + project-group placement (v0.8.2)
 
 The hardest unknown in this design. The implementation lives at `src/sources/claude/active.ts` (sibling to `discover.ts` and `parse.ts`).
+
+**Placement in the result list (v0.8.2):**
+
+Active threads are NOT a separate top strip. They are emitted INSIDE each project's group by `buildProjectGroups()`:
+
+```
+For each project (already ordered by last activity desc):
+  emit ProjectHeader
+  if this project has active threads:
+    for each active thread:
+      if thread is mapped to a chat in this project (chatRowId set):
+        — replace that chat's row with an active-thread row carrying its data, OR
+        — keep the chat row and add a 🟢 marker decoration. Implementation choice
+          deferred to writing-plans; both honor §D4.
+      else (unmapped thread — `claude` is running but no JSONL discovered yet):
+        emit ActiveThreadRow at the TOP of this project's chat list (above all chats)
+  emit chat rows (up to X per the §D9 sizing rules)
+  emit MoreRow when chats are elided
+```
+
+A `claude` process whose `cwd` doesn't match ANY indexed project's path gets its own synthetic ProjectHeader at the top of the list (project may be new — no chats yet — and that's fine; the header has `chatCount: 0`).
 
 **Linux discovery:**
 
@@ -253,15 +295,7 @@ Cross-reference the `pane_pid` set with the active-thread PID set. For matches, 
 - `r` keypress force-refreshes outside the interval.
 - No filesystem watcher in v1.
 
-**Display when empty:**
-
-```
-╭─ Active threads (0) ─────────────────────────────────────────────────────╮
-│ · No active threads · type N to start a new chat · ? for help            │
-╰──────────────────────────────────────────────────────────────────────────╯
-```
-
-The strip remains visible (collapsing it would shift the layout each time a thread starts/stops).
+**Display when empty:** Nothing is shown. With no separate header strip, the absence of active threads is the absence of 🟢 markers in the project list — no layout shift, no empty box.
 
 **Rationale:** mtime is the load-bearing assumption. It works because Claude Code writes to the JSONL on every turn, so the gap between writes rarely exceeds 30 seconds when the human is actively engaged. It fails on long-running tool calls (a 5-minute pytest run will mark a session "idle" mid-conversation). The `idle` status with the yellow indicator is the honest representation of that uncertainty — we don't pretend to know which side of "is this currently being typed in" we're on.
 
@@ -307,8 +341,9 @@ Take the first 5 visible lines (after wrapper-stripping and collapsing whitespac
 | Row kind | Preview pane layout |
 |---|---|
 | Chat | Header box (title · branch · skill · date range · msg count) + first 20 message-turn render (today's `renderPreview` from `src/core/render/preview.ts`) |
-| Dir | Header box (path · chat count · branches touched) + top-5 recent chats list with their recap snippets + hint "Enter: new chat here" |
-| Active | Header box (status · cwd · pid/tmux · last write) + last 6 user/assistant turns of the live session (re-queried each refresh interval) + hint "Enter: switch to tmux:N" or "Enter: print PID+cwd" |
+| Project | Header box (path · chat count · branches touched) + top-5 recent chats list with their recap snippets + hint "Enter: new chat here" |
+| More | Empty (preview content stays from the chat row above) |
+| Active (v0.8.2) | Header box (status · cwd · pid/tmux · last write) + last 6 user/assistant turns of the live session (re-queried each refresh interval) + hint "Enter: switch to tmux:N" or "Enter: print PID+cwd" |
 
 Mockups:
 
@@ -327,7 +362,7 @@ Mockups:
 ```
 
 ```
-─ Dir row preview ────────────────────────────
+─ Project header preview ─────────────────────
 ╭─ ~/work/frontend ─────────────────────────╮
 │ 12 chats · last 3h ago                    │
 │ branches: main, feat/router-fix           │
@@ -362,9 +397,9 @@ Recent turns:
 
 **Rationale:** Each preview answers the question the user is asking when they highlight that row kind. For a chat: "what was this about?" For a dir: "what's been happening here?" For an active thread: "what's going on right now?"
 
-### D8 — DirectorySource: SQL-derived, no external state
+### D8 — ProjectsSource: SQL-derived, no external state
 
-DirectorySource implements no `discover` / `parse` — it's purely a query against the existing `messages` table:
+`ProjectsSource` (file: `src/core/search/projects.ts`; export: `searchProjects(db, opts)`) implements no `discover` / `parse` — it's purely a query against the existing `messages` table:
 
 ```sql
 SELECT
@@ -400,71 +435,70 @@ ORDER BY ts DESC LIMIT 3;
 
 **Alternative considered:** A separate `projects` table denormalized at indexer time. Rejected: redundant data, drift risk during partial indexer failures, no performance need.
 
-### D9 — Unified search semantics
+### D9 — Project-grouped picker semantics
 
-Typing `frontend` triggers three queries in parallel (or sequentially for simplicity in v1 — they're all fast):
-
-1. **FTS over chats** — today's `ftsSearch()` unchanged
-2. **Substring over dirs** — DirectorySource search query (D8)
-3. **Substring over active threads** — in-memory filter on the `ActiveThreadRow[]` by cwd or sessionId
-
-Results interleave in one list with section dividers:
+`buildProjectGroups(db, args, sessionStore)` is the single producer for both the picker (`useSearch`) and the one-shot `--list` path. It returns a flat `Selectable[]` shaped as:
 
 ```
-── active matches (1) ──
-🟢 react-router-fix  ~/work/frontend  tmux:3  12m ago
-
-── working dirs (1) ──
-📁 ~/work/frontend  12 chats  3h ago
-
-── chats (10, by relevance) ──
-💬 react-router-fix  …
-💬 oauth-debug  …
-…
+[ProjectHeader, ChatRow, ChatRow, …, MoreRow?,    ← project 1
+ ProjectHeader, ChatRow, …,         MoreRow?,    ← project 2
+ …]
 ```
 
-**Section rules:**
+Projects are ordered by **most recent activity desc** (`MAX(timestamp) per project_path`). Within a project, chats are ordered by their own `MAX(timestamp) desc`.
 
-- Empty sections are suppressed (no header).
-- Dividers omitted entirely when only one section has matches.
-- Order is fixed: active → dirs → chats. The user's eye should always know where each kind appears.
-- Within a section, ordering is by relevance (chats: BM25; dirs: substring match score then recency; active: recency).
-- The cursor lands on the first row of the first non-empty section by default.
+**Per-project chat-count sizing (X chats shown out of `chatCount` total):**
 
-**Empty query (no FTS):** dirs section shows recent dirs, chats section shows recent-N (today's behavior); active section shows all active threads. This is the dashboard's "default landing view".
+| Mode | Determination of X (chats shown) |
+|---|---|
+| **Home (no query)** | `X = min(3, chatCount)` for every project |
+| **Search, query hits project name/path** | `X = max(3, chatsMatchingQuery)` — the project's matching chats are shown in full, padded to a minimum of 3 if there are fewer matches than that |
+| **Search, query does NOT hit project name/path** | `X = chatsMatchingQuery` (could be 0) |
+| **Hide project entirely** | when `X == 0` after the rules above |
 
-**Rationale:** Section dividers solve the "how do I know what kind this row is" question without per-row icons doing all the work (the icon is reinforcement, the divider is structure). Fixed section order beats relevance-mixed ordering because the user's first scan is "did I find any matches at all" and that's faster with stable sections.
+`MoreRow.remainingCount = chatCount - X`; emitted only when `remainingCount > 0`.
 
-**Alternative considered:** A single flat list with no dividers, relying on row icons + indentation. Rejected because dirs are useful precisely when you scan and see "oh, that working dir exists" — a flat list buries that scan-ability under chat density.
+The cursor lands on the **first selectable row** of the result (typically the first project header). `more` rows are skipped on ↑/↓ navigation (reducer §D4 table).
 
-### D10 — Keybindings: preserve v0.7, add four
+**Empty result** — when no projects match, the producer emits an empty `Selectable[]`; the picker shows `(no results)` (today's behavior).
+
+**Rationale:** Grouping by project makes the picker's primary axis (project) visible as structure. The X sizing rules ensure that:
+- In home mode, every project is digestible (3 chats max) and the "Y more" hint advertises further depth.
+- In search mode, the user sees ALL their matches when scoped within a project, but matches in a non-matching project are still surfaced — this preserves the v0.8 FTS-as-discovery behavior.
+- A project with no shown chats has no useful information in this list, so it's omitted; the user would only see it via a deeper search that does match its chats.
+
+**Alternative considered:** Fixed X = 3 in all modes, with search restricted to the 3 shown chats per project. Rejected: it silently hides matches.
+
+### D10 — Keybindings: preserve v0.7, add two (v0.8.1) + one (v0.8.2)
 
 The full v0.7 keybinding set is preserved verbatim. New keys:
 
-| Key | Action | Available on |
-|---|---|---|
-| `N` | new chat in the row's dir (chat: chat's project dir; dir: that dir; active: active's cwd) | all rows |
-| `Tab` | cycle focus: header strip ↔ results list | always (preview pane is never focused) |
-| `Shift-Tab` | reverse cycle | always |
-| `r` | force-refresh active threads | always |
+| Key | Action | Available on | Introduced in |
+|---|---|---|---|
+| `N` | new chat in the row's project dir (chat: chat's project dir; project: that project; active: active's cwd) | all selectable rows | v0.8.1 |
+| `r` | force-refresh active threads | always | v0.8.2 |
+
+(No `Tab`/`Shift-Tab` — there is no separate header strip in the project-grouped layout, so there's nothing to cycle focus between.)
 
 The status bar continues to show only bindings valid for the **currently-selected** row (today's logic, extended). Action availability matrix:
 
-| Key | Chat row | Dir row | Active thread row |
-|---|---|---|---|
-| `Enter` | resume | new chat here | switch to tmux:N (else print PID+cwd) |
-| `Alt/Shift-Enter` | dangerous resume (armed) | — | — |
-| `N` | new chat in chat's dir | new chat here | new chat in active's cwd |
-| `Ctrl-F` | fork | — | — |
-| `Ctrl-T` | remote-control | — | — |
-| `Ctrl-W` | tmux new-window | tmux new-window | — |
-| `Ctrl-R` | rename | — | — |
-| `Ctrl-P` | pin | — | — |
-| `Ctrl-O` | print session id | — | print session id |
-| `Ctrl-D` | print project path | print path | print cwd |
-| `Tab` / `Shift-Tab` / `r` | always available | | |
+| Key | Chat row | Project row | More row | Active thread row (v0.8.2) |
+|---|---|---|---|---|
+| `Enter` | resume | new chat here | — (cursor never lands on it) | switch to tmux:N (else print PID+cwd) |
+| `Alt/Shift-Enter` | dangerous resume (armed) | — | — | — |
+| `N` | new chat in chat's project dir | new chat here | — | new chat in active's cwd |
+| `Ctrl-F` | fork | — | — | — |
+| `Ctrl-T` | remote-control | — | — | — |
+| `Ctrl-W` | tmux new-window | — | — | — |
+| `Ctrl-R` | rename | — | — | — |
+| `Ctrl-P` | pin | — | — | — |
+| `Ctrl-O` | print session id | — | — | print session id |
+| `Ctrl-D` | print project path | print path | — | print cwd |
+| `r` (v0.8.2) | always | always | always | always |
 
-**Rationale:** Preservation is contract — users have muscle memory and scripts depending on these keys. The four additions are the minimum needed to expose the new layout's capabilities without overloading existing keys.
+`Ctrl-W` on project rows is deferred to v0.8.2 (requires extending `buildTmuxNewWindowCommand` to spawn `claude` without `--resume`).
+
+**Rationale:** Preservation is contract — users have muscle memory and scripts depending on these keys. The two-key v0.8.1 addition (`N`) is the minimum needed to expose the project-row new-chat action.
 
 **Alternative considered:** Repurposing rarely-used keys (e.g., reassigning `Ctrl-O` to "open new chat"). Rejected because muscle memory is a one-way ratchet — breaking it once costs trust permanently.
 
@@ -487,10 +521,10 @@ The status bar continues to show only bindings valid for the **currently-selecte
 
 | Glyph | Fallback |
 |---|---|
-| 📁 dir | `[dir]` |
+| 📁 project | `[proj]` |
 | 💬 chat | `[chat]` |
-| 🟢 live | `*` |
-| 🟡 idle | `.` |
+| 🟢 live (v0.8.2) | `*` |
+| 🟡 idle (v0.8.2) | `.` |
 | 📌 pin | `*` |
 | ╭─╮ rounded box | `+--+` straight ASCII |
 
@@ -504,44 +538,60 @@ Four breakpoints:
 
 | Width | Layout |
 |---|---|
-| `cols ≥ 100` | Full hybrid: header strip + results + preview pane (40% / 60% split) |
-| `cols 80-99` | Header strip + results (full width); preview pane hidden |
-| `cols 60-79` | Header strip collapses to one line (`· 2 active · 12 chats · type / to search ·`); results full width |
-| `cols < 60` | Header strip gone entirely; results-only |
+| `cols ≥ 100` | Project-grouped results list + preview pane (40% / 60% split) |
+| `cols < 100` | Project-grouped results full width; preview pane hidden |
 
-Body row count = `dims.rows - reservedRows`, where `reservedRows` accounts for prompt (1) + status bar (1-2) + header strip height (0-3) + rename modal hint (1 when in rename mode).
+Body row count = `dims.rows - reservedRows`, where `reservedRows` accounts for prompt (1) + status bar (1-2) + rename modal hint (1 when in rename mode).
 
-**Rationale:** The four breakpoints cover the realistic spectrum: 200-col wide terminals (Ghostty / WezTerm dev setups), standard 120/80 terminals, and tmux-split narrow panes. Each step removes the lowest-value visual element first (preview, then full header, then header itself).
+**Rationale:** Two breakpoints — the spec now has only two top-level visual zones (results + optional preview), so the previous four-step degradation of "header strip → one-line header strip → no strip" collapses into a single show/hide of the preview pane.
 
 ### D13 — `multivac --list` becomes markdown
 
 The `--list` flag (which historically forced one-shot text output) now produces **markdown-formatted** results — sectioned, with embedded resume one-liners as inline code. This is opt-in: the slash command (`/chat-search:find`) and TSV consumers are unaffected because they specify `--format=text` or `--format=tsv` explicitly.
 
-Example output for `multivac --list "frontend"`:
+Example output for `multivac --list "frontend"` (one heading per project; chats listed under each):
 
 ```markdown
-## Active threads matching "frontend"
+## ~/work/frontend — 12 chats matching "frontend", last activity 3h ago
 
-1. **react-router-fix** — running in tmux:3, last write 12m ago
-   - `~/work/frontend` (main · superpowers:tdd)
-   - Switch: tmux select-window -t 3 (or PID 41523)
+New chat here: `(cd ~/work/frontend && claude)`
 
-## Working directories matching "frontend"
-
-1. **~/work/frontend** — 12 chats, last activity 3h ago
-   - Recent: react-router-fix, oauth-debug, deploy-staging
-   - New chat: `(cd ~/work/frontend && claude)`
-
-## Chats matching "frontend"
-
-1. **react-router-fix** — `~/work/frontend` · 3h ago · 47 msgs (main)
+1. **react-router-fix** — 3h ago · 47 msgs (main)
    - recap: refactored Router to add error boundary; merged via PR #142
    - Resume: `(cd ~/work/frontend && claude --resume <session-id>)`
 
-2. **oauth-debug** — `~/work/frontend` · 1d ago · 12 msgs
+2. **oauth-debug** — 1d ago · 12 msgs
    - ask: frontend OAuth flow…
-   - ans: use PKCE with refresh tokens
    - Resume: `(cd ~/work/frontend && claude --resume <session-id>)`
+
+(9 more)
+
+## ~/krmrn-skills — 1 chat matching "frontend", last activity 5d ago
+
+New chat here: `(cd ~/krmrn-skills && claude)`
+
+1. **plugin-frontend-prototype** — 5d ago · 4 msgs
+   - Resume: `(cd ~/krmrn-skills && claude --resume <session-id>)`
+```
+
+For the home view (`multivac --list` with no query), the heading omits `matching "..."` (uses "recent activity" wording) and the X-per-project rule is min(3, chatCount):
+
+```markdown
+## ~/work/frontend — 12 chats, last activity 3h ago
+
+New chat here: `(cd ~/work/frontend && claude)`
+
+1. **react-router-fix** — 3h ago · 47 msgs (main)
+   - recap: refactored Router…
+   - Resume: `(cd ~/work/frontend && claude --resume <session-id>)`
+
+2. **oauth-debug** — 1d ago · 12 msgs
+   - Resume: `(cd ~/work/frontend && claude --resume <session-id>)`
+
+3. **deploy-staging** — 3d ago · 8 msgs
+   - Resume: `(cd ~/work/frontend && claude --resume <session-id>)`
+
+(9 more)
 ```
 
 **Rationale:** Markdown is the natural format for human-readable lists that may be pasted into a document, an issue, or a Claude Code session. Embedded inline code for resume commands preserves the v0.7 copy-pasteability. Section structure mirrors the dashboard's section dividers — the on-screen and printed views are isomorphic.
@@ -555,12 +605,44 @@ Three independently mergeable releases. Each ships value on its own and is revie
 | Release | Scope | Risk |
 |---|---|---|
 | **v0.8 — Indexer + theme refresh** ✅ shipped | Schema v3 migration · away_summary indexing · gitBranch / attributionSkill columns · rounded borders · focus-aware accent · new chat-row preview (recap + metadata strip) | Low — pure rendering + parser additions; existing layout unchanged |
-| **v0.8.1 — Unified search** | DirRow + DirectorySource · unified search with section dividers · `N` new-chat key · dir row preview content · `--list` becomes markdown | Medium — touches the results model and reducer |
-| **v0.8.2 — Active thread header** | ActiveThreadSource (Claude only) · header strip render · `Tab`/`Shift-Tab` focus cycling · `r` refresh · tmux pane correlation | Higher — process discovery has per-OS forks; tmux integration depends on `$TMUX` |
+| **v0.8.1 — Project-grouped picker** | ProjectHeader + MoreRow types · `searchProjects` + `buildProjectGroups` · single project-grouped list · `N` new-chat key on project + chat rows · project-header preview pane · `--list` becomes project-grouped markdown · subagent JSONL `project_path` coercion (§D15) · schema bump v3 → v4 (drop-rebuild) | Medium — touches the results model, reducer, indexer parser, and one-shot path |
+| **v0.8.2 — Active threads inline** | ActiveThreadSource (Claude only) · active-thread rows injected into project groups (mapped to chat rows when possible, otherwise above the chat list) · `r` refresh · tmux pane correlation · `Ctrl-W` on project rows | Higher — process discovery has per-OS forks; tmux integration depends on `$TMUX` |
 
-**Phase 2 (post-v0.8.2):** Aider source · Codex CLI source · Gemini CLI source · subagent JSONL indexing · pin folders/groups · daemon mode for persistent dashboard.
+**Phase 2 (post-v0.8.2):** Aider source · Codex CLI source · Gemini CLI source · richer subagent integration (today they're indexed for FTS but `project_path`-coerced — Phase 2 could expose them as their own row kind under the parent chat) · pin folders/groups · daemon mode for persistent dashboard.
 
 **Rationale:** Each release maps to a self-contained engineering chunk and a testable surface. Risk increases monotonically. The phasing means a regression in v0.8.2 doesn't block the value of v0.8 and v0.8.1 from already being in users' hands.
+
+### D15 — Subagent JSONL `project_path` coercion (v0.8.1)
+
+**Problem.** Claude Code logs subagent transcripts at `~/.claude/projects/<encoded-cwd>/<conv-id>/subagents/agent-*.jsonl`. Each message in those files carries a `cwd` field set to whatever directory the controller (the subagent's parent) had walked into when the subagent's tool call was issued. The v0.8 indexer faithfully stamps `messages.project_path` from each message's `cwd` — which, when grouped by `project_path`, manifests as phantom "projects" like `~/work/frontend/packages/multivac/` that the user never deliberately started a Claude session in.
+
+**Fix.** At parse time, the indexer detects subagent JSONLs by file-path pattern (`<conv-id>/subagents/agent-*.jsonl` — i.e., any JSONL whose immediate parent directory is named `subagents`) and overrides the `project_path` of every row it produces from that file to **the parent session's first-message `cwd`**.
+
+Implementation sketch:
+
+```typescript
+// at the top of the indexer's per-file pass:
+function parentSessionCwd(jsonlPath: string): string | null {
+  // /…/projects/<encoded-cwd>/<conv-id>/subagents/agent-XXX.jsonl
+  //                                    ^^^^^^^^^^               parent dir name
+  const parts = jsonlPath.split("/");
+  if (parts[parts.length - 2] !== "subagents") return null;       // not a subagent file
+  const convId = parts[parts.length - 3];
+  const parentJsonl = path.join(path.dirname(jsonlPath), "..", `${convId}.jsonl`);
+  // read first non-meta line of parentJsonl and return its `cwd` field.
+  // Cached per parent path so we don't re-read it for every sibling subagent.
+}
+```
+
+When the parent JSONL is missing (rare: a subagent file lingers after the parent is deleted), the indexer falls back to the encoded directory name (already part of the file path) — that name is the original session cwd. The full algorithm: parent JSONL first message → encoded-dir-decode → final fallback to the unmodified `cwd` (so old-behavior remains the safety net).
+
+**Schema bump v3 → v4.** No new columns; the bump exists to trigger the existing drop-rebuild migration so users get the corrected `project_path` values on next indexer pass. The cost is one full reindex (already measured at ~5s for typical libraries on a developer laptop) and is amortized across only the next `multivac` invocation.
+
+**Out of scope:** Surfacing subagent transcripts as a distinct row kind nested under their parent chat. The fix here is purely about preventing phantom projects; the content remains FTS-searchable as before. A richer "subagent expansion" view is tracked for Phase 2.
+
+**Rationale:** The user's mental model of "project" is "a directory I deliberately launched Claude Code from". Subagent `cwd` values violate that model because they reflect the controller's transient working-directory shuffling, not any deliberate session-start choice. Coercing at parse time keeps the storage layer dumb and downstream queries (the `searchProjects` aggregation) automatically corrected.
+
+**Alternative considered:** Excluding subagent JSONLs from the index entirely. Rejected — those rows often contain detailed implementation notes useful for FTS. The coercion preserves searchability while fixing the aggregation.
 
 ## Testing strategy
 
@@ -574,11 +656,13 @@ The v0.7 test surface (128 shell tests + 43 unit tests) extends rather than repl
 - Visual snapshot tests at 80/120/200 cols (ink-testing-library).
 
 **v0.8.1 additions:**
-- DirectorySource query against fixture DB returns expected aggregation.
-- Substring filter on dir rows is case-insensitive on both path and name.
-- Section divider rendering: present when multiple sections, absent when one.
-- `N` keybinding spawns `claude` (no `--resume`) in the row's dir.
-- `--list` markdown output: sectioned format, embedded resume one-liners, BFS structure validated.
+- `searchProjects` (renamed from `searchDirectories`) returns expected aggregation; substring filter case-insensitive on path and name; emits `kind:"project"` rows.
+- `buildProjectGroups` produces the documented row ordering (project header → chats → optional more) with X sizing per mode (home: min(3, N); search-with-name-hit: max(3, matches); search-without-name-hit: matches; project hidden when X=0).
+- Reducer skips `more` rows on ↑/↓; `project` and `chat` are selectable.
+- `N` keybinding spawns `claude` (no `--resume`) in chat's project OR the project row's path.
+- `--list` markdown output: one heading per project, embedded resume one-liners, `(N more)` footer when chats elided.
+- **Subagent project_path coercion**: a subagent JSONL with `cwd=/work/frontend/packages/multivac` and a parent JSONL with `cwd=/work/frontend` produces messages with `project_path=/work/frontend`. Parent-JSONL-missing fallback verified.
+- Schema v3 → v4 migration triggers drop-rebuild.
 
 **v0.8.2 additions:**
 - Linux: mock `/proc/${pid}/cwd` via a fake fs layer; assert PID → cwd → JSONL mapping.
@@ -586,7 +670,7 @@ The v0.7 test surface (128 shell tests + 43 unit tests) extends rather than repl
 - Tmux: mock `tmux list-panes` output; assert PID correlation against PPID chain.
 - Active-thread refresh: PID set changes trigger re-render; unchanged PID set does not.
 - `r` keypress force-refresh.
-- Header strip empty-state collapses to single-line message.
+- Mapped active thread replaces chat row's icon / decorates it; unmapped thread appears above the project's chats.
 - Status `live` / `idle` classification by mtime age.
 
 CI hookup is deferred per the existing convention (`make lint-skills` does not invoke `multivac.test.sh` yet). The pre-commit `dist/` ≡ `src/` hook continues to enforce build-clean.
@@ -598,14 +682,16 @@ Parked questions answered during brainstorming:
 | Question | Decision |
 |---|---|
 | Keep "multivac" name? | **Yes, definitely.** Brand recognition, npm package name lockstep. |
-| `--list` output format? | **Markdown** (sectioned, with embedded resume one-liners). |
-| Subagent JSONLs (`subagents/*.jsonl`) indexing? | **Out of scope** for the foreseeable future. Known limitation. |
+| `--list` output format? | **Markdown**, project-grouped (one heading per project, chats listed under it). |
+| Subagent JSONLs (`subagents/*.jsonl`) indexing? | **Index for FTS, but coerce `project_path` to the parent session's cwd** so they don't create phantom subdirectory "projects". See §D15. |
+| Picker layout: two-section (working dirs ↑ chats ↓) vs. project-grouped (project header + its chats inline)? | **Project-grouped.** A chat's project is one of its primary attributes — repeating it as a separate row above duplicates information; grouping makes it structure. |
+| Active threads: separate top header strip vs. inline in project group? | **Inline in project group** (mapped to a chat row when possible). Deferred to v0.8.2; spec only here. |
 
 ## Open considerations (not blocking implementation)
 
 These should be considered during the writing-plans phase but do not change the design:
 
-1. **Subagent JSONL discovery scoping.** The existing `discover.ts` walks two levels deep (`~/.claude/projects/<dir>/*.jsonl`); subagent files at `~/.claude/projects/<dir>/subagents/*.jsonl` are silently missed. We're explicitly leaving this alone in v1; the plan should at minimum add a comment / known-limitation note in the source so future contributors don't think it's a bug.
+1. **Subagent JSONL discovery scoping.** v0.8.1 indexes subagent JSONLs and coerces their `project_path` to the parent session's cwd (§D15). The earlier "out of scope" note has been removed — subagents are first-class FTS content, just collapsed under their parent project for grouping purposes. Surfacing them as a separate row kind nested under the parent chat remains Phase 2 work.
 2. **`away_summary` on conversations where the user runs `/config` to disable recaps.** The fallback (head-of-last-assistant) handles this correctly, but worth a test fixture.
 3. **Permission mode display string.** The JSONL has `permissionMode` per message; the row metadata strip shows it as `permission=dangerous` when set to `"bypassPermissions"`. The exact label mapping needs spec'ing during implementation.
 4. **macOS `lsof` parsing.** `-F n` returns null-terminated fields prefixed by `n`. Worth a fixture-test on a real macOS for the parser.
