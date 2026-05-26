@@ -33143,12 +33143,12 @@ var OPTIONS = [
   {
     flags: ["-i", "--interactive"],
     group: "Options",
-    description: "Open the built-in TUI picker. Default on a TTY; this flag forces the picker even when other inference would dispatch to one-shot. Inside the picker: Enter resumes, Ctrl-F forks, Ctrl-R renames, Ctrl-P pins, Ctrl-T launches in remote-control mode, Ctrl-O prints session id, Ctrl-D prints project path, arrow keys / PgUp / PgDn navigate, Esc cancels."
+    description: "Open the built-in TUI picker. Default on a TTY; this flag forces the picker even when other inference would dispatch to one-shot. Inside the picker: Enter resumes, N opens a new chat in the selected project, Ctrl-F forks, Ctrl-R renames, Ctrl-P pins, Ctrl-T launches in remote-control mode, Ctrl-O prints session id, Ctrl-D prints project path, arrow keys / PgUp / PgDn navigate, Esc cancels."
   },
   {
     flags: ["-l", "--list"],
     group: "Options",
-    description: "Force one-shot ranked text output (the pre-default behavior). Useful on a TTY when you want a printable list instead of the picker. Mutually exclusive with -i."
+    description: "Force one-shot output (default format: markdown; use --format to override). Useful on a TTY when you want a printable list instead of the picker. Mutually exclusive with -i."
   },
   // Filters
   {
@@ -35342,8 +35342,43 @@ function RenameModal() {
 
 // src/tui/hooks/useSearch.ts
 var import_react28 = __toESM(require_react(), 1);
+
+// src/core/search/unified.ts
+var DIR_LIMIT = 5;
+var FILTERED_DIR_LIMIT = 10;
+function buildUnifiedResults(db, args, sessionStore) {
+  const query = args.query.trim();
+  const isFiltered = query.length > 0;
+  const dirFilter = isFiltered ? query : null;
+  const dirLimit = isFiltered ? FILTERED_DIR_LIMIT : DIR_LIMIT;
+  const dirs = searchDirectories(db, { limit: dirLimit, projectFilter: dirFilter });
+  const chats = isFiltered ? ftsSearch(db, { ...args, sessionStore }) : recentConversations(db, {
+    limit: args.limit,
+    projectFilter: args.project,
+    sessionStore
+  });
+  const nonEmptySections = (dirs.length > 0 ? 1 : 0) + (chats.length > 0 ? 1 : 0);
+  const showHeaders = nonEmptySections > 1;
+  const out = [];
+  if (dirs.length > 0) {
+    if (showHeaders) {
+      const label = isFiltered ? `working dirs (${dirs.length})` : `working dirs (recent ${dirs.length})`;
+      out.push({ kind: "section", label });
+    }
+    out.push(...dirs);
+  }
+  if (chats.length > 0) {
+    if (showHeaders) {
+      const label = isFiltered ? `chats (${chats.length}, by relevance)` : `chats (recent ${chats.length})`;
+      out.push({ kind: "section", label });
+    }
+    out.push(...chats);
+  }
+  return out;
+}
+
+// src/tui/hooks/useSearch.ts
 function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
-  const recentCache = (0, import_react28.useRef)(null);
   const timer = (0, import_react28.useRef)(null);
   (0, import_react28.useEffect)(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -35351,18 +35386,7 @@ function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
     timer.current = setTimeout(() => {
       onPending(false);
       try {
-        if (!query.trim()) {
-          if (recentCache.current === null) {
-            recentCache.current = recentConversations(db, {
-              limit: args.limit,
-              projectFilter: args.project,
-              sessionStore
-            });
-          }
-          onResults(recentCache.current);
-          return;
-        }
-        const rows = ftsSearch(db, { ...args, query, sessionStore });
+        const rows = buildUnifiedResults(db, { ...args, query }, sessionStore);
         onResults(rows);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

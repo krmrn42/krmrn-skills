@@ -58,10 +58,6 @@ export interface SectionHeader {
 
 export type Selectable = ResultRow | DirRow | SectionHeader;
 
-export function isSelectable(row: Selectable): row is ResultRow | DirRow {
-  return row.kind !== "section";
-}
-
 export interface SessionStore {
   version: number;
   names: Record<string, string>; // key: ${source}:${sessionId}

@@ -28,17 +28,18 @@ export const OPTIONS: readonly OptionSpec[] = [
     description:
       "Open the built-in TUI picker. Default on a TTY; this flag forces the " +
       "picker even when other inference would dispatch to one-shot. Inside the " +
-      "picker: Enter resumes, Ctrl-F forks, Ctrl-R renames, Ctrl-P pins, Ctrl-T " +
-      "launches in remote-control mode, Ctrl-O prints session id, Ctrl-D prints " +
-      "project path, arrow keys / PgUp / PgDn navigate, Esc cancels.",
+      "picker: Enter resumes, N opens a new chat in the selected project, " +
+      "Ctrl-F forks, Ctrl-R renames, Ctrl-P pins, Ctrl-T launches in " +
+      "remote-control mode, Ctrl-O prints session id, Ctrl-D prints project " +
+      "path, arrow keys / PgUp / PgDn navigate, Esc cancels.",
   },
   {
     flags: ["-l", "--list"],
     group: "Options",
     description:
-      "Force one-shot ranked text output (the pre-default behavior). Useful on " +
-      "a TTY when you want a printable list instead of the picker. Mutually " +
-      "exclusive with -i.",
+      "Force one-shot output (default format: markdown; use --format to " +
+      "override). Useful on a TTY when you want a printable list instead of " +
+      "the picker. Mutually exclusive with -i.",
   },
 
   // Filters
