@@ -13,6 +13,8 @@ import { ftsSearch } from "../core/search/fts.js";
 import { regexPostfilter, regexScan } from "../core/search/regex.js";
 import { renderText } from "../core/render/text.js";
 import { renderTsv } from "../core/render/tsv.js";
+import { renderMarkdown } from "../core/render/markdown.js";
+import { searchDirectories } from "../core/search/dirs.js";
 import { renderPreview } from "../core/render/preview.js";
 import { runInit } from "../sources/claude/install.js";
 import { projectsRoot, listJsonlFiles } from "../sources/claude/discover.js";
@@ -214,8 +216,11 @@ async function main(argv: string[]): Promise<number> {
   }
 
   // One-shot: resolve default format now if the user didn't explicitly set it.
+  // `--list` defaults to markdown (v0.8.1); a TTY without --list still defaults
+  // to text, and a piped stdout to tsv.
   if (args.format === null) {
-    args.format = process.stdout.isTTY ? "text" : "tsv";
+    if (args.list) args.format = "markdown";
+    else args.format = process.stdout.isTTY ? "text" : "tsv";
   }
 
   let results;
@@ -225,6 +230,12 @@ async function main(argv: string[]): Promise<number> {
   } else if (args.regex) {
     if (!args.regexCompiled) dieUser("--regex pattern failed to compile");
     results = regexPostfilter(db, args, args.regexCompiled);
+  } else if (!args.query && args.format === "markdown") {
+    // Bare `multivac --list` (no query): list recent chats AND recent dirs.
+    const sessionStore = loadSessionStore();
+    results = recentConversations(db, {
+      limit: args.limit, projectFilter: args.project, sessionStore,
+    });
   } else {
     if (!args.query) {
       dieUser(
@@ -236,7 +247,13 @@ async function main(argv: string[]): Promise<number> {
     results = ftsSearch(db, args);
   }
 
-  if (args.format === "tsv") {
+  if (args.format === "markdown") {
+    const dirs = searchDirectories(db, {
+      limit: 10,
+      projectFilter: args.query.trim() || null,
+    });
+    process.stdout.write(renderMarkdown({ dirs, chats: results, query: args.query }));
+  } else if (args.format === "tsv") {
     process.stdout.write(renderTsv(results));
   } else {
     process.stdout.write(renderText(results, useColor));

@@ -34561,6 +34561,246 @@ function renderTsv(results) {
   return out.length ? out.join("\n") + "\n" : "";
 }
 
+// src/core/render/markdown.ts
+function renderMarkdown(input) {
+  const { dirs, chats, query } = input;
+  if (dirs.length === 0 && chats.length === 0) {
+    return "no matches\n";
+  }
+  const out = [];
+  const labelSuffix = query.length > 0 ? ` matching "${query}"` : " (recent)";
+  if (dirs.length > 0) {
+    out.push(`## Working directories${labelSuffix}`);
+    out.push("");
+    dirs.forEach((d, i) => {
+      const date = fmtDate(d.lastActivity);
+      const count = `${d.chatCount} chat${d.chatCount === 1 ? "" : "s"}`;
+      out.push(`${i + 1}. **${d.projectPath}** \u2014 ${count}, last activity ${date}`);
+      if (d.topChatTitles.length > 0) {
+        out.push(`   - Recent: ${d.topChatTitles.join(", ")}`);
+      }
+      out.push(`   - New chat: \`(cd ${shellQuote(d.projectPath)} && claude)\``);
+      out.push("");
+    });
+  }
+  if (chats.length > 0) {
+    out.push(`## Chats${labelSuffix}`);
+    out.push("");
+    chats.forEach((c, i) => {
+      const date = fmtDate(c.lastActivity);
+      const branch = c.gitBranch ? ` (${c.gitBranch})` : "";
+      const title = c.title ?? c.sessionId.slice(0, 8);
+      out.push(`${i + 1}. **${title}** \u2014 \`${c.projectPath}\` \xB7 ${date} \xB7 ${c.msgCount} msgs${branch}`);
+      if (c.recapText) {
+        const oneLine = c.recapText.replace(/\n+/g, " ").trim();
+        out.push(`   - recap: ${oneLine}`);
+      } else if (c.snippet) {
+        const oneLine = c.snippet.replace(/<<<|>>>/g, "").replace(/\s+/g, " ").trim();
+        if (oneLine.length > 0) out.push(`   - snippet: ${oneLine}`);
+      }
+      out.push(`   - Resume: \`${resumeOneLiner(c)}\``);
+      out.push("");
+    });
+  }
+  return out.join("\n");
+}
+
+// src/core/search/recap.ts
+var RECAP_MAX_LINES = 5;
+var ANSI_RE = new RegExp(String.fromCharCode(27) + "\\[[0-?]*[ -/]*[@-~]", "g");
+function getRecapText(db, conversationId, source) {
+  const lastUserTs = db.prepare(
+    "SELECT COALESCE(MAX(timestamp), 0) AS ts FROM messages WHERE conversation_id = ? AND source = ? AND type = 'user'"
+  ).get(conversationId, source);
+  const summary = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'system' AND subtype = 'away_summary' AND timestamp > ? ORDER BY timestamp DESC LIMIT 1"
+  ).get(conversationId, source, lastUserTs?.ts ?? 0);
+  if (summary?.content) return summary.content;
+  const assistant = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'assistant' ORDER BY timestamp DESC LIMIT 1"
+  ).get(conversationId, source);
+  if (!assistant?.content) return "";
+  return headLines(assistant.content, RECAP_MAX_LINES);
+}
+function headLines(text, n) {
+  const cleaned = text.replace(ANSI_RE, "");
+  const out = [];
+  for (const raw of cleaned.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    out.push(line);
+    if (out.length >= n) break;
+  }
+  return out.join("\n");
+}
+
+// src/core/search/recent.ts
+var WRAPPER_TAGS = /* @__PURE__ */ new Set([
+  "command-name",
+  "command-message",
+  "command-args",
+  "local-command-stdout",
+  "local-command-stderr",
+  "local-command-caveat",
+  "stdin",
+  "bash-input",
+  "bash-stdout",
+  "bash-stderr",
+  "task-notification",
+  "system-reminder"
+]);
+function isWrapperContent(s) {
+  if (!s) return true;
+  const trimmed = s.replace(/^\s+/, "");
+  const m = trimmed.match(/^<([a-zA-Z0-9_-]+)>/);
+  if (!m) return false;
+  return WRAPPER_TAGS.has(m[1]);
+}
+function synthesizeTitle(rawContent) {
+  if (!rawContent) return null;
+  const firstLine = rawContent.split("\n", 1)[0].replace(/\s+/g, " ").trim();
+  if (firstLine.length === 0) return null;
+  const CAP = 80;
+  return firstLine.length > CAP ? firstLine.slice(0, CAP) + "\u2026" : firstLine;
+}
+function normalizeTailContent(rawContent) {
+  if (!rawContent) return "";
+  const ESC2 = String.fromCharCode(27);
+  const ansiRe = new RegExp(ESC2 + "\\[[0-?]*[ -/]*[@-~]", "g");
+  let s = rawContent.replace(ansiRe, "");
+  s = s.replace(/\s+/g, " ").trim();
+  if (s.length > 240) s = s.slice(0, 240);
+  return s;
+}
+function recentConversations(db, opts) {
+  const { limit, projectFilter, sessionStore } = opts;
+  const projectExtra = projectFilter ? "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)" : "";
+  const projectParams = projectFilter ? [
+    "%" + String(projectFilter).toLowerCase() + "%",
+    "%" + String(projectFilter).toLowerCase() + "%"
+  ] : [];
+  const recentSql = `
+SELECT
+  conversation_id AS conversation_id,
+  MAX(source) AS source,
+  MAX(project_path) AS project_path,
+  MAX(project_name) AS project_name,
+  MAX(timestamp) AS last_ts,
+  COUNT(*) AS msg_count
+FROM messages
+WHERE type IN ('user', 'assistant')
+${projectExtra}
+GROUP BY conversation_id
+ORDER BY last_ts DESC
+LIMIT ?
+`;
+  const recent = db.prepare(recentSql).all(...projectParams, Math.max(1, limit | 0));
+  if (!recent.length) return [];
+  const titleStmt = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"
+  );
+  const tailStmt = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND type IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT 1"
+  );
+  const metaStmt = db.prepare(
+    "SELECT git_branch, attribution_skill FROM messages WHERE conversation_id = ? ORDER BY timestamp DESC LIMIT 1"
+  );
+  const namesMap = sessionStore && sessionStore.names || {};
+  const results = [];
+  for (const conv of recent) {
+    const source = conv.source || "claude";
+    const nameKey = `${source}:${conv.conversation_id}`;
+    let title = null;
+    const saved = namesMap[nameKey];
+    if (typeof saved === "string" && saved.length > 0) {
+      title = saved;
+    } else {
+      const candidates = titleStmt.all(conv.conversation_id);
+      for (const c of candidates) {
+        if (!c.content) continue;
+        if (isWrapperContent(c.content)) continue;
+        title = synthesizeTitle(c.content);
+        if (title) break;
+      }
+    }
+    const tailRow = tailStmt.get(conv.conversation_id);
+    const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
+    const recapText = getRecapText(db, conv.conversation_id, source);
+    const metaRow = metaStmt.get(conv.conversation_id);
+    results.push({
+      kind: "chat",
+      source,
+      sessionId: conv.conversation_id,
+      projectPath: conv.project_path || "",
+      projectName: conv.project_name || "",
+      lastActivity: conv.last_ts || 0,
+      msgCount: conv.msg_count || 0,
+      snippet: tail,
+      score: 0,
+      title,
+      recapText,
+      gitBranch: metaRow?.git_branch ?? null,
+      skill: metaRow?.attribution_skill ?? null
+    });
+  }
+  return applyPinOrdering(results, sessionStore, Math.max(1, limit | 0));
+}
+
+// src/core/search/dirs.ts
+function searchDirectories(db, opts) {
+  const { limit, projectFilter } = opts;
+  const filterClause = projectFilter ? "AND (LOWER(project_path) LIKE ? OR LOWER(project_name) LIKE ?)" : "";
+  const filterParams = projectFilter ? [
+    "%" + projectFilter.toLowerCase() + "%",
+    "%" + projectFilter.toLowerCase() + "%"
+  ] : [];
+  const aggSql = `
+SELECT
+  project_path,
+  MAX(project_name) AS project_name,
+  COUNT(DISTINCT conversation_id) AS chat_count,
+  MAX(timestamp) AS last_activity
+FROM messages
+WHERE type IN ('user', 'assistant')
+${filterClause}
+GROUP BY project_path
+ORDER BY last_activity DESC
+LIMIT ?
+`;
+  const rows = db.prepare(aggSql).all(...filterParams, Math.max(1, limit | 0));
+  const topStmt = db.prepare(
+    "SELECT conversation_id FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') GROUP BY conversation_id ORDER BY MAX(timestamp) DESC LIMIT 3"
+  );
+  const titleStmt = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"
+  );
+  const out = [];
+  for (const r of rows) {
+    const tops = topStmt.all(r.project_path);
+    const titles = [];
+    for (const t of tops) {
+      const cands = titleStmt.all(t.conversation_id);
+      let title = null;
+      for (const c of cands) {
+        if (!c.content) continue;
+        if (isWrapperContent(c.content)) continue;
+        title = synthesizeTitle(c.content);
+        if (title) break;
+      }
+      titles.push(title ?? t.conversation_id.slice(0, 8));
+    }
+    out.push({
+      kind: "dir",
+      projectPath: r.project_path,
+      projectName: r.project_name ?? r.project_path.split("/").pop() ?? "?",
+      chatCount: r.chat_count,
+      lastActivity: r.last_activity ?? 0,
+      topChatTitles: titles
+    });
+  }
+  return out;
+}
+
 // src/tui/lib/box.ts
 var ROUNDED = {
   topLeft: "\u256D",
@@ -35102,149 +35342,6 @@ function RenameModal() {
 
 // src/tui/hooks/useSearch.ts
 var import_react28 = __toESM(require_react(), 1);
-
-// src/core/search/recap.ts
-var RECAP_MAX_LINES = 5;
-var ANSI_RE = new RegExp(String.fromCharCode(27) + "\\[[0-?]*[ -/]*[@-~]", "g");
-function getRecapText(db, conversationId, source) {
-  const lastUserTs = db.prepare(
-    "SELECT COALESCE(MAX(timestamp), 0) AS ts FROM messages WHERE conversation_id = ? AND source = ? AND type = 'user'"
-  ).get(conversationId, source);
-  const summary = db.prepare(
-    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'system' AND subtype = 'away_summary' AND timestamp > ? ORDER BY timestamp DESC LIMIT 1"
-  ).get(conversationId, source, lastUserTs?.ts ?? 0);
-  if (summary?.content) return summary.content;
-  const assistant = db.prepare(
-    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'assistant' ORDER BY timestamp DESC LIMIT 1"
-  ).get(conversationId, source);
-  if (!assistant?.content) return "";
-  return headLines(assistant.content, RECAP_MAX_LINES);
-}
-function headLines(text, n) {
-  const cleaned = text.replace(ANSI_RE, "");
-  const out = [];
-  for (const raw of cleaned.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    out.push(line);
-    if (out.length >= n) break;
-  }
-  return out.join("\n");
-}
-
-// src/core/search/recent.ts
-var WRAPPER_TAGS = /* @__PURE__ */ new Set([
-  "command-name",
-  "command-message",
-  "command-args",
-  "local-command-stdout",
-  "local-command-stderr",
-  "local-command-caveat",
-  "stdin",
-  "bash-input",
-  "bash-stdout",
-  "bash-stderr",
-  "task-notification",
-  "system-reminder"
-]);
-function isWrapperContent(s) {
-  if (!s) return true;
-  const trimmed = s.replace(/^\s+/, "");
-  const m = trimmed.match(/^<([a-zA-Z0-9_-]+)>/);
-  if (!m) return false;
-  return WRAPPER_TAGS.has(m[1]);
-}
-function synthesizeTitle(rawContent) {
-  if (!rawContent) return null;
-  const firstLine = rawContent.split("\n", 1)[0].replace(/\s+/g, " ").trim();
-  if (firstLine.length === 0) return null;
-  const CAP = 80;
-  return firstLine.length > CAP ? firstLine.slice(0, CAP) + "\u2026" : firstLine;
-}
-function normalizeTailContent(rawContent) {
-  if (!rawContent) return "";
-  const ESC2 = String.fromCharCode(27);
-  const ansiRe = new RegExp(ESC2 + "\\[[0-?]*[ -/]*[@-~]", "g");
-  let s = rawContent.replace(ansiRe, "");
-  s = s.replace(/\s+/g, " ").trim();
-  if (s.length > 240) s = s.slice(0, 240);
-  return s;
-}
-function recentConversations(db, opts) {
-  const { limit, projectFilter, sessionStore } = opts;
-  const projectExtra = projectFilter ? "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)" : "";
-  const projectParams = projectFilter ? [
-    "%" + String(projectFilter).toLowerCase() + "%",
-    "%" + String(projectFilter).toLowerCase() + "%"
-  ] : [];
-  const recentSql = `
-SELECT
-  conversation_id AS conversation_id,
-  MAX(source) AS source,
-  MAX(project_path) AS project_path,
-  MAX(project_name) AS project_name,
-  MAX(timestamp) AS last_ts,
-  COUNT(*) AS msg_count
-FROM messages
-WHERE type IN ('user', 'assistant')
-${projectExtra}
-GROUP BY conversation_id
-ORDER BY last_ts DESC
-LIMIT ?
-`;
-  const recent = db.prepare(recentSql).all(...projectParams, Math.max(1, limit | 0));
-  if (!recent.length) return [];
-  const titleStmt = db.prepare(
-    "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"
-  );
-  const tailStmt = db.prepare(
-    "SELECT content FROM messages WHERE conversation_id = ? AND type IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT 1"
-  );
-  const metaStmt = db.prepare(
-    "SELECT git_branch, attribution_skill FROM messages WHERE conversation_id = ? ORDER BY timestamp DESC LIMIT 1"
-  );
-  const namesMap = sessionStore && sessionStore.names || {};
-  const results = [];
-  for (const conv of recent) {
-    const source = conv.source || "claude";
-    const nameKey = `${source}:${conv.conversation_id}`;
-    let title = null;
-    const saved = namesMap[nameKey];
-    if (typeof saved === "string" && saved.length > 0) {
-      title = saved;
-    } else {
-      const candidates = titleStmt.all(conv.conversation_id);
-      for (const c of candidates) {
-        if (!c.content) continue;
-        if (isWrapperContent(c.content)) continue;
-        title = synthesizeTitle(c.content);
-        if (title) break;
-      }
-    }
-    const tailRow = tailStmt.get(conv.conversation_id);
-    const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
-    const recapText = getRecapText(db, conv.conversation_id, source);
-    const metaRow = metaStmt.get(conv.conversation_id);
-    results.push({
-      kind: "chat",
-      source,
-      sessionId: conv.conversation_id,
-      projectPath: conv.project_path || "",
-      projectName: conv.project_name || "",
-      lastActivity: conv.last_ts || 0,
-      msgCount: conv.msg_count || 0,
-      snippet: tail,
-      score: 0,
-      title,
-      recapText,
-      gitBranch: metaRow?.git_branch ?? null,
-      skill: metaRow?.attribution_skill ?? null
-    });
-  }
-  return applyPinOrdering(results, sessionStore, Math.max(1, limit | 0));
-}
-
-// src/tui/hooks/useSearch.ts
 function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
   const recentCache = (0, import_react28.useRef)(null);
   const timer = (0, import_react28.useRef)(null);
@@ -35789,7 +35886,8 @@ async function main(argv) {
     return code ?? EXIT_OK;
   }
   if (args.format === null) {
-    args.format = process.stdout.isTTY ? "text" : "tsv";
+    if (args.list) args.format = "markdown";
+    else args.format = process.stdout.isTTY ? "text" : "tsv";
   }
   let results;
   if (args.scan) {
@@ -35798,6 +35896,13 @@ async function main(argv) {
   } else if (args.regex) {
     if (!args.regexCompiled) dieUser("--regex pattern failed to compile");
     results = regexPostfilter(db, args, args.regexCompiled);
+  } else if (!args.query && args.format === "markdown") {
+    const sessionStore = loadSessionStore();
+    results = recentConversations(db, {
+      limit: args.limit,
+      projectFilter: args.project,
+      sessionStore
+    });
   } else {
     if (!args.query) {
       dieUser(
@@ -35806,7 +35911,13 @@ async function main(argv) {
     }
     results = ftsSearch(db, args);
   }
-  if (args.format === "tsv") {
+  if (args.format === "markdown") {
+    const dirs = searchDirectories(db, {
+      limit: 10,
+      projectFilter: args.query.trim() || null
+    });
+    process.stdout.write(renderMarkdown({ dirs, chats: results, query: args.query }));
+  } else if (args.format === "tsv") {
     process.stdout.write(renderTsv(results));
   } else {
     process.stdout.write(renderText(results, useColor));
