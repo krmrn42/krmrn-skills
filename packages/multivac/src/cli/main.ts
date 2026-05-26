@@ -13,6 +13,8 @@ import { ftsSearch } from "../core/search/fts.js";
 import { regexPostfilter, regexScan } from "../core/search/regex.js";
 import { renderText } from "../core/render/text.js";
 import { renderTsv } from "../core/render/tsv.js";
+import { renderMarkdown } from "../core/render/markdown.js";
+import { buildProjectGroups } from "../core/search/unified.js";
 import { renderPreview } from "../core/render/preview.js";
 import { runInit } from "../sources/claude/install.js";
 import { projectsRoot, listJsonlFiles } from "../sources/claude/discover.js";
@@ -214,10 +216,24 @@ async function main(argv: string[]): Promise<number> {
   }
 
   // One-shot: resolve default format now if the user didn't explicitly set it.
+  // `--list` defaults to markdown (v0.8.1); a TTY without --list still defaults
+  // to text, and a piped stdout to tsv.
   if (args.format === null) {
-    args.format = process.stdout.isTTY ? "text" : "tsv";
+    if (args.list) args.format = "markdown";
+    else args.format = process.stdout.isTTY ? "text" : "tsv";
   }
 
+  // Markdown path uses the same project-grouped producer the TUI does. It
+  // tolerates an empty query (home view) and emits one project section per
+  // group with embedded resume one-liners.
+  if (args.format === "markdown") {
+    const sessionStore = loadSessionStore();
+    const rows = buildProjectGroups(db, args, sessionStore);
+    process.stdout.write(renderMarkdown({ rows, query: args.query }));
+    return EXIT_OK;
+  }
+
+  // Text / TSV paths are chat-only and need a query.
   let results;
   if (args.scan) {
     if (!args.regexCompiled) dieUser("--scan requires --regex");

@@ -192,7 +192,7 @@ var require_react_production_min = __commonJS({
     }
     var U = { current: null };
     var V = { transition: null };
-    var W = { ReactCurrentDispatcher: U, ReactCurrentBatchConfig: V, ReactCurrentOwner: K };
+    var W2 = { ReactCurrentDispatcher: U, ReactCurrentBatchConfig: V, ReactCurrentOwner: K };
     function X() {
       throw Error("act(...) is not supported in production builds of React.");
     }
@@ -220,7 +220,7 @@ var require_react_production_min = __commonJS({
     exports.PureComponent = G;
     exports.StrictMode = q;
     exports.Suspense = w;
-    exports.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = W;
+    exports.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = W2;
     exports.act = X;
     exports.cloneElement = function(a, b, e) {
       if (null === a || void 0 === a) throw Error("React.cloneElement(...): The argument must be a React element, but you passed " + a + ".");
@@ -6538,7 +6538,7 @@ var require_react_reconciler_production_min = __commonJS({
         }
         return b;
       }
-      var sh = Math.ceil, th = da.ReactCurrentDispatcher, uh = da.ReactCurrentOwner, W = da.ReactCurrentBatchConfig, H = 0, N = null, X = null, Z = 0, $f = 0, Zf = ic(0), R = 0, vh = null, le = 0, wh = 0, xh = 0, yh = null, zh = null, bh = 0, Dg = Infinity, Ah = null;
+      var sh = Math.ceil, th = da.ReactCurrentDispatcher, uh = da.ReactCurrentOwner, W2 = da.ReactCurrentBatchConfig, H = 0, N = null, X = null, Z = 0, $f = 0, Zf = ic(0), R = 0, vh = null, le = 0, wh = 0, xh = 0, yh = null, zh = null, bh = 0, Dg = Infinity, Ah = null;
       function Bh() {
         Dg = D() + 500;
       }
@@ -6752,11 +6752,11 @@ var require_react_reconciler_production_min = __commonJS({
         null !== Dh && 0 === Dh.tag && 0 === (H & 6) && Oh();
         var b = H;
         H |= 1;
-        var c = W.transition, d = C;
+        var c = W2.transition, d = C;
         try {
-          if (W.transition = null, C = 1, a) return a();
+          if (W2.transition = null, C = 1, a) return a();
         } finally {
-          C = d, W.transition = c, H = b, 0 === (H & 6) && ad();
+          C = d, W2.transition = c, H = b, 0 === (H & 6) && ad();
         }
       }
       function Eg() {
@@ -7004,11 +7004,11 @@ var require_react_reconciler_production_min = __commonJS({
         0 === R && (R = 5);
       }
       function Wh(a, b, c) {
-        var d = C, e = W.transition;
+        var d = C, e = W2.transition;
         try {
-          W.transition = null, C = 1, bi(a, b, c, d);
+          W2.transition = null, C = 1, bi(a, b, c, d);
         } finally {
-          W.transition = e, C = d;
+          W2.transition = e, C = d;
         }
         return null;
       }
@@ -7034,8 +7034,8 @@ var require_react_reconciler_production_min = __commonJS({
         }));
         f = 0 !== (c.flags & 15990);
         if (0 !== (c.subtreeFlags & 15990) || f) {
-          f = W.transition;
-          W.transition = null;
+          f = W2.transition;
+          W2.transition = null;
           var g = C;
           C = 1;
           var h = H;
@@ -7049,7 +7049,7 @@ var require_react_reconciler_production_min = __commonJS({
           Mc();
           H = h;
           C = g;
-          W.transition = f;
+          W2.transition = f;
         } else a.current = c;
         Ch && (Ch = false, Dh = a, Eh = e);
         f = a.pendingLanes;
@@ -7066,9 +7066,9 @@ var require_react_reconciler_production_min = __commonJS({
       }
       function Oh() {
         if (null !== Dh) {
-          var a = Ic(Eh), b = W.transition, c = C;
+          var a = Ic(Eh), b = W2.transition, c = C;
           try {
-            W.transition = null;
+            W2.transition = null;
             C = 16 > a ? 16 : a;
             if (null === Dh) var d = false;
             else {
@@ -7185,7 +7185,7 @@ var require_react_reconciler_production_min = __commonJS({
             }
             return d;
           } finally {
-            C = c, W.transition = b;
+            C = c, W2.transition = b;
           }
         }
         return false;
@@ -7734,19 +7734,19 @@ var require_react_reconciler_production_min = __commonJS({
         return { $$typeof: lh, value: a };
       };
       exports2.deferredUpdates = function(a) {
-        var b = C, c = W.transition;
+        var b = C, c = W2.transition;
         try {
-          return W.transition = null, C = 16, a();
+          return W2.transition = null, C = 16, a();
         } finally {
-          C = b, W.transition = c;
+          C = b, W2.transition = c;
         }
       };
       exports2.discreteUpdates = function(a, b, c, d, e) {
-        var f = C, g = W.transition;
+        var f = C, g = W2.transition;
         try {
-          return W.transition = null, C = 1, a(b, c, d, e);
+          return W2.transition = null, C = 1, a(b, c, d, e);
         } finally {
-          C = f, W.transition = g, 0 === H && Bh();
+          C = f, W2.transition = g, 0 === H && Bh();
         }
       };
       exports2.findAllNodes = rh;
@@ -7789,11 +7789,11 @@ var require_react_reconciler_production_min = __commonJS({
       exports2.flushControlled = function(a) {
         var b = H;
         H |= 1;
-        var c = W.transition, d = C;
+        var c = W2.transition, d = C;
         try {
-          W.transition = null, C = 1, a();
+          W2.transition = null, C = 1, a();
         } finally {
-          C = d, W.transition = c, H = b, 0 === H && (Bh(), ad());
+          C = d, W2.transition = c, H = b, 0 === H && (Bh(), ad());
         }
       };
       exports2.flushPassiveEffects = Oh;
@@ -28000,7 +28000,7 @@ var loadYoga = (() => {
       function d(k) {
         k = c(k);
         k.length !== a.length && Ta("Mismatched type converter count");
-        for (var m = 0; m < a.length; ++m) W(a[m], k[m]);
+        for (var m = 0; m < a.length; ++m) W2(a[m], k[m]);
       }
       a.forEach(function(k) {
         Ya[k] = b;
@@ -28029,7 +28029,7 @@ var loadYoga = (() => {
           throw new TypeError("Unknown type size: " + a);
       }
     }
-    function W(a, b, c = {}) {
+    function W2(a, b, c = {}) {
       if (!("argPackAdvance" in b)) throw new TypeError("registerType registeredInstance requires argPackAdvance");
       var d = b.name;
       a || L('type "' + d + '" must have a positive integer typeid pointer');
@@ -28502,7 +28502,7 @@ var loadYoga = (() => {
       B: function(a, b, c, d, e) {
         var f = Za(c);
         b = N(b);
-        W(a, {
+        W2(a, {
           name: b,
           fromWireType: function(g) {
             return !!g;
@@ -28626,7 +28626,7 @@ var loadYoga = (() => {
       },
       A: function(a, b) {
         b = N(b);
-        W(
+        W2(
           a,
           { name: b, fromWireType: function(c) {
             var d = M(c);
@@ -28640,7 +28640,7 @@ var loadYoga = (() => {
       n: function(a, b, c) {
         c = Za(c);
         b = N(b);
-        W(a, { name: b, fromWireType: function(d) {
+        W2(a, { name: b, fromWireType: function(d) {
           return d;
         }, toWireType: function(d, e) {
           return e;
@@ -28660,7 +28660,7 @@ var loadYoga = (() => {
         } : function(k, m) {
           return m;
         };
-        W(a, { name: b, fromWireType: f, toWireType: c, argPackAdvance: 8, readValueFromPointer: sb(b, e, 0 !== d), V: null });
+        W2(a, { name: b, fromWireType: f, toWireType: c, argPackAdvance: 8, readValueFromPointer: sb(b, e, 0 !== d), V: null });
       },
       b: function(a, b, c) {
         function d(f) {
@@ -28670,12 +28670,12 @@ var loadYoga = (() => {
         }
         var e = [Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array][b];
         c = N(c);
-        W(a, { name: c, fromWireType: d, argPackAdvance: 8, readValueFromPointer: d }, { ua: true });
+        W2(a, { name: c, fromWireType: d, argPackAdvance: 8, readValueFromPointer: d }, { ua: true });
       },
       o: function(a, b) {
         b = N(b);
         var c = "std::string" === b;
-        W(a, { name: b, fromWireType: function(d) {
+        W2(a, { name: b, fromWireType: function(d) {
           var e = E[d >> 2], f = d + 4;
           if (c) for (var g = f, k = 0; k <= e; ++k) {
             var m = f + k;
@@ -28757,7 +28757,7 @@ var loadYoga = (() => {
           var g = () => ka;
           var k = 1;
         } else 4 === b && (d = wb, e = xb, f = yb, g = () => E, k = 2);
-        W(a, { name: c, fromWireType: function(m) {
+        W2(a, { name: c, fromWireType: function(m) {
           for (var l = E[m >> 2], n = g(), p, r = m + 4, u = 0; u <= l; ++u) {
             var t = m + 4 + u * b;
             if (u == l || 0 == n[t >> k]) r = d(r, t - r), void 0 === p ? p = r : (p += String.fromCharCode(0), p += r), r = t + b;
@@ -28783,7 +28783,7 @@ var loadYoga = (() => {
       },
       C: function(a, b) {
         b = N(b);
-        W(a, {
+        W2(a, {
           va: true,
           name: b,
           argPackAdvance: 0,
@@ -33007,8 +33007,12 @@ var EXPECTED_COLUMNS = /* @__PURE__ */ new Set([
   "source",
   "subtype",
   "git_branch",
-  "attribution_skill"
+  "attribution_skill",
   // v3 additions
+  "is_subagent",
+  // v4: subagent-file detection (path-based)
+  "entrypoint"
+  // v5: raw `entrypoint` from JSONL (data-based)
 ]);
 var SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS messages (
@@ -33024,7 +33028,9 @@ CREATE TABLE IF NOT EXISTS messages (
   source            TEXT NOT NULL DEFAULT 'claude',
   subtype           TEXT NULL,
   git_branch        TEXT NULL,
-  attribution_skill TEXT NULL
+  attribution_skill TEXT NULL,
+  is_subagent       INTEGER NOT NULL DEFAULT 0,  -- v4: 1 if file lives under .../subagents/
+  entrypoint        TEXT NULL                    -- v5: raw entrypoint field from JSONL (cli, sdk-cli, \u2026)
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp    ON messages(timestamp);
@@ -33059,6 +33065,10 @@ function detectMigrationNeeded(db) {
   if (!hasSource) return 2;
   const hasSubtype = cols.some((c) => c.name === "subtype");
   if (!hasSubtype) return 3;
+  const hasIsSubagent = cols.some((c) => c.name === "is_subagent");
+  if (!hasIsSubagent) return 4;
+  const hasEntrypoint = cols.some((c) => c.name === "entrypoint");
+  if (!hasEntrypoint) return 5;
   return 0;
 }
 
@@ -33143,12 +33153,12 @@ var OPTIONS = [
   {
     flags: ["-i", "--interactive"],
     group: "Options",
-    description: "Open the built-in TUI picker. Default on a TTY; this flag forces the picker even when other inference would dispatch to one-shot. Inside the picker: Enter resumes, Ctrl-F forks, Ctrl-R renames, Ctrl-P pins, Ctrl-T launches in remote-control mode, Ctrl-O prints session id, Ctrl-D prints project path, arrow keys / PgUp / PgDn navigate, Esc cancels."
+    description: "Open the built-in TUI picker. Default on a TTY; this flag forces the picker even when other inference would dispatch to one-shot. Inside the picker: Enter resumes, N opens a new chat in the selected project, Ctrl-F forks, Ctrl-R renames, Ctrl-P pins, Ctrl-T launches in remote-control mode, Ctrl-O prints session id, Ctrl-D prints project path, arrow keys / PgUp / PgDn navigate, Esc cancels."
   },
   {
     flags: ["-l", "--list"],
     group: "Options",
-    description: "Force one-shot ranked text output (the pre-default behavior). Useful on a TTY when you want a printable list instead of the picker. Mutually exclusive with -i."
+    description: "Force one-shot output (default format: markdown; use --format to override). Useful on a TTY when you want a printable list instead of the picker. Mutually exclusive with -i."
   },
   // Filters
   {
@@ -33193,9 +33203,9 @@ var OPTIONS = [
   },
   {
     flags: ["--format"],
-    placeholder: "text|tsv",
+    placeholder: "text|tsv|markdown",
     group: "Output",
-    description: "Output format. Default: text on a TTY, tsv when stdout is piped."
+    description: "Output format. Default: text on a TTY, tsv when stdout is piped, markdown when --list is set."
   },
   {
     flags: ["--no-color"],
@@ -33275,7 +33285,7 @@ function buildHelp() {
     "usage: multivac [-h] [--version] [-i | -l] [--regex PAT] [--scan]",
     "                [--include-tools | --only-user]",
     "                [--project SUBSTR] [--since YYYY-MM-DD] [--limit N]",
-    "                [--format text|tsv] [--no-color]",
+    "                [--format text|tsv|markdown] [--no-color]",
     "                [--db-path PATH] [--preview SESSION_ID]",
     "                [--reindex | --index-status]",
     "                [init | query]"
@@ -33414,7 +33424,7 @@ function parseArgs(argv) {
         args.help = true;
         break;
       case "--version":
-        process.stdout.write("0.8.0\n");
+        process.stdout.write("0.8.1\n");
         process.exit(EXIT_OK);
         break;
       case "-i":
@@ -33453,8 +33463,8 @@ function parseArgs(argv) {
         break;
       case "--format":
         args.format = expanded[++i];
-        if (args.format !== "text" && args.format !== "tsv") {
-          dieUser("--format must be 'text' or 'tsv'");
+        if (args.format !== "text" && args.format !== "tsv" && args.format !== "markdown") {
+          dieUser("--format must be 'text', 'tsv', or 'markdown'");
         }
         break;
       case "--db-path":
@@ -33732,9 +33742,41 @@ function recordToRows(rec) {
   }
   return [];
 }
+function detectSubagentParentCwd(filePath) {
+  const dirName = path3.basename(path3.dirname(filePath));
+  if (dirName !== "subagents") return null;
+  const subagentsDir = path3.dirname(filePath);
+  const convDir = path3.dirname(subagentsDir);
+  const convId = path3.basename(convDir);
+  const projectsDir = path3.dirname(convDir);
+  const parentJsonl = path3.join(projectsDir, `${convId}.jsonl`);
+  let text;
+  try {
+    text = fs4.readFileSync(parentJsonl, "utf-8");
+  } catch (_) {
+    return null;
+  }
+  let scanned = 0;
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    if (++scanned > 50) break;
+    try {
+      const rec = JSON.parse(line);
+      const cwd2 = rec["cwd"];
+      if (typeof cwd2 === "string" && cwd2.length > 0) return cwd2;
+    } catch (_) {
+      continue;
+    }
+  }
+  return null;
+}
 async function* parse(file) {
   const sessionId = path3.basename(file.path, ".jsonl");
   const projectDir = path3.basename(path3.dirname(file.path));
+  const subagentCoercedCwd = detectSubagentParentCwd(file.path);
+  const isSubagent = subagentCoercedCwd !== null || path3.basename(path3.dirname(file.path)) === "subagents";
+  let sessionProjectPath = subagentCoercedCwd;
+  let sessionEntrypoint = null;
   const rl = readline.createInterface({
     input: fs4.createReadStream(file.path, { encoding: "utf-8" }),
     crlfDelay: Infinity
@@ -33747,7 +33789,19 @@ async function* parse(file) {
     } catch (_) {
       continue;
     }
-    const projectPath = decodeProjectPathFromCwd(rec["cwd"], projectDir);
+    if (sessionEntrypoint === null) {
+      const ep = rec["entrypoint"];
+      if (typeof ep === "string" && ep.length > 0) {
+        sessionEntrypoint = ep;
+      }
+    }
+    if (sessionProjectPath === null) {
+      const recCwd = rec["cwd"];
+      if (typeof recCwd === "string" && recCwd.length > 0) {
+        sessionProjectPath = recCwd;
+      }
+    }
+    const projectPath = sessionProjectPath ?? decodeProjectPathFromCwd(rec["cwd"], projectDir);
     const projectName = projectNameFromPath(projectPath);
     const ts = parseTimestampMs(rec["timestamp"]);
     const out = recordToRows(rec);
@@ -33766,7 +33820,9 @@ async function* parse(file) {
         parentUuid: r.parent_uuid,
         subtype: r.type === "system" && typeof rec["subtype"] === "string" ? rec["subtype"] : void 0,
         gitBranch: typeof rec["gitBranch"] === "string" ? rec["gitBranch"] : void 0,
-        attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : void 0
+        attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : void 0,
+        isSubagent,
+        entrypoint: sessionEntrypoint ?? void 0
       };
     }
   }
@@ -33778,6 +33834,9 @@ import * as childProc from "node:child_process";
 function buildClaudeArgs(action, row, savedName) {
   const id = row.sessionId;
   const name = typeof savedName === "string" && savedName.length > 0 ? savedName : null;
+  if (action === "newchat") {
+    return name ? ["--name", name] : [];
+  }
   if (action === "remote-control") {
     return name ? ["--remote-control", name, "--resume", id] : ["--remote-control", "--resume", id];
   }
@@ -33968,7 +34027,7 @@ var claudeSource = {
   discover,
   parse,
   resume: {
-    actions: ["resume", "fork", "dangerous", "remote-control", "tmux-window"],
+    actions: ["resume", "fork", "dangerous", "remote-control", "tmux-window", "newchat"],
     spawn(row, action, opts) {
       if (action === "tmux-window") return spawnTmuxNewWindow(row, opts);
       return spawnClaude(row, action, opts);
@@ -34036,7 +34095,7 @@ async function indexFile(db, source, file) {
     "DELETE FROM messages WHERE source = ? AND conversation_id = ?"
   ).run(source.id, conversationId);
   const insert = db.prepare(
-    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source, subtype, git_branch, attribution_skill) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source, subtype, git_branch, attribution_skill, is_subagent, entrypoint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
   const blockCounters = /* @__PURE__ */ new Map();
   let rows = 0;
@@ -34061,7 +34120,9 @@ async function indexFile(db, source, file) {
           source.id,
           row.subtype ?? null,
           row.gitBranch ?? null,
-          row.attributionSkill ?? null
+          row.attributionSkill ?? null,
+          row.isSubagent ? 1 : 0,
+          row.entrypoint ?? null
         );
         rows++;
       } catch (_) {
@@ -34366,6 +34427,8 @@ FROM messages_fts
 JOIN messages m ON m.id = messages_fts.id
 WHERE messages_fts MATCH ?
   AND ${typeSql}
+  AND m.is_subagent = 0
+  AND (m.entrypoint IS NULL OR m.entrypoint = 'cli')
   ${whereExtraSql}
 ORDER BY bm25(messages_fts)
 LIMIT ?
@@ -34382,6 +34445,7 @@ LIMIT ?
     const key = `${r.source}:${r.conversation_id}`;
     if (seen.has(key)) continue;
     seen.set(key, {
+      kind: "chat",
       source: r.source,
       sessionId: r.conversation_id,
       projectPath: r.project_path || "",
@@ -34431,6 +34495,7 @@ ORDER BY bm25(messages_fts)
     if (seen.has(key)) continue;
     if (!r.content || !pattern.test(r.content)) continue;
     seen.set(key, {
+      kind: "chat",
       source: r.source,
       sessionId: r.conversation_id,
       projectPath: r.project_path || "",
@@ -34485,6 +34550,7 @@ ORDER BY m.timestamp DESC
     const suffix = end < r.content.length ? "\u2026" : "";
     const snippet = prefix + r.content.slice(start, matchIdx) + SNIPPET_OPEN + r.content.slice(matchIdx, matchIdx + m[0].length) + SNIPPET_CLOSE + r.content.slice(matchIdx + m[0].length, end) + suffix;
     seen.set(key, {
+      kind: "chat",
       source: r.source,
       sessionId: r.conversation_id,
       projectPath: r.project_path || "",
@@ -34555,6 +34621,369 @@ function renderTsv(results) {
   return out.length ? out.join("\n") + "\n" : "";
 }
 
+// src/core/render/markdown.ts
+function renderMarkdown(input) {
+  const { rows, query } = input;
+  if (rows.length === 0) {
+    return "no matches\n";
+  }
+  const out = [];
+  const suffix = query.length > 0 ? ` matching "${query}"` : "";
+  const recentTag = query.length > 0 ? "" : ", recent activity";
+  let i = 0;
+  while (i < rows.length) {
+    const row = rows[i];
+    if (row.kind !== "project") {
+      if (row.kind === "chat") {
+        const synthetic = {
+          kind: "project",
+          projectPath: row.projectPath,
+          projectName: row.projectName,
+          chatCount: 1,
+          lastActivity: row.lastActivity,
+          topChatTitles: []
+        };
+        const { rendered: rendered2, advancedBy: advancedBy2 } = renderProjectSection(synthetic, rows, i, suffix, recentTag);
+        out.push(...rendered2);
+        i += advancedBy2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    const { rendered, advancedBy } = renderProjectSection(row, rows, i, suffix, recentTag);
+    out.push(...rendered);
+    i += advancedBy;
+  }
+  return out.join("\n");
+}
+function renderProjectSection(proj, rows, startIdx, suffix, recentTag) {
+  const out = [];
+  const date = fmtDate(proj.lastActivity);
+  const count = `${proj.chatCount} chat${proj.chatCount === 1 ? "" : "s"}`;
+  const matchHint = suffix.length > 0 ? `${count}${suffix}` : count;
+  out.push(`## ${proj.projectPath} \u2014 ${matchHint}, last activity ${date}${recentTag === "" ? "" : ""}`);
+  out.push("");
+  out.push(`New chat here: \`(cd ${shellQuote(proj.projectPath)} && claude)\``);
+  out.push("");
+  let i = startIdx + 1;
+  let chatNumber = 0;
+  while (i < rows.length && rows[i].kind !== "project") {
+    const child = rows[i];
+    if (child.kind === "chat") {
+      chatNumber++;
+      out.push(...renderChatEntry(child, chatNumber));
+    } else if (child.kind === "more") {
+      out.push(`(${child.remainingCount} more)`);
+      out.push("");
+    }
+    i++;
+  }
+  return { rendered: out, advancedBy: i - startIdx };
+}
+function renderChatEntry(c, ordinal) {
+  const out = [];
+  const date = fmtDate(c.lastActivity);
+  const branch = c.gitBranch ? ` (${c.gitBranch})` : "";
+  const title = c.title ?? c.sessionId.slice(0, 8);
+  out.push(`${ordinal}. **${title}** \u2014 ${date} \xB7 ${c.msgCount} msgs${branch}`);
+  if (c.recapText) {
+    const oneLine = c.recapText.replace(/\n+/g, " ").trim();
+    out.push(`   - recap: ${oneLine}`);
+  } else if (c.snippet) {
+    const oneLine = c.snippet.replace(/<<<|>>>/g, "").replace(/\s+/g, " ").trim();
+    if (oneLine.length > 0) out.push(`   - snippet: ${oneLine}`);
+  }
+  out.push(`   - Resume: \`${resumeOneLiner(c)}\``);
+  out.push("");
+  return out;
+}
+
+// src/core/search/recap.ts
+var RECAP_MAX_LINES = 5;
+var ANSI_RE = new RegExp(String.fromCharCode(27) + "\\[[0-?]*[ -/]*[@-~]", "g");
+function getRecapText(db, conversationId, source) {
+  const lastUserTs = db.prepare(
+    "SELECT COALESCE(MAX(timestamp), 0) AS ts FROM messages WHERE conversation_id = ? AND source = ? AND type = 'user'"
+  ).get(conversationId, source);
+  const summary = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'system' AND subtype = 'away_summary' AND timestamp > ? ORDER BY timestamp DESC LIMIT 1"
+  ).get(conversationId, source, lastUserTs?.ts ?? 0);
+  if (summary?.content) return summary.content;
+  const assistant = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'assistant' ORDER BY timestamp DESC LIMIT 1"
+  ).get(conversationId, source);
+  if (!assistant?.content) return "";
+  return headLines(assistant.content, RECAP_MAX_LINES);
+}
+function headLines(text, n) {
+  const cleaned = text.replace(ANSI_RE, "");
+  const out = [];
+  for (const raw of cleaned.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    out.push(line);
+    if (out.length >= n) break;
+  }
+  return out.join("\n");
+}
+
+// src/core/search/recent.ts
+var WRAPPER_TAGS = /* @__PURE__ */ new Set([
+  "command-name",
+  "command-message",
+  "command-args",
+  "local-command-stdout",
+  "local-command-stderr",
+  "local-command-caveat",
+  "stdin",
+  "bash-input",
+  "bash-stdout",
+  "bash-stderr",
+  "task-notification",
+  "system-reminder"
+]);
+function isWrapperContent(s) {
+  if (!s) return true;
+  const trimmed = s.replace(/^\s+/, "");
+  const m = trimmed.match(/^<([a-zA-Z0-9_-]+)>/);
+  if (!m) return false;
+  return WRAPPER_TAGS.has(m[1]);
+}
+function synthesizeTitle(rawContent) {
+  if (!rawContent) return null;
+  const firstLine = rawContent.split("\n", 1)[0].replace(/\s+/g, " ").trim();
+  if (firstLine.length === 0) return null;
+  const CAP = 80;
+  return firstLine.length > CAP ? firstLine.slice(0, CAP) + "\u2026" : firstLine;
+}
+function normalizeTailContent(rawContent) {
+  if (!rawContent) return "";
+  const ESC2 = String.fromCharCode(27);
+  const ansiRe = new RegExp(ESC2 + "\\[[0-?]*[ -/]*[@-~]", "g");
+  let s = rawContent.replace(ansiRe, "");
+  s = s.replace(/\s+/g, " ").trim();
+  if (s.length > 240) s = s.slice(0, 240);
+  return s;
+}
+function recentConversations(db, opts) {
+  const { limit, projectFilter, exactProjectPath, sessionStore } = opts;
+  let projectExtra = "";
+  let projectParams = [];
+  if (exactProjectPath) {
+    projectExtra = "AND project_path = ?";
+    projectParams = [exactProjectPath];
+  } else if (projectFilter) {
+    projectExtra = "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)";
+    projectParams = [
+      "%" + String(projectFilter).toLowerCase() + "%",
+      "%" + String(projectFilter).toLowerCase() + "%"
+    ];
+  }
+  const recentSql = `
+SELECT
+  conversation_id AS conversation_id,
+  MAX(source) AS source,
+  MAX(project_path) AS project_path,
+  MAX(project_name) AS project_name,
+  MAX(timestamp) AS last_ts,
+  COUNT(*) AS msg_count
+FROM messages
+WHERE type IN ('user', 'assistant')
+  AND is_subagent = 0
+  AND (entrypoint IS NULL OR entrypoint = 'cli')
+${projectExtra}
+GROUP BY conversation_id
+ORDER BY last_ts DESC
+LIMIT ?
+`;
+  const recent = db.prepare(recentSql).all(...projectParams, Math.max(1, limit | 0));
+  if (!recent.length) return [];
+  const titleStmt = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"
+  );
+  const tailStmt = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND type IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT 1"
+  );
+  const metaStmt = db.prepare(
+    "SELECT git_branch, attribution_skill FROM messages WHERE conversation_id = ? ORDER BY timestamp DESC LIMIT 1"
+  );
+  const namesMap = sessionStore && sessionStore.names || {};
+  const results = [];
+  for (const conv of recent) {
+    const source = conv.source || "claude";
+    const nameKey = `${source}:${conv.conversation_id}`;
+    let title = null;
+    const saved = namesMap[nameKey];
+    if (typeof saved === "string" && saved.length > 0) {
+      title = saved;
+    } else {
+      const candidates = titleStmt.all(conv.conversation_id);
+      for (const c of candidates) {
+        if (!c.content) continue;
+        if (isWrapperContent(c.content)) continue;
+        title = synthesizeTitle(c.content);
+        if (title) break;
+      }
+    }
+    const tailRow = tailStmt.get(conv.conversation_id);
+    const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
+    const recapText = getRecapText(db, conv.conversation_id, source);
+    const metaRow = metaStmt.get(conv.conversation_id);
+    results.push({
+      kind: "chat",
+      source,
+      sessionId: conv.conversation_id,
+      projectPath: conv.project_path || "",
+      projectName: conv.project_name || "",
+      lastActivity: conv.last_ts || 0,
+      msgCount: conv.msg_count || 0,
+      snippet: tail,
+      score: 0,
+      title,
+      recapText,
+      gitBranch: metaRow?.git_branch ?? null,
+      skill: metaRow?.attribution_skill ?? null
+    });
+  }
+  return applyPinOrdering(results, sessionStore, Math.max(1, limit | 0));
+}
+
+// src/core/search/projects.ts
+function searchProjects(db, opts) {
+  const { limit, projectFilter } = opts;
+  const filterClause = projectFilter ? "AND (LOWER(project_path) LIKE ? OR LOWER(project_name) LIKE ?)" : "";
+  const filterParams = projectFilter ? [
+    "%" + projectFilter.toLowerCase() + "%",
+    "%" + projectFilter.toLowerCase() + "%"
+  ] : [];
+  const visibleSessionFilter = "is_subagent = 0 AND (entrypoint IS NULL OR entrypoint = 'cli')";
+  const aggSql = `
+SELECT
+  project_path,
+  MAX(project_name) AS project_name,
+  COUNT(DISTINCT conversation_id) AS chat_count,
+  MAX(timestamp) AS last_activity
+FROM messages
+WHERE type IN ('user', 'assistant') AND ${visibleSessionFilter}
+${filterClause}
+GROUP BY project_path
+ORDER BY last_activity DESC
+LIMIT ?
+`;
+  const rows = db.prepare(aggSql).all(...filterParams, Math.max(1, limit | 0));
+  const topStmt = db.prepare(
+    `SELECT conversation_id FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') AND ${visibleSessionFilter} GROUP BY conversation_id ORDER BY MAX(timestamp) DESC LIMIT 3`
+  );
+  const titleStmt = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"
+  );
+  const out = [];
+  for (const r of rows) {
+    const tops = topStmt.all(r.project_path);
+    const titles = [];
+    for (const t of tops) {
+      const cands = titleStmt.all(t.conversation_id);
+      let title = null;
+      for (const c of cands) {
+        if (!c.content) continue;
+        if (isWrapperContent(c.content)) continue;
+        title = synthesizeTitle(c.content);
+        if (title) break;
+      }
+      titles.push(title ?? t.conversation_id.slice(0, 8));
+    }
+    out.push({
+      kind: "project",
+      projectPath: r.project_path,
+      projectName: r.project_name ?? r.project_path.split("/").pop() ?? "?",
+      chatCount: r.chat_count,
+      lastActivity: r.last_activity ?? 0,
+      topChatTitles: titles
+    });
+  }
+  return out;
+}
+
+// src/core/search/unified.ts
+var HOME_PROJECTS_LIMIT = 30;
+var SEARCH_PROJECTS_LIMIT = 100;
+var HOME_CHATS_PER_PROJECT = 3;
+var MIN_CHATS_ON_NAME_HIT = 3;
+var PADDING_LOOKAHEAD = 10;
+function buildProjectGroups(db, args, sessionStore) {
+  const query = args.query.trim();
+  const isHome = query.length === 0;
+  const projects = searchProjects(db, {
+    limit: isHome ? HOME_PROJECTS_LIMIT : SEARCH_PROJECTS_LIMIT,
+    projectFilter: null
+  });
+  const matchingChatsByProject = /* @__PURE__ */ new Map();
+  if (!isHome) {
+    const matches = ftsSearch(db, { ...args, sessionStore });
+    for (const c of matches) {
+      let arr = matchingChatsByProject.get(c.projectPath);
+      if (!arr) {
+        arr = [];
+        matchingChatsByProject.set(c.projectPath, arr);
+      }
+      arr.push(c);
+    }
+  }
+  const out = [];
+  const lowerQuery = query.toLowerCase();
+  for (const proj of projects) {
+    const chats = chatsForProject({
+      db,
+      proj,
+      isHome,
+      query,
+      lowerQuery,
+      sessionStore,
+      matches: matchingChatsByProject.get(proj.projectPath) ?? []
+    });
+    if (chats.length === 0) continue;
+    out.push(proj);
+    out.push(...chats);
+    const remaining = proj.chatCount - chats.length;
+    if (remaining > 0) {
+      out.push({
+        kind: "more",
+        projectPath: proj.projectPath,
+        remainingCount: remaining
+      });
+    }
+  }
+  return out;
+}
+function chatsForProject(opts) {
+  const { db, proj, isHome, lowerQuery, sessionStore, matches } = opts;
+  if (isHome) {
+    return recentConversations(db, {
+      limit: HOME_CHATS_PER_PROJECT,
+      projectFilter: null,
+      exactProjectPath: proj.projectPath,
+      sessionStore
+    });
+  }
+  const nameHit = proj.projectPath.toLowerCase().includes(lowerQuery) || proj.projectName.toLowerCase().includes(lowerQuery);
+  if (!nameHit) {
+    return matches;
+  }
+  if (matches.length >= MIN_CHATS_ON_NAME_HIT) {
+    return matches;
+  }
+  const matchIds = new Set(matches.map((m) => m.sessionId));
+  const recent = recentConversations(db, {
+    limit: PADDING_LOOKAHEAD,
+    projectFilter: null,
+    exactProjectPath: proj.projectPath,
+    sessionStore
+  });
+  const padding = recent.filter((r) => !matchIds.has(r.sessionId)).slice(0, MIN_CHATS_ON_NAME_HIT - matches.length);
+  return [...matches, ...padding];
+}
+
 // src/tui/lib/box.ts
 var ROUNDED = {
   topLeft: "\u256D",
@@ -34589,9 +35018,9 @@ function renderPreview(db, sessionId, source, useColor) {
   const bold = useColor ? ANSI_BOLD : "";
   const dim = useColor ? ANSI_DIM : "";
   const reset = useColor ? ANSI_RESET : "";
-  const W = 70;
+  const W2 = 70;
   const box = pickBox(!useColor);
-  const horiz = box.horizontal.repeat(W - 2);
+  const horiz = box.horizontal.repeat(W2 - 2);
   const lines = [];
   lines.push(`${dim}${box.topLeft}${horiz}${box.topRight}${reset}
 `);
@@ -34634,17 +35063,51 @@ var initialState = {
   renameBuffer: "",
   dims: { cols: 80, rows: 24 }
 };
+function isCursorTarget(row) {
+  return row.kind === "chat" || row.kind === "project";
+}
+function nextSelectableIdx(results, from, dir) {
+  if (results.length === 0) return 0;
+  let i = from + dir;
+  while (i >= 0 && i < results.length) {
+    if (isCursorTarget(results[i])) return i;
+    i += dir;
+  }
+  return from;
+}
+function firstSelectableIdx(results) {
+  for (let i = 0; i < results.length; i++) {
+    if (isCursorTarget(results[i])) return i;
+  }
+  return 0;
+}
 function reducer(state, action) {
   switch (action.type) {
     case "set-query":
       return { ...state, query: action.query, cursor: 0 };
     case "set-results": {
-      const cursor = Math.min(state.cursor, Math.max(0, action.results.length - 1));
-      return { ...state, results: action.results, resultsError: action.error ?? null, cursor };
+      const initial = Math.min(state.cursor, Math.max(0, action.results.length - 1));
+      const targetUnselectable = action.results.length > 0 && !isCursorTarget(action.results[initial]);
+      const cursor = targetUnselectable || initial === 0 ? firstSelectableIdx(action.results) : initial;
+      return {
+        ...state,
+        results: action.results,
+        resultsError: action.error ?? null,
+        cursor
+      };
     }
     case "move-cursor": {
       if (!state.results.length) return state;
-      const next = Math.max(0, Math.min(state.results.length - 1, state.cursor + action.delta));
+      if (action.delta === 0) return state;
+      const dir = action.delta > 0 ? 1 : -1;
+      let next = state.cursor;
+      const steps = Math.abs(action.delta);
+      for (let s = 0; s < steps; s++) {
+        const candidate = nextSelectableIdx(state.results, next, dir);
+        if (candidate === next) break;
+        next = candidate;
+      }
+      next = Math.max(0, Math.min(state.results.length - 1, next));
       return { ...state, cursor: next };
     }
     case "enter-rename":
@@ -34753,6 +35216,12 @@ function wrapToWidth(s, width) {
 // src/tui/state/keybindings.ts
 function hasResumeAction(deps, row, action) {
   if (!row) return false;
+  if (row.kind === "more") return false;
+  if (row.kind === "project") {
+    if (action !== "newchat") return false;
+    const src2 = deps.getSource("claude");
+    return !!src2?.resume?.actions.includes(action);
+  }
   const src = deps.getSource(row.source);
   return !!src?.resume?.actions.includes(action);
 }
@@ -34779,6 +35248,17 @@ var BINDINGS = [
     longHelp: "Spawn `claude --remote-control [name] --resume <id>` for the selected row."
   },
   {
+    keys: ["N"],
+    label: "new-chat",
+    category: "action",
+    visible: (d, r) => {
+      if (!r) return false;
+      if (r.kind === "more") return false;
+      return hasResumeAction(d, r, "newchat");
+    },
+    longHelp: "Spawn `claude` (no --resume) in the row's project directory. Works on chat rows (uses the chat's project) and on project rows."
+  },
+  {
     keys: ["Ctrl-W"],
     label: "tmux-window",
     category: "action",
@@ -34789,14 +35269,14 @@ var BINDINGS = [
     keys: ["Ctrl-R"],
     label: "rename",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat",
     longHelp: "Rename the selected conversation. Saved in ~/.config/krmrn42-skills/chat-search/sessions.json."
   },
   {
     keys: ["Ctrl-P"],
     label: "pin",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat",
     longHelp: "Pin/unpin the selected conversation to the top of the picker list."
   },
   {
@@ -34810,14 +35290,14 @@ var BINDINGS = [
     keys: ["Ctrl-O"],
     label: "print id",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat",
     longHelp: "Print the row's session id to stdout and exit. Useful for piping."
   },
   {
     keys: ["Ctrl-D"],
     label: "print path",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat" || r?.kind === "project",
     longHelp: "Print the row's project path to stdout and exit."
   },
   {
@@ -34882,76 +35362,150 @@ function StatusBar({ deps, selectedRow, cols }) {
 
 // src/tui/components/ResultList.tsx
 var import_react24 = __toESM(require_react(), 1);
+var CHAT_ROW_HEIGHT = 3;
+var PROJECT_ROW_HEIGHT = 2;
+var MORE_ROW_HEIGHT = 1;
+var CHILD_INDENT = "  ";
+function rowHeight(row) {
+  if (row.kind === "project") return PROJECT_ROW_HEIGHT;
+  if (row.kind === "more") return MORE_ROW_HEIGHT;
+  return CHAT_ROW_HEIGHT;
+}
 function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
   if (!results.length) {
     return /* @__PURE__ */ import_react24.default.createElement(Box_default, null, /* @__PURE__ */ import_react24.default.createElement(Text, { dimColor: true }, "(no results)"));
   }
-  let firstUnpinnedIdx = -1;
+  let firstUnpinnedChatIdx = -1;
   for (let i = 0; i < results.length; i++) {
-    if (!results[i].isPinned) {
-      firstUnpinnedIdx = i;
+    const r = results[i];
+    if (r.kind === "chat" && !r.isPinned) {
+      firstUnpinnedChatIdx = i;
       break;
     }
   }
-  const hasDivider = results.length > 0 && firstUnpinnedIdx > 0 && firstUnpinnedIdx < results.length;
-  const dividerText = "\u2500\u2500 recent \u2500\u2500";
-  const rowsPerResult = 3;
-  const usableHeight = hasDivider ? maxRows - 1 : maxRows;
-  const maxVisible = Math.max(1, Math.floor(usableHeight / rowsPerResult));
-  let scrollOffset = 0;
-  if (cursor < scrollOffset) scrollOffset = cursor;
-  if (cursor >= scrollOffset + maxVisible) scrollOffset = cursor - maxVisible + 1;
-  scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, results.length - maxVisible)));
-  const visible = results.slice(scrollOffset, scrollOffset + maxVisible);
+  const hasPinDivider = (() => {
+    if (firstUnpinnedChatIdx <= 0) return false;
+    for (let i = 0; i < firstUnpinnedChatIdx; i++) {
+      const r = results[i];
+      if (r.kind === "chat" && r.isPinned) return true;
+    }
+    return false;
+  })();
+  let scrollOffset = Math.max(0, Math.min(cursor, results.length - 1));
+  let used = rowHeight(results[scrollOffset]);
+  while (scrollOffset > 0) {
+    const prevHeight = rowHeight(results[scrollOffset - 1]);
+    if (used + prevHeight + (hasPinDivider ? 1 : 0) > maxRows) break;
+    scrollOffset--;
+    used += prevHeight;
+  }
   const pinMarker = noColor ? "* " : "\u{1F4CC} ";
+  const projectMarker = noColor ? "[proj] " : "\u{1F4C1} ";
+  const chatMarker = noColor ? "[chat] " : "\u{1F4AC} ";
   const cursorPrefix = "\u258C ";
   const blankPrefix = "  ";
+  const dividerText = "\u2500\u2500 recent \u2500\u2500";
   const nodes = [];
-  let dividerWritten = false;
-  for (let i = 0; i < visible.length; i++) {
-    const idx = scrollOffset + i;
-    const r = visible[i];
-    const isCur = idx === cursor;
-    const isPinned = !!r.isPinned;
-    if (hasDivider && !dividerWritten && idx === firstUnpinnedIdx && scrollOffset < firstUnpinnedIdx) {
-      nodes.push(
-        /* @__PURE__ */ import_react24.default.createElement(Text, { key: `div-${i}`, dimColor: true }, dividerText)
-      );
-      dividerWritten = true;
+  let pinDividerWritten = false;
+  let consumed = 0;
+  for (let i = scrollOffset; i < results.length; i++) {
+    const row = results[i];
+    const isCur = i === cursor;
+    const h = rowHeight(row);
+    if (consumed + h > maxRows) break;
+    if (hasPinDivider && !pinDividerWritten && i === firstUnpinnedChatIdx && scrollOffset < firstUnpinnedChatIdx && consumed + 1 <= maxRows) {
+      nodes.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `pin-div-${i}`, dimColor: true }, dividerText));
+      pinDividerWritten = true;
+      consumed += 1;
     }
-    const proj = projectDisplay(r.projectPath, r.projectName);
-    const date = fmtDate(r.lastActivity);
-    const sid = shortSession(r.sessionId);
-    const msgs = String(r.msgCount).padStart(4);
-    const headBody = r.title ? `${r.title} \xB7 ${proj}  ${date}  ${msgs} msgs  ${sid}` : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
-    const pinPart = isPinned ? pinMarker : "";
-    const head = pinPart + headBody;
-    const headTrunc = truncateToWidth(head, listWidth - 2);
-    const snippetText = colorizeSnippet(r.snippet || "", !noColor);
-    const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4) : "";
-    const dim = dimRows;
-    nodes.push(
-      /* @__PURE__ */ import_react24.default.createElement(Text, { key: "h-" + i, bold: isCur && !dimRows, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
-    );
-    const metaParts = [];
-    if (r.gitBranch) metaParts.push("(" + r.gitBranch + ")");
-    if (r.skill) metaParts.push(r.skill);
-    if (metaParts.length > 0) {
-      const metaText = truncateToWidth(metaParts.join(" \xB7 "), listWidth - 4);
-      nodes.push(
-        /* @__PURE__ */ import_react24.default.createElement(Text, { key: "m-" + i, dimColor: true }, "    ", metaText)
-      );
+    if (row.kind === "project") {
+      nodes.push(...renderProjectHeader(
+        row,
+        i,
+        isCur,
+        listWidth,
+        dimRows,
+        projectMarker,
+        cursorPrefix,
+        blankPrefix
+      ));
+      consumed += PROJECT_ROW_HEIGHT;
+      continue;
     }
-    const previewLine = snipTrunc || (r.recapText ? truncateToWidth("recap: " + r.recapText.replace(/\n/g, " \u23CE "), listWidth - 4) : "");
-    if (previewLine) {
-      nodes.push(
-        /* @__PURE__ */ import_react24.default.createElement(Text, { key: "s-" + i, dimColor: true }, "    ", previewLine)
-      );
-    } else {
-      nodes.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: "s-" + i }, ""));
+    if (row.kind === "more") {
+      nodes.push(renderMoreRow(row, i, listWidth));
+      consumed += MORE_ROW_HEIGHT;
+      continue;
     }
+    nodes.push(...renderChatRow(
+      row,
+      i,
+      isCur,
+      noColor,
+      listWidth,
+      dimRows,
+      pinMarker,
+      chatMarker,
+      cursorPrefix,
+      blankPrefix
+    ));
+    consumed += CHAT_ROW_HEIGHT;
   }
   return /* @__PURE__ */ import_react24.default.createElement(Box_default, { flexDirection: "column" }, nodes);
+}
+function renderProjectHeader(row, key, isCur, listWidth, dim, marker, cursorPrefix, blankPrefix) {
+  const date = fmtDate(row.lastActivity);
+  const count = `${row.chatCount} chat${row.chatCount === 1 ? "" : "s"}`;
+  const head = `${marker}${row.projectPath}  ${count}  ${date}`;
+  const headTrunc = truncateToWidth(head, listWidth - 2);
+  const second = row.topChatTitles.length > 0 ? truncateToWidth(row.topChatTitles.join(" \xB7 "), listWidth - 4) : "";
+  const out = [];
+  out.push(
+    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `p-h-${key}`, bold: isCur && !dim, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
+  );
+  out.push(
+    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `p-s-${key}`, dimColor: true }, "    ", second)
+  );
+  return out;
+}
+function renderMoreRow(row, key, listWidth) {
+  const text = truncateToWidth(
+    `${CHILD_INDENT}  ${row.remainingCount} more`,
+    listWidth - 2
+  );
+  return /* @__PURE__ */ import_react24.default.createElement(Text, { key: `m-${key}`, dimColor: true }, text);
+}
+function renderChatRow(row, key, isCur, noColor, listWidth, dim, pinMarker, chatMarker, cursorPrefix, blankPrefix) {
+  const proj = projectDisplay(row.projectPath, row.projectName);
+  const date = fmtDate(row.lastActivity);
+  const sid = shortSession(row.sessionId);
+  const msgs = String(row.msgCount).padStart(4);
+  const headBody = row.title ? `${row.title}  ${date}  ${msgs} msgs  ${sid}` : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
+  const pinPart = row.isPinned ? pinMarker : chatMarker;
+  const head = pinPart + headBody;
+  const headTrunc = truncateToWidth(head, listWidth - 2 - CHILD_INDENT.length);
+  const snippetText = colorizeSnippet(row.snippet || "", !noColor);
+  const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4 - CHILD_INDENT.length) : "";
+  const metaParts = [];
+  if (row.gitBranch) metaParts.push("(" + row.gitBranch + ")");
+  if (row.skill) metaParts.push(row.skill);
+  const metaText = metaParts.length > 0 ? truncateToWidth(metaParts.join(" \xB7 "), listWidth - 4 - CHILD_INDENT.length) : "";
+  const previewLine = snipTrunc || (row.recapText ? truncateToWidth("recap: " + row.recapText.replace(/\n/g, " \u23CE "), listWidth - 4 - CHILD_INDENT.length) : "");
+  const out = [];
+  out.push(
+    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-h-${key}`, bold: isCur && !dim, dimColor: dim }, CHILD_INDENT, isCur ? cursorPrefix : blankPrefix, headTrunc)
+  );
+  if (metaText) {
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-m-${key}`, dimColor: true }, CHILD_INDENT, "    ", metaText));
+  } else {
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-m-${key}` }, ""));
+  }
+  if (previewLine) {
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-s-${key}`, dimColor: true }, CHILD_INDENT, "    ", previewLine));
+  } else {
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-s-${key}` }, ""));
+  }
+  return out;
 }
 
 // src/tui/components/PreviewPane.tsx
@@ -34987,150 +35541,7 @@ function RenameModal() {
 
 // src/tui/hooks/useSearch.ts
 var import_react28 = __toESM(require_react(), 1);
-
-// src/core/search/recap.ts
-var RECAP_MAX_LINES = 5;
-var ANSI_RE = new RegExp(String.fromCharCode(27) + "\\[[0-?]*[ -/]*[@-~]", "g");
-function getRecapText(db, conversationId, source) {
-  const lastUserTs = db.prepare(
-    "SELECT COALESCE(MAX(timestamp), 0) AS ts FROM messages WHERE conversation_id = ? AND source = ? AND type = 'user'"
-  ).get(conversationId, source);
-  const summary = db.prepare(
-    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'system' AND subtype = 'away_summary' AND timestamp > ? ORDER BY timestamp DESC LIMIT 1"
-  ).get(conversationId, source, lastUserTs?.ts ?? 0);
-  if (summary?.content) return summary.content;
-  const assistant = db.prepare(
-    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'assistant' ORDER BY timestamp DESC LIMIT 1"
-  ).get(conversationId, source);
-  if (!assistant?.content) return "";
-  return headLines(assistant.content, RECAP_MAX_LINES);
-}
-function headLines(text, n) {
-  const cleaned = text.replace(ANSI_RE, "");
-  const out = [];
-  for (const raw of cleaned.split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    out.push(line);
-    if (out.length >= n) break;
-  }
-  return out.join("\n");
-}
-
-// src/core/search/recent.ts
-var WRAPPER_TAGS = /* @__PURE__ */ new Set([
-  "command-name",
-  "command-message",
-  "command-args",
-  "local-command-stdout",
-  "local-command-stderr",
-  "local-command-caveat",
-  "stdin",
-  "bash-input",
-  "bash-stdout",
-  "bash-stderr",
-  "task-notification",
-  "system-reminder"
-]);
-function isWrapperContent(s) {
-  if (!s) return true;
-  const trimmed = s.replace(/^\s+/, "");
-  const m = trimmed.match(/^<([a-zA-Z0-9_-]+)>/);
-  if (!m) return false;
-  return WRAPPER_TAGS.has(m[1]);
-}
-function synthesizeTitle(rawContent) {
-  if (!rawContent) return null;
-  const firstLine = rawContent.split("\n", 1)[0].replace(/\s+/g, " ").trim();
-  if (firstLine.length === 0) return null;
-  const CAP = 80;
-  return firstLine.length > CAP ? firstLine.slice(0, CAP) + "\u2026" : firstLine;
-}
-function normalizeTailContent(rawContent) {
-  if (!rawContent) return "";
-  const ESC2 = String.fromCharCode(27);
-  const ansiRe = new RegExp(ESC2 + "\\[[0-?]*[ -/]*[@-~]", "g");
-  let s = rawContent.replace(ansiRe, "");
-  s = s.replace(/\s+/g, " ").trim();
-  if (s.length > 240) s = s.slice(0, 240);
-  return s;
-}
-function recentConversations(db, opts) {
-  const { limit, projectFilter, sessionStore } = opts;
-  const projectExtra = projectFilter ? "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)" : "";
-  const projectParams = projectFilter ? [
-    "%" + String(projectFilter).toLowerCase() + "%",
-    "%" + String(projectFilter).toLowerCase() + "%"
-  ] : [];
-  const recentSql = `
-SELECT
-  conversation_id AS conversation_id,
-  MAX(source) AS source,
-  MAX(project_path) AS project_path,
-  MAX(project_name) AS project_name,
-  MAX(timestamp) AS last_ts,
-  COUNT(*) AS msg_count
-FROM messages
-WHERE type IN ('user', 'assistant')
-${projectExtra}
-GROUP BY conversation_id
-ORDER BY last_ts DESC
-LIMIT ?
-`;
-  const recent = db.prepare(recentSql).all(...projectParams, Math.max(1, limit | 0));
-  if (!recent.length) return [];
-  const titleStmt = db.prepare(
-    "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"
-  );
-  const tailStmt = db.prepare(
-    "SELECT content FROM messages WHERE conversation_id = ? AND type IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT 1"
-  );
-  const metaStmt = db.prepare(
-    "SELECT git_branch, attribution_skill FROM messages WHERE conversation_id = ? ORDER BY timestamp DESC LIMIT 1"
-  );
-  const namesMap = sessionStore && sessionStore.names || {};
-  const results = [];
-  for (const conv of recent) {
-    const source = conv.source || "claude";
-    const nameKey = `${source}:${conv.conversation_id}`;
-    let title = null;
-    const saved = namesMap[nameKey];
-    if (typeof saved === "string" && saved.length > 0) {
-      title = saved;
-    } else {
-      const candidates = titleStmt.all(conv.conversation_id);
-      for (const c of candidates) {
-        if (!c.content) continue;
-        if (isWrapperContent(c.content)) continue;
-        title = synthesizeTitle(c.content);
-        if (title) break;
-      }
-    }
-    const tailRow = tailStmt.get(conv.conversation_id);
-    const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
-    const recapText = getRecapText(db, conv.conversation_id, source);
-    const metaRow = metaStmt.get(conv.conversation_id);
-    results.push({
-      source,
-      sessionId: conv.conversation_id,
-      projectPath: conv.project_path || "",
-      projectName: conv.project_name || "",
-      lastActivity: conv.last_ts || 0,
-      msgCount: conv.msg_count || 0,
-      snippet: tail,
-      score: 0,
-      title,
-      recapText,
-      gitBranch: metaRow?.git_branch ?? null,
-      skill: metaRow?.attribution_skill ?? null
-    });
-  }
-  return applyPinOrdering(results, sessionStore, Math.max(1, limit | 0));
-}
-
-// src/tui/hooks/useSearch.ts
 function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
-  const recentCache = (0, import_react28.useRef)(null);
   const timer = (0, import_react28.useRef)(null);
   (0, import_react28.useEffect)(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -35138,18 +35549,7 @@ function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
     timer.current = setTimeout(() => {
       onPending(false);
       try {
-        if (!query.trim()) {
-          if (recentCache.current === null) {
-            recentCache.current = recentConversations(db, {
-              limit: args.limit,
-              projectFilter: args.project,
-              sessionStore
-            });
-          }
-          onResults(recentCache.current);
-          return;
-        }
-        const rows = ftsSearch(db, { ...args, query, sessionStore });
+        const rows = buildProjectGroups(db, { ...args, query }, sessionStore);
         onResults(rows);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -35164,6 +35564,77 @@ function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
 
 // src/tui/hooks/usePreview.ts
 var import_react29 = __toESM(require_react(), 1);
+
+// src/core/render/project-preview.ts
+var W = 70;
+var RECENT_LIMIT = 5;
+function renderProjectPreview(db, proj, useColor) {
+  const bold = useColor ? ANSI_BOLD : "";
+  const dim = useColor ? ANSI_DIM : "";
+  const reset = useColor ? ANSI_RESET : "";
+  const box = pickBox(!useColor);
+  const horiz = box.horizontal.repeat(W - 2);
+  const branchRow = db.prepare(
+    "SELECT DISTINCT git_branch FROM messages WHERE project_path = ? AND git_branch IS NOT NULL ORDER BY git_branch"
+  ).all(proj.projectPath);
+  const branches = branchRow.map((r) => r.git_branch).filter(Boolean);
+  const lines = [];
+  lines.push(`${dim}${box.topLeft}${horiz}${box.topRight}${reset}
+`);
+  lines.push(`${dim}${box.vertical} ${reset}${bold}${proj.projectPath}${reset}
+`);
+  lines.push(
+    `${dim}${box.vertical} ${reset}${dim}${proj.chatCount} chat${proj.chatCount === 1 ? "" : "s"} \xB7 last ${fmtDate(proj.lastActivity)}${reset}
+`
+  );
+  if (branches.length > 0) {
+    lines.push(`${dim}${box.vertical} ${reset}${dim}branches: ${branches.join(", ")}${reset}
+`);
+  }
+  lines.push(`${dim}${box.bottomLeft}${horiz}${box.bottomRight}${reset}
+
+`);
+  const recent = db.prepare(
+    "SELECT conversation_id, MAX(timestamp) AS last_ts,        COUNT(*) AS msg_count FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') GROUP BY conversation_id ORDER BY last_ts DESC LIMIT ?"
+  ).all(proj.projectPath, RECENT_LIMIT);
+  if (recent.length > 0) {
+    lines.push(`${dim}Recent chats here:${reset}
+`);
+    const titleStmt = db.prepare(
+      "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"
+    );
+    for (const c of recent) {
+      const cands = titleStmt.all(c.conversation_id);
+      let title = c.conversation_id.slice(0, 8);
+      for (const cand of cands) {
+        if (!cand.content) continue;
+        const synth = synthesizeTitle(cand.content);
+        if (synth) {
+          title = synth;
+          break;
+        }
+      }
+      lines.push(
+        `  ${bold}${title}${reset} ${dim}${fmtDate(c.last_ts)}  ${c.msg_count} msgs${reset}
+`
+      );
+      const recap = getRecapText(db, c.conversation_id, "claude");
+      if (recap) {
+        const firstLine = recap.split("\n", 1)[0].trim();
+        if (firstLine.length > 0) {
+          lines.push(`     ${dim}recap: ${firstLine}${reset}
+`);
+        }
+      }
+    }
+    lines.push("\n");
+  }
+  lines.push(`${dim}(Enter: new chat here)${reset}
+`);
+  return lines.join("");
+}
+
+// src/tui/hooks/usePreview.ts
 function usePreview({ db, row, useColor, width }) {
   const cache3 = (0, import_react29.useRef)(/* @__PURE__ */ new Map());
   const [text, setText] = (0, import_react29.useState)("");
@@ -35171,18 +35642,18 @@ function usePreview({ db, row, useColor, width }) {
     cache3.current.clear();
   }, [width]);
   (0, import_react29.useEffect)(() => {
-    if (!row) {
+    if (!row || row.kind === "more") {
       setText("");
       return;
     }
-    const key = `${row.source}:${row.sessionId}`;
+    const key = row.kind === "chat" ? `chat:${row.source}:${row.sessionId}` : `project:${row.projectPath}`;
     const cached = cache3.current.get(key);
     if (cached !== void 0) {
       setText(cached);
       return;
     }
     try {
-      const out = renderPreview(db, row.sessionId, row.source, useColor);
+      const out = row.kind === "chat" ? renderPreview(db, row.sessionId, row.source, useColor) : renderProjectPreview(db, row, useColor);
       cache3.current.set(key, out);
       setText(out);
     } catch (e) {
@@ -35202,16 +35673,30 @@ function getDesiredExitCode() {
 function resetDesiredExitCode() {
   desiredExitCode = null;
 }
+function projectAsRow(proj) {
+  return {
+    kind: "chat",
+    source: "claude",
+    sessionId: "",
+    projectPath: proj.projectPath,
+    projectName: proj.projectName,
+    lastActivity: proj.lastActivity,
+    msgCount: 0,
+    snippet: "",
+    score: 0
+  };
+}
 function useResume(opts) {
   const { exit } = use_app_default();
   return (0, import_react30.useCallback)(
     (action, row) => {
-      const source = getSource(row.source);
+      const resolved = row.kind === "project" ? projectAsRow(row) : row;
+      const source = getSource(resolved.source);
       if (!source?.resume) {
         exit();
         return;
       }
-      const result = source.resume.spawn(row, action, {
+      const result = source.resume.spawn(resolved, action, {
         savedName: opts.savedName,
         tmuxAvailable: opts.tmuxAvailable,
         dangerouslySkipPermissions: opts.dangerouslySkipPermissions
@@ -35260,6 +35745,7 @@ function App2(props) {
     onPending: (pending) => dispatch({ type: "search-pending", pending })
   });
   const selectedRow = state.results[state.cursor];
+  const chatRow = selectedRow?.kind === "chat" ? selectedRow : void 0;
   const useColor = !props.args.noColor;
   const cols = state.dims.cols;
   const showPreview = cols >= 100 && state.results.length > 0;
@@ -35273,29 +35759,29 @@ function App2(props) {
     useColor,
     width: previewWidth
   });
-  const savedName = selectedRow ? props.sessionStore.names[`${selectedRow.source}:${selectedRow.sessionId}`] ?? null : null;
+  const savedName = chatRow ? props.sessionStore.names[`${chatRow.source}:${chatRow.sessionId}`] ?? null : null;
   const runResume = useResume({
     savedName,
     tmuxAvailable: props.tmuxAvailable,
     dangerouslySkipPermissions: props.dangerouslySkipPermissions
   });
   const togglePin = (0, import_react32.useCallback)(() => {
-    if (!selectedRow) return;
-    const key = `${selectedRow.source}:${selectedRow.sessionId}`;
+    if (!chatRow) return;
+    const key = `${chatRow.source}:${chatRow.sessionId}`;
     const idx = props.sessionStore.pins.indexOf(key);
     if (idx >= 0) props.sessionStore.pins.splice(idx, 1);
     else props.sessionStore.pins.unshift(key);
     saveSessionStore(props.sessionStore);
-  }, [selectedRow, props.sessionStore]);
+  }, [chatRow, props.sessionStore]);
   const commitRename = (0, import_react32.useCallback)(
     (trimmed) => {
-      if (!selectedRow) return;
-      const key = `${selectedRow.source}:${selectedRow.sessionId}`;
+      if (!chatRow) return;
+      const key = `${chatRow.source}:${chatRow.sessionId}`;
       if (trimmed.length === 0) delete props.sessionStore.names[key];
       else props.sessionStore.names[key] = trimmed;
       saveSessionStore(props.sessionStore);
     },
-    [selectedRow, props.sessionStore]
+    [chatRow, props.sessionStore]
   );
   use_input_default((input, key) => {
     if (key.ctrl && input === "c") {
@@ -35331,28 +35817,36 @@ function App2(props) {
     }
     if (key.return) {
       if (key.meta || key.shift) {
-        if (selectedRow && props.dangerouslySkipPermissions) {
-          runResume("dangerous", selectedRow);
+        if (chatRow && props.dangerouslySkipPermissions) {
+          runResume("dangerous", chatRow);
         }
-      } else if (selectedRow) {
-        runResume("resume", selectedRow);
+      } else if (chatRow) {
+        runResume("resume", chatRow);
+      } else if (selectedRow?.kind === "project") {
+        runResume("newchat", selectedRow);
+      }
+      return;
+    }
+    if (input === "N" && !key.ctrl && !key.meta) {
+      if (selectedRow && selectedRow.kind !== "more") {
+        runResume("newchat", selectedRow);
       }
       return;
     }
     if (key.ctrl && input === "t") {
-      if (selectedRow) runResume("remote-control", selectedRow);
+      if (chatRow) runResume("remote-control", chatRow);
       return;
     }
     if (key.ctrl && input === "w") {
-      if (selectedRow && props.tmuxAvailable) runResume("tmux-window", selectedRow);
+      if (chatRow && props.tmuxAvailable) runResume("tmux-window", chatRow);
       return;
     }
     if (key.ctrl && input === "f") {
-      if (selectedRow) runResume("fork", selectedRow);
+      if (chatRow) runResume("fork", chatRow);
       return;
     }
     if (key.ctrl && input === "r") {
-      if (selectedRow) dispatch({ type: "enter-rename", initial: savedName ?? "" });
+      if (chatRow) dispatch({ type: "enter-rename", initial: savedName ?? "" });
       return;
     }
     if (key.ctrl && input === "p") {
@@ -35360,14 +35854,17 @@ function App2(props) {
       return;
     }
     if (key.ctrl && input === "o") {
-      if (selectedRow) {
-        process.stdout.write(selectedRow.sessionId + "\n");
+      if (chatRow) {
+        process.stdout.write(chatRow.sessionId + "\n");
         exit();
       }
       return;
     }
     if (key.ctrl && input === "d") {
-      if (selectedRow) {
+      if (chatRow) {
+        process.stdout.write(chatRow.projectPath + "\n");
+        exit();
+      } else if (selectedRow?.kind === "project") {
         process.stdout.write(selectedRow.projectPath + "\n");
         exit();
       }
@@ -35576,7 +36073,14 @@ async function main(argv) {
     return code ?? EXIT_OK;
   }
   if (args.format === null) {
-    args.format = process.stdout.isTTY ? "text" : "tsv";
+    if (args.list) args.format = "markdown";
+    else args.format = process.stdout.isTTY ? "text" : "tsv";
+  }
+  if (args.format === "markdown") {
+    const sessionStore = loadSessionStore();
+    const rows = buildProjectGroups(db, args, sessionStore);
+    process.stdout.write(renderMarkdown({ rows, query: args.query }));
+    return EXIT_OK;
   }
   let results;
   if (args.scan) {

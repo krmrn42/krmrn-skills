@@ -5,6 +5,37 @@ The CLI shipped inside this plugin is also published to npm as
 [`@krmrn42/multivac`](https://www.npmjs.com/package/@krmrn42/multivac); the
 two carry the same version string.
 
+## [0.8.1] — 2026-05-26
+
+Project-grouped picker — chats are listed under their project, with an optional "Y more" footer. The previous two-section layout (working dirs ↑ chats ↓) is gone.
+
+### Added
+- **Project-grouped picker.** Projects (working directories that contain at least one chat) are the top-level entries. Each project's recent chats appear inline below its header, with a dim "Y more" footer when chats are elided.
+  - Home mode (no query): up to 3 chats per project, ordered by recency.
+  - Search mode, query hits the project name/path: padded to ≥3 chats (matches first, then most-recent).
+  - Search mode, query does NOT hit the project name/path: only the chats whose content matched (could be empty → project hidden).
+  - A project with zero shown chats is omitted entirely.
+- **`N` keybinding — start a new chat in the row's project dir.** Works on chat rows (uses the chat's project) and on project header rows. `Enter` on a project header is also wired to "new chat here".
+- **Project-header preview pane** — rounded box with path, chat count, branches touched, and a list of the 5 most-recent chats with their recap snippets.
+- **`--list` output is project-grouped markdown** — one `##` heading per project, the project's chats listed under it as ordered items with embedded `(cd … && claude …)` resume one-liners. `(N more)` footer when chats are elided.
+- **`--format=markdown`** as an explicit flag value; unknown formats still rejected.
+- **No more phantom subdirectory "projects"** (spec §D15). Two mechanisms working together:
+  - **`project_path` locking.** The parser locks every row's `project_path` to the **first** cwd-carrying record's `cwd`. Earlier versions stamped per-message cwd, so a single session that ran `cd packages/multivac && npm test` produced rows under `~/work/foo` AND `~/work/foo/packages/multivac` — manifesting as a phantom subdir "project". Now one JSONL, one project_path.
+  - **Two filterable columns for non-user-initiated sessions.** Every row carries `is_subagent` (path-based: `1` if file lives under `subagents/`, a defensive future-proof) and `entrypoint` (raw value from the JSONL: `"cli"`, `"sdk-cli"`, or `NULL`). The picker queries filter `is_subagent = 0 AND (entrypoint IS NULL OR entrypoint = 'cli')`, so Claude Agent SDK launches (e.g., skill-creator scaffolding running in `~/.claude/plugins/cache/...`, one-off `/tmp/probe-*` test scripts) are excluded from the project list, recent-chat list, and FTS results. The rows remain in the index, so a future `--entrypoint=sdk-cli` flag can opt back in without re-indexing.
+  - Schema bumps v3 → v4 → v5 (added `is_subagent` and `entrypoint` columns); each bump triggers a one-time drop-rebuild on first run after upgrade.
+
+### Changed
+- The two-section picker layout (working dirs section ↑ chats section ↓ with `── working dirs (n) ──` style dividers) is replaced by the project-grouped layout above.
+- `ResultRow` gains a required `kind: "chat"` discriminator (additive — no consumer needs to be updated unless it constructs a ResultRow literal).
+- New row kinds `ProjectHeader` (`kind: "project"`) and `MoreRow` (`kind: "more"`) join `ResultRow` in the discriminated `Selectable` union; the old `DirRow` and `SectionHeader` shapes are gone.
+- The picker reducer now skips `more` rows on ↑/↓ and clamps the initial cursor to the first selectable row (`project` or `chat`).
+
+### Out of scope (deferred to v0.8.2)
+- Live process discovery / active threads inline under their project group (mapped to chat rows when possible, listed above when not).
+- `r` refresh keybinding.
+- Tmux pane correlation.
+- `Ctrl-W` (tmux new-window) on project header rows.
+
 ## [0.8.0] — 2026-05-24
 
 ### Added

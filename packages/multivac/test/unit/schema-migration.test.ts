@@ -46,7 +46,7 @@ test("v2 schema (with source, no subtype) → migration v3 needed", () => {
   assert.equal(detectMigrationNeeded(db), 3);
 });
 
-test("v3 schema (has subtype) → no migration needed", () => {
+test("v3 schema (has subtype, no is_subagent) → migration v4 needed", () => {
   const db = new DatabaseSync(":memory:");
   db["exec"](`
     CREATE TABLE messages (
@@ -63,6 +63,53 @@ test("v3 schema (has subtype) → no migration needed", () => {
       subtype TEXT NULL,
       git_branch TEXT NULL,
       attribution_skill TEXT NULL
+    );
+  `);
+  assert.equal(detectMigrationNeeded(db), 4);
+});
+
+test("v4 schema (has is_subagent, no entrypoint) → migration v5 needed", () => {
+  const db = new DatabaseSync(":memory:");
+  db["exec"](`
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      project_path TEXT NOT NULL,
+      project_name TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      content TEXT,
+      message_uuid TEXT NOT NULL,
+      parent_uuid TEXT,
+      source TEXT NOT NULL DEFAULT 'claude',
+      subtype TEXT NULL,
+      git_branch TEXT NULL,
+      attribution_skill TEXT NULL,
+      is_subagent INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  assert.equal(detectMigrationNeeded(db), 5);
+});
+
+test("v5 schema (has entrypoint) → no migration needed", () => {
+  const db = new DatabaseSync(":memory:");
+  db["exec"](`
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      project_path TEXT NOT NULL,
+      project_name TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      content TEXT,
+      message_uuid TEXT NOT NULL,
+      parent_uuid TEXT,
+      source TEXT NOT NULL DEFAULT 'claude',
+      subtype TEXT NULL,
+      git_branch TEXT NULL,
+      attribution_skill TEXT NULL,
+      is_subagent INTEGER NOT NULL DEFAULT 0,
+      entrypoint TEXT NULL
     );
   `);
   assert.equal(detectMigrationNeeded(db), 0);

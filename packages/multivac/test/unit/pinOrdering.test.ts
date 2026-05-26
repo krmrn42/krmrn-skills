@@ -5,6 +5,7 @@ import type { ResultRow, SessionStore } from "../../src/core/types.js";
 
 function row(source: string, id: string): ResultRow {
   return {
+    kind: "chat",
     source, sessionId: id, projectPath: "", projectName: "",
     lastActivity: 0, msgCount: 0, snippet: "", score: 0,
   };

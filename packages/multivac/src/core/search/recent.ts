@@ -61,22 +61,36 @@ export function normalizeTailContent(rawContent: string | null | undefined): str
 export interface RecentConversationsOpts {
   limit: number;
   projectFilter: string | null;
+  /**
+   * v0.8.1: when set, restrict to chats whose `project_path` matches exactly.
+   * Used by `buildProjectGroups` to fetch a single project's recent chats
+   * without the substring fuzziness that `projectFilter` introduces (which can
+   * match neighbouring paths like `/work/frontend-v2` for `/work/frontend`).
+   * Mutually exclusive with `projectFilter`; if both are set, exact wins.
+   */
+  exactProjectPath?: string;
   sessionStore?: SessionStore | null;
 }
 
 export function recentConversations(db: DatabaseSync, opts: RecentConversationsOpts): ResultRow[] {
-  const { limit, projectFilter, sessionStore } = opts;
+  const { limit, projectFilter, exactProjectPath, sessionStore } = opts;
 
   // Step 1: most recent conversations across all (or one) projects.
-  const projectExtra = projectFilter
-    ? "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)"
-    : "";
-  const projectParams = projectFilter
-    ? [
-        "%" + String(projectFilter).toLowerCase() + "%",
-        "%" + String(projectFilter).toLowerCase() + "%",
-      ]
-    : [];
+  let projectExtra = "";
+  let projectParams: string[] = [];
+  if (exactProjectPath) {
+    projectExtra = "AND project_path = ?";
+    projectParams = [exactProjectPath];
+  } else if (projectFilter) {
+    projectExtra = "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)";
+    projectParams = [
+      "%" + String(projectFilter).toLowerCase() + "%",
+      "%" + String(projectFilter).toLowerCase() + "%",
+    ];
+  }
+  // Filter to user-initiated sessions only (spec §D15):
+  //   - is_subagent = 0 (path-based: not a subagent transcript)
+  //   - entrypoint IS NULL OR = 'cli' (data-based: terminal-launched or legacy)
   const recentSql = `
 SELECT
   conversation_id AS conversation_id,
@@ -87,6 +101,8 @@ SELECT
   COUNT(*) AS msg_count
 FROM messages
 WHERE type IN ('user', 'assistant')
+  AND is_subagent = 0
+  AND (entrypoint IS NULL OR entrypoint = 'cli')
 ${projectExtra}
 GROUP BY conversation_id
 ORDER BY last_ts DESC
@@ -155,6 +171,7 @@ LIMIT ?
       { git_branch: string | null; attribution_skill: string | null } | undefined;
 
     results.push({
+      kind: "chat",
       source,
       sessionId: conv.conversation_id,
       projectPath: conv.project_path || "",

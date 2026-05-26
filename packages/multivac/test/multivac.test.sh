@@ -94,7 +94,9 @@ CREATE TABLE messages (
   created_at INTEGER DEFAULT (unixepoch()),
   subtype TEXT NULL,
   git_branch TEXT NULL,
-  attribution_skill TEXT NULL
+  attribution_skill TEXT NULL,
+  is_subagent       INTEGER NOT NULL DEFAULT 0,
+  entrypoint        TEXT NULL
 );
 CREATE INDEX idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX idx_messages_project ON messages(project_path);
@@ -119,39 +121,48 @@ END;
 -- Conversation A: in project alpha, talks about "session timeout"
 INSERT INTO messages VALUES
   ('m1', 'conv-aaaa-1111-1111-1111-111111111111', '/home/u/projects/alpha', 'alpha',
-   1735689600000, 'user', 'how do I configure session timeout for the auth service', NULL, NULL, 'u1', NULL, 'claude', 0, NULL, NULL, NULL),
+   1735689600000, 'user', 'how do I configure session timeout for the auth service', NULL, NULL, 'u1', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('m2', 'conv-aaaa-1111-1111-1111-111111111111', '/home/u/projects/alpha', 'alpha',
-   1735689610000, 'assistant', 'set SESSION_TIMEOUT_SECONDS in your env. there is no timeout for refresh tokens.', NULL, NULL, 'a1', 'u1', 'claude', 0, NULL, NULL, NULL),
+   1735689610000, 'assistant', 'set SESSION_TIMEOUT_SECONDS in your env. there is no timeout for refresh tokens.', NULL, NULL, 'a1', 'u1', 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('m3', 'conv-aaaa-1111-1111-1111-111111111111', '/home/u/projects/alpha', 'alpha',
-   1735689620000, 'tool_use', NULL, NULL, '{"command":"grep -r SESSION_TIMEOUT_SECONDS"}', 't1', 'a1', 'claude', 0, NULL, NULL, NULL);
+   1735689620000, 'tool_use', NULL, NULL, '{"command":"grep -r SESSION_TIMEOUT_SECONDS"}', 't1', 'a1', 'claude', 0, NULL, NULL, NULL, 0, NULL);
 
 -- Conversation B: in project alpha, talks about regex parsing — has a TOKEN_DEADBEEF marker
 INSERT INTO messages VALUES
   ('m4', 'conv-bbbb-2222-2222-2222-222222222222', '/home/u/projects/alpha', 'alpha',
-   1735776000000, 'user', 'I need to write a regex to parse log timestamps', NULL, NULL, 'u2', NULL, 'claude', 0, NULL, NULL, NULL),
+   1735776000000, 'user', 'I need to write a regex to parse log timestamps', NULL, NULL, 'u2', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('m5', 'conv-bbbb-2222-2222-2222-222222222222', '/home/u/projects/alpha', 'alpha',
-   1735776010000, 'assistant', 'try this regex ^[A-Z]{3} and validate with TOKEN_DEADBEEF as a sentinel', NULL, NULL, 'a2', 'u2', 'claude', 0, NULL, NULL, NULL);
+   1735776010000, 'assistant', 'try this regex ^[A-Z]{3} and validate with TOKEN_DEADBEEF as a sentinel', NULL, NULL, 'a2', 'u2', 'claude', 0, NULL, NULL, NULL, 0, NULL);
 
 -- Conversation C: in project beta, talks about session timeout (different project)
 INSERT INTO messages VALUES
   ('m6', 'conv-cccc-3333-3333-3333-333333333333', '/home/u/projects/beta', 'beta',
-   1735862400000, 'user', 'why does my session timeout differ between staging and prod', NULL, NULL, 'u3', NULL, 'claude', 0, NULL, NULL, NULL),
+   1735862400000, 'user', 'why does my session timeout differ between staging and prod', NULL, NULL, 'u3', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('m7', 'conv-cccc-3333-3333-3333-333333333333', '/home/u/projects/beta', 'beta',
-   1735862410000, 'assistant', 'check your load balancer idle session timeout — it overrides app config', NULL, NULL, 'a3', 'u3', 'claude', 0, NULL, NULL, NULL);
+   1735862410000, 'assistant', 'check your load balancer idle session timeout — it overrides app config', NULL, NULL, 'a3', 'u3', 'claude', 0, NULL, NULL, NULL, 0, NULL);
 
 -- Conversation D: in project beta, much older — for --since testing
 INSERT INTO messages VALUES
   ('m8', 'conv-dddd-4444-4444-4444-444444444444', '/home/u/projects/beta', 'beta',
-   1700000000000, 'user', 'what does session affinity do', NULL, NULL, 'u4', NULL, 'claude', 0, NULL, NULL, NULL),
+   1700000000000, 'user', 'what does session affinity do', NULL, NULL, 'u4', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('m9', 'conv-dddd-4444-4444-4444-444444444444', '/home/u/projects/beta', 'beta',
-   1700000010000, 'assistant', 'session affinity pins requests to the same backend pod', NULL, NULL, 'a4', 'u4', 'claude', 0, NULL, NULL, NULL);
+   1700000010000, 'assistant', 'session affinity pins requests to the same backend pod', NULL, NULL, 'a4', 'u4', 'claude', 0, NULL, NULL, NULL, 0, NULL);
 
 -- Conversation E: tool_use only — testing default-excludes-tools
 INSERT INTO messages VALUES
   ('m10', 'conv-eeee-5555-5555-5555-555555555555', '/home/u/projects/alpha', 'alpha',
-    1735948800000, 'user', 'unrelated query about deployment', NULL, NULL, 'u5', NULL, 'claude', 0, NULL, NULL, NULL),
+    1735948800000, 'user', 'unrelated query about deployment', NULL, NULL, 'u5', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('m11', 'conv-eeee-5555-5555-5555-555555555555', '/home/u/projects/alpha', 'alpha',
-    1735948810000, 'tool_result', 'output: PROCESS_KILLED_OOM', NULL, NULL, 't5', 'u5', 'claude', 0, NULL, NULL, NULL);
+    1735948810000, 'tool_result', 'output: PROCESS_KILLED_OOM', NULL, NULL, 't5', 'u5', 'claude', 0, NULL, NULL, NULL, 0, NULL);
+
+-- Conversation F: in project frontend — added to support v0.8.1 --list markdown tests.
+-- The path and content both contain "frontend" so both searchDirectories and
+-- ftsSearch return results for `--list "frontend"`.
+INSERT INTO messages VALUES
+  ('m12', 'conv-ffff-6666-6666-6666-666666666666', '/work/frontend', 'frontend',
+    1736035200000, 'user', 'how do I scaffold a new frontend component with vite?', NULL, NULL, 'u6', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
+  ('m13', 'conv-ffff-6666-6666-6666-666666666666', '/work/frontend', 'frontend',
+    1736035210000, 'assistant', 'run: npm create vite@latest my-frontend -- --template react', NULL, NULL, 'a6', 'u6', 'claude', 0, NULL, NULL, NULL, 0, NULL);
 SQL
 
 # All output below is captured for assertion. Run multivac with --no-color and explicit --format text.
@@ -342,7 +353,9 @@ CREATE TABLE messages (
   created_at INTEGER DEFAULT (unixepoch()),
   subtype TEXT NULL,
   git_branch TEXT NULL,
-  attribution_skill TEXT NULL
+  attribution_skill TEXT NULL,
+  is_subagent       INTEGER NOT NULL DEFAULT 0,
+  entrypoint        TEXT NULL
 );
 CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
 CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
@@ -351,8 +364,8 @@ CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
 END;
 -- conversation with empty project_path
 INSERT INTO messages VALUES
-  ('mx1', 'conv-x', '', '', 1735689600000, 'user', 'pathless conversation about widgets', NULL, NULL, 'ux1', NULL, 'claude', 0, NULL, NULL, NULL),
-  ('mx2', 'conv-x', '', '', 1735689610000, 'assistant', 'widgets are great', NULL, NULL, 'ax1', 'ux1', 'claude', 0, NULL, NULL, NULL);
+  ('mx1', 'conv-x', '', '', 1735689600000, 'user', 'pathless conversation about widgets', NULL, NULL, 'ux1', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
+  ('mx2', 'conv-x', '', '', 1735689610000, 'assistant', 'widgets are great', NULL, NULL, 'ax1', 'ux1', 'claude', 0, NULL, NULL, NULL, 0, NULL);
 SQL
 out="$(MULTIVAC_DB="$DB3" "$MULTIVAC" --no-color --format text widgets 2>&1)"
 assert_contains "T20.degraded_oneliner" "claude --resume conv-x  # original project path unknown" "$out"
@@ -588,7 +601,9 @@ CREATE TABLE messages (
   created_at INTEGER DEFAULT (unixepoch()),
   subtype TEXT NULL,
   git_branch TEXT NULL,
-  attribution_skill TEXT NULL
+  attribution_skill TEXT NULL,
+  is_subagent       INTEGER NOT NULL DEFAULT 0,
+  entrypoint        TEXT NULL
 );
 CREATE INDEX idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX idx_messages_project ON messages(project_path);
@@ -603,26 +618,26 @@ END;
 -- Conversation A (oldest): simple first-user-message
 INSERT INTO messages VALUES
   ('rA1', 'conv-A', '/p/a', 'a', 1000000, 'user',
-   'how do I write a custom Claude Code skill?', NULL, NULL, 'uA1', NULL, 'claude', 0, NULL, NULL, NULL),
+   'how do I write a custom Claude Code skill?', NULL, NULL, 'uA1', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('rA2', 'conv-A', '/p/a', 'a', 1000010, 'assistant',
-   'create a SKILL.md file…', NULL, NULL, 'aA1', 'uA1', 'claude', 0, NULL, NULL, NULL);
+   'create a SKILL.md file…', NULL, NULL, 'aA1', 'uA1', 'claude', 0, NULL, NULL, NULL, 0, NULL);
 
 -- Conversation B (newest): first user message is a wrapper, second is real
 INSERT INTO messages VALUES
   ('rB1', 'conv-B', '/p/b', 'b', 2000000, 'user',
-   '<command-name>opsx:propose</command-name>', NULL, NULL, 'uB1', NULL, 'claude', 0, NULL, NULL, NULL),
+   '<command-name>opsx:propose</command-name>', NULL, NULL, 'uB1', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('rB2', 'conv-B', '/p/b', 'b', 2000005, 'user',
-   'actual user question about something', NULL, NULL, 'uB2', 'uB1', 'claude', 0, NULL, NULL, NULL),
+   'actual user question about something', NULL, NULL, 'uB2', 'uB1', 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('rB3', 'conv-B', '/p/b', 'b', 2000010, 'assistant',
-   'last assistant message in B with some content', NULL, NULL, 'aB1', 'uB2', 'claude', 0, NULL, NULL, NULL);
+   'last assistant message in B with some content', NULL, NULL, 'aB1', 'uB2', 'claude', 0, NULL, NULL, NULL, 0, NULL);
 
 -- Conversation C (middle age): first user message is 200+ chars of x
 INSERT INTO messages VALUES
   ('rC1', 'conv-C', '/p/c', 'c', 1500000, 'user',
    'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-   NULL, NULL, 'uC1', NULL, 'claude', 0, NULL, NULL, NULL),
+   NULL, NULL, 'uC1', NULL, 'claude', 0, NULL, NULL, NULL, 0, NULL),
   ('rC2', 'conv-C', '/p/c', 'c', 1500010, 'assistant',
-   'reply', NULL, NULL, 'aC1', 'uC1', 'claude', 0, NULL, NULL, NULL);
+   'reply', NULL, NULL, 'aC1', 'uC1', 'claude', 0, NULL, NULL, NULL, 0, NULL);
 SQL
 
 OUT="$(MULTIVAC_TEST=1 node --input-type=module <<EOF
@@ -683,7 +698,9 @@ CREATE TABLE messages (
   created_at INTEGER DEFAULT (unixepoch()),
   subtype TEXT NULL,
   git_branch TEXT NULL,
-  attribution_skill TEXT NULL
+  attribution_skill TEXT NULL,
+  is_subagent       INTEGER NOT NULL DEFAULT 0,
+  entrypoint        TEXT NULL
 );
 CREATE VIRTUAL TABLE messages_fts USING fts5(id UNINDEXED, searchable_text);
 SQL
@@ -1088,7 +1105,7 @@ function check(label, cond) {
 const allActions = ["resume", "fork", "dangerous", "remote-control", "tmux-window"];
 const mockSource = { id: "claude", displayName: "Claude", resume: { actions: allActions }, discover: async () => [], parse: async function*(){} };
 function makeGetSource() { return (id) => mockSource; }
-const mockRow = { source: "claude", sessionId: "abc", projectPath: "/p", projectName: "p", lastActivity: 0, msgCount: 1, snippet: "", score: 0, title: null };
+const mockRow = { kind: "chat", source: "claude", sessionId: "abc", projectPath: "/p", projectName: "p", lastActivity: 0, msgCount: 1, snippet: "", score: 0, title: null };
 
 const wide   = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true, getSource: makeGetSource() }, mockRow, 1000);
 const mid    = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true, getSource: makeGetSource() }, mockRow, 60);
@@ -1161,6 +1178,7 @@ const PATTERNS = {
   "Ctrl-D":      /key\.ctrl && input === "d"/,
   "Up/Down":     /key\.upArrow|key\.downArrow/,
   "?":           /input === "\?"/,
+  "N":           /input === "N"/,
 };
 let ok = true;
 for (const b of BINDINGS) {
@@ -1305,6 +1323,36 @@ else
   FAIL=$((FAIL+1)); echo "  FAIL  T26.no_phantom_help_flags — flags in help but not parsed:" >&2
   echo "$EXTRA_IN_HELP" | sed 's/^/         /' >&2
 fi
+
+# --- v0.8.1: --list markdown (project-grouped), --format=markdown, --format rejection ---
+
+echo
+echo "Test 60: --list emits project-grouped markdown (one ## per project, New chat + Resume one-liners)"
+# Conversation F has project_path='/work/frontend' and content containing "frontend".
+OUT="$(MULTIVAC_DB="$DB" "$MULTIVAC" --list "frontend" 2>&1 || true)"
+assert_contains "T60.project_heading"       "## /work/frontend"        "$OUT"
+assert_contains "T60.matching_label"        'matching "frontend"'      "$OUT"
+assert_contains "T60.new_chat_oneliner"     'New chat here: `(cd '     "$OUT"
+assert_contains "T60.chat_resume_oneliner"  'Resume: `(cd '            "$OUT"
+
+echo
+echo "Test 61: bare --list (no query) emits at least one project heading without 'matching' label"
+OUT="$(MULTIVAC_DB="$DB" "$MULTIVAC" --list 2>&1 || true)"
+assert_contains "T61.project_heading" "## /" "$OUT"
+case "$OUT" in
+  *'matching "'*) FAIL=$((FAIL+1)); echo "  FAIL  T61.no_matching_label" >&2 ;;
+  *)              PASS=$((PASS+1)); echo "  PASS  T61.no_matching_label" ;;
+esac
+
+echo
+echo "Test 62: --format=markdown emits markdown headings"
+OUT="$(MULTIVAC_DB="$DB" "$MULTIVAC" --format=markdown "frontend" 2>&1 || true)"
+assert_contains "T62.markdown_heading" "## " "$OUT"
+
+echo
+echo "Test 63: --format=banana is rejected with helpful message"
+OUT="$(MULTIVAC_DB="$DB" "$MULTIVAC" --format=banana "x" 2>&1 || true)"
+assert_contains "T63.format_rejected" "must be" "$OUT"
 
 # --- Summary ------------------------------------------------------------
 

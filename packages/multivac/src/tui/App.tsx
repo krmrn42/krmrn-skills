@@ -1,7 +1,7 @@
 import React, { useReducer, useCallback } from "react";
 import { Box, useApp, useInput } from "ink";
 import type { DatabaseSync } from "node:sqlite";
-import type { Args, ResultRow, SessionStore } from "../core/types.js";
+import type { Args, ResultRow, ProjectHeader, Selectable, SessionStore } from "../core/types.js";
 import { reducer, initialState } from "./state/store.js";
 import { PromptLine } from "./components/PromptLine.js";
 import { StatusBar } from "./components/StatusBar.js";
@@ -42,7 +42,10 @@ export function App(props: AppProps) {
     onPending: (pending) => dispatch({ type: "search-pending", pending }),
   });
 
-  const selectedRow: ResultRow | undefined = state.results[state.cursor];
+  const selectedRow: Selectable | undefined = state.results[state.cursor];
+  // Narrowed view for code that needs ResultRow-specific fields (source, sessionId, etc.)
+  const chatRow: ResultRow | undefined =
+    selectedRow?.kind === "chat" ? selectedRow : undefined;
   const useColor = !props.args.noColor;
   const cols = state.dims.cols;
   // Preview is shown only when the terminal is wide enough — matches v0.6.0
@@ -62,8 +65,8 @@ export function App(props: AppProps) {
     width: previewWidth,
   });
 
-  const savedName = selectedRow
-    ? (props.sessionStore.names[`${selectedRow.source}:${selectedRow.sessionId}`] ?? null)
+  const savedName = chatRow
+    ? (props.sessionStore.names[`${chatRow.source}:${chatRow.sessionId}`] ?? null)
     : null;
 
   const runResume = useResume({
@@ -73,23 +76,23 @@ export function App(props: AppProps) {
   });
 
   const togglePin = useCallback(() => {
-    if (!selectedRow) return;
-    const key = `${selectedRow.source}:${selectedRow.sessionId}`;
+    if (!chatRow) return;
+    const key = `${chatRow.source}:${chatRow.sessionId}`;
     const idx = props.sessionStore.pins.indexOf(key);
     if (idx >= 0) props.sessionStore.pins.splice(idx, 1);
     else props.sessionStore.pins.unshift(key);
     saveSessionStore(props.sessionStore);
-  }, [selectedRow, props.sessionStore]);
+  }, [chatRow, props.sessionStore]);
 
   const commitRename = useCallback(
     (trimmed: string) => {
-      if (!selectedRow) return;
-      const key = `${selectedRow.source}:${selectedRow.sessionId}`;
+      if (!chatRow) return;
+      const key = `${chatRow.source}:${chatRow.sessionId}`;
       if (trimmed.length === 0) delete props.sessionStore.names[key];
       else props.sessionStore.names[key] = trimmed;
       saveSessionStore(props.sessionStore);
     },
-    [selectedRow, props.sessionStore],
+    [chatRow, props.sessionStore],
   );
 
   useInput((input, key) => {
@@ -130,28 +133,38 @@ export function App(props: AppProps) {
     // browse mode
     if (key.return) {
       if (key.meta || key.shift) {
-        if (selectedRow && props.dangerouslySkipPermissions) {
-          runResume("dangerous", selectedRow);
+        if (chatRow && props.dangerouslySkipPermissions) {
+          runResume("dangerous", chatRow);
         }
-      } else if (selectedRow) {
-        runResume("resume", selectedRow);
+      } else if (chatRow) {
+        runResume("resume", chatRow);
+      } else if (selectedRow?.kind === "project") {
+        // Enter on a project row starts a fresh chat in that project's dir.
+        runResume("newchat", selectedRow);
+      }
+      return;
+    }
+    if (input === "N" && !key.ctrl && !key.meta) {
+      if (selectedRow && selectedRow.kind !== "more") {
+        runResume("newchat", selectedRow as ResultRow | ProjectHeader);
       }
       return;
     }
     if (key.ctrl && input === "t") {
-      if (selectedRow) runResume("remote-control", selectedRow);
+      if (chatRow) runResume("remote-control", chatRow);
       return;
     }
     if (key.ctrl && input === "w") {
-      if (selectedRow && props.tmuxAvailable) runResume("tmux-window", selectedRow);
+      if (chatRow && props.tmuxAvailable) runResume("tmux-window", chatRow);
+      // Dir-row tmux-window deferred to v0.8.2 (see CHANGELOG "Out of scope").
       return;
     }
     if (key.ctrl && input === "f") {
-      if (selectedRow) runResume("fork", selectedRow);
+      if (chatRow) runResume("fork", chatRow);
       return;
     }
     if (key.ctrl && input === "r") {
-      if (selectedRow) dispatch({ type: "enter-rename", initial: savedName ?? "" });
+      if (chatRow) dispatch({ type: "enter-rename", initial: savedName ?? "" });
       return;
     }
     if (key.ctrl && input === "p") {
@@ -159,14 +172,17 @@ export function App(props: AppProps) {
       return;
     }
     if (key.ctrl && input === "o") {
-      if (selectedRow) {
-        process.stdout.write(selectedRow.sessionId + "\n");
+      if (chatRow) {
+        process.stdout.write(chatRow.sessionId + "\n");
         exit();
       }
       return;
     }
     if (key.ctrl && input === "d") {
-      if (selectedRow) {
+      if (chatRow) {
+        process.stdout.write(chatRow.projectPath + "\n");
+        exit();
+      } else if (selectedRow?.kind === "project") {
         process.stdout.write(selectedRow.projectPath + "\n");
         exit();
       }

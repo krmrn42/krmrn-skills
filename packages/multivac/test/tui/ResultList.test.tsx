@@ -3,10 +3,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { render } from "ink-testing-library";
 import { ResultList } from "../../src/tui/components/ResultList.js";
-import type { ResultRow } from "../../src/core/types.js";
+import type { ResultRow, ProjectHeader, MoreRow, Selectable } from "../../src/core/types.js";
 
 function row(id: string, opts: Partial<ResultRow> = {}): ResultRow {
   return {
+    kind: "chat",
     source: "claude", sessionId: id, projectPath: "/p", projectName: "p",
     lastActivity: 1700000000, msgCount: 1, snippet: "hello world", score: 0,
     ...opts,
@@ -111,4 +112,66 @@ test("ResultList: pure FTS row (no recapText) shows snippet on line 3", () => {
   const frame = lastFrame() ?? "";
   assert.ok(frame.includes("MATCH"));
   assert.ok(!frame.includes("recap:"));
+});
+
+function project(path: string, opts: Partial<ProjectHeader> = {}): ProjectHeader {
+  return {
+    kind: "project", projectPath: path, projectName: path.split("/").pop() ?? "?",
+    chatCount: 1, lastActivity: 1700000000, topChatTitles: [],
+    ...opts,
+  };
+}
+function moreRow(path: string, n: number): MoreRow {
+  return { kind: "more", projectPath: path, remainingCount: n };
+}
+
+test("ResultList: project header renders two lines (path/count then top chats)", () => {
+  const rows: Selectable[] = [
+    project("/work/frontend", { chatCount: 12,
+      topChatTitles: ["react-router-fix", "oauth-debug", "deploy-staging"] }),
+  ];
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={0} noColor={true} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  const frame = lastFrame() ?? "";
+  assert.ok(frame.includes("/work/frontend"));
+  assert.ok(frame.includes("12"));
+  assert.ok(frame.includes("react-router-fix"));
+});
+
+test("ResultList: MoreRow renders '<n> more' line and is not cursor-targeted", () => {
+  const rows: Selectable[] = [
+    project("/p"),
+    row("a"),
+    moreRow("/p", 7),
+  ];
+  // Cursor on the chat row; MoreRow is cosmetic.
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={1} noColor={true} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  const frame = lastFrame() ?? "";
+  assert.ok(frame.includes("7 more"));
+  // Cursor (`▌`) appears once (on the chat row), not on the more row.
+  const cursorOccurrences = (frame.match(/▌/g) ?? []).length;
+  assert.equal(cursorOccurrences, 1);
+});
+
+test("ResultList: project row noColor=false uses 📁 emoji marker", () => {
+  const rows: Selectable[] = [project("/work/frontend")];
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={0} noColor={false} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  assert.ok((lastFrame() ?? "").includes("📁"));
+});
+
+test("ResultList: project row noColor=true uses '[proj]' fallback", () => {
+  const rows: Selectable[] = [project("/work/frontend")];
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={0} noColor={true} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  assert.ok((lastFrame() ?? "").includes("[proj]"));
 });

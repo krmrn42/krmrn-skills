@@ -1,16 +1,31 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { ResultRow } from "../../core/types.js";
+import type { Selectable, ResultRow, ProjectHeader, MoreRow } from "../../core/types.js";
 import { projectDisplay, shortSession, fmtDate, colorizeSnippet } from "../../core/format.js";
 import { truncateToWidth } from "../lib/width.js";
 
 interface Props {
-  results: ResultRow[];
+  results: Selectable[];
   cursor: number;
   noColor: boolean;
   listWidth: number;
   maxRows: number;
-  dimRows: boolean; // true when rename modal is active
+  dimRows: boolean;
+}
+
+const CHAT_ROW_HEIGHT = 3;
+const PROJECT_ROW_HEIGHT = 2;
+const MORE_ROW_HEIGHT = 1;
+
+// Indent applied to chat and "more" rows when they live under a project header
+// (which is always the case in v0.8.1). This produces the visual hierarchy in
+// the spec mockup: project at column 0, chats indented under it.
+const CHILD_INDENT = "  "; // 2 cols
+
+function rowHeight(row: Selectable): number {
+  if (row.kind === "project") return PROJECT_ROW_HEIGHT;
+  if (row.kind === "more") return MORE_ROW_HEIGHT;
+  return CHAT_ROW_HEIGHT;
 }
 
 export function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }: Props) {
@@ -18,115 +33,185 @@ export function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRo
     return <Box><Text dimColor>(no results)</Text></Box>;
   }
 
-  // Pin partition: find the index of the first non-pinned row.
-  let firstUnpinnedIdx = -1;
+  // Pin partition (chats only). Pinned chats live at the top of their project
+  // group. The "── recent ──" divider appears between the last pinned chat and
+  // the first unpinned chat in the SAME group.
+  // For v0.8.1, the pin partitioning is best implemented at the producer layer
+  // (per-group sort); the ResultList just renders. We retain the legacy pin
+  // divider behavior at the top of the list for backward compatibility with
+  // any code paths that still emit pinned-first across all results.
+  let firstUnpinnedChatIdx = -1;
   for (let i = 0; i < results.length; i++) {
-    if (!results[i].isPinned) {
-      firstUnpinnedIdx = i;
+    const r = results[i];
+    if (r.kind === "chat" && !r.isPinned) {
+      firstUnpinnedChatIdx = i;
       break;
     }
   }
-  const hasDivider =
-    results.length > 0 && firstUnpinnedIdx > 0 && firstUnpinnedIdx < results.length;
-  const dividerText = "── recent ──";
+  const hasPinDivider = (() => {
+    if (firstUnpinnedChatIdx <= 0) return false;
+    for (let i = 0; i < firstUnpinnedChatIdx; i++) {
+      const r = results[i];
+      if (r.kind === "chat" && r.isPinned) return true;
+    }
+    return false;
+  })();
 
-  // v0.8: header + optional meta strip + snippet/recap line. Conservative size:
-  // assume all 3 are present so layout never overflows when metadata is rich.
-  const rowsPerResult = 3;
-  const usableHeight = hasDivider ? maxRows - 1 : maxRows;
-  const maxVisible = Math.max(1, Math.floor(usableHeight / rowsPerResult));
-
-  // Scroll offset: keep cursor in window. Matches picker.js:627-628.
-  let scrollOffset = 0;
-  if (cursor < scrollOffset) scrollOffset = cursor;
-  if (cursor >= scrollOffset + maxVisible) scrollOffset = cursor - maxVisible + 1;
-  // Clamp scrollOffset to valid range (for initial render).
-  scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, results.length - maxVisible)));
-
-  const visible = results.slice(scrollOffset, scrollOffset + maxVisible);
+  // Variable-height scroll.
+  let scrollOffset = Math.max(0, Math.min(cursor, results.length - 1));
+  let used = rowHeight(results[scrollOffset]);
+  while (scrollOffset > 0) {
+    const prevHeight = rowHeight(results[scrollOffset - 1]);
+    if (used + prevHeight + (hasPinDivider ? 1 : 0) > maxRows) break;
+    scrollOffset--;
+    used += prevHeight;
+  }
 
   const pinMarker = noColor ? "* " : "📌 ";
+  const projectMarker = noColor ? "[proj] " : "📁 ";
+  const chatMarker = noColor ? "[chat] " : "💬 ";
   const cursorPrefix = "▌ ";
   const blankPrefix = "  ";
+  const dividerText = "── recent ──";
 
   const nodes: React.ReactElement[] = [];
-  let dividerWritten = false;
+  let pinDividerWritten = false;
+  let consumed = 0;
 
-  for (let i = 0; i < visible.length; i++) {
-    const idx = scrollOffset + i;
-    const r = visible[i];
-    const isCur = idx === cursor;
-    const isPinned = !!r.isPinned;
+  for (let i = scrollOffset; i < results.length; i++) {
+    const row = results[i];
+    const isCur = i === cursor;
+    const h = rowHeight(row);
+    if (consumed + h > maxRows) break;
 
-    // Insert the divider between the last pinned row and the first unpinned row
-    // IF both partitions are in the visible window. Matches picker.js:660-671.
     if (
-      hasDivider &&
-      !dividerWritten &&
-      idx === firstUnpinnedIdx &&
-      scrollOffset < firstUnpinnedIdx
+      hasPinDivider &&
+      !pinDividerWritten &&
+      i === firstUnpinnedChatIdx &&
+      scrollOffset < firstUnpinnedChatIdx &&
+      consumed + 1 <= maxRows
     ) {
-      nodes.push(
-        <Text key={`div-${i}`} dimColor>
-          {dividerText}
-        </Text>,
-      );
-      dividerWritten = true;
+      nodes.push(<Text key={`pin-div-${i}`} dimColor>{dividerText}</Text>);
+      pinDividerWritten = true;
+      consumed += 1;
     }
 
-    const proj = projectDisplay(r.projectPath, r.projectName);
-    const date = fmtDate(r.lastActivity);
-    const sid = shortSession(r.sessionId);
-    const msgs = String(r.msgCount).padStart(4);
-    // Header body: title · proj  date  msgs msgs  sid (with title) or proj  date  msgs msgs  sid.
-    const headBody = r.title
-      ? `${r.title} · ${proj}  ${date}  ${msgs} msgs  ${sid}`
-      : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
-    const pinPart = isPinned ? pinMarker : "";
-    const head = pinPart + headBody;
-    const headTrunc = truncateToWidth(head, listWidth - 2);
-
-    const snippetText = colorizeSnippet(r.snippet || "", !noColor);
-    const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4) : "";
-
-    const dim = dimRows;
-
-    // Line 1 — header (unchanged from v0.7)
-    nodes.push(
-      <Text key={"h-" + i} bold={isCur && !dimRows} dimColor={dim}>
-        {isCur ? cursorPrefix : blankPrefix}
-        {headTrunc}
-      </Text>,
-    );
-
-    // Line 2 — metadata strip (branch · skill); skipped when both empty
-    const metaParts: string[] = [];
-    if (r.gitBranch) metaParts.push("(" + r.gitBranch + ")");
-    if (r.skill) metaParts.push(r.skill);
-    if (metaParts.length > 0) {
-      const metaText = truncateToWidth(metaParts.join(" · "), listWidth - 4);
-      nodes.push(
-        <Text key={"m-" + i} dimColor>
-          {"    "}
-          {metaText}
-        </Text>,
-      );
+    if (row.kind === "project") {
+      nodes.push(...renderProjectHeader(
+        row, i, isCur, listWidth, dimRows, projectMarker, cursorPrefix, blankPrefix,
+      ));
+      consumed += PROJECT_ROW_HEIGHT;
+      continue;
     }
-
-    // Line 3 — FTS snippet (preferred when matched) or recap text
-    const previewLine = snipTrunc ||
-      (r.recapText ? truncateToWidth("recap: " + r.recapText.replace(/\n/g, " ⏎ "), listWidth - 4) : "");
-    if (previewLine) {
-      nodes.push(
-        <Text key={"s-" + i} dimColor>
-          {"    "}
-          {previewLine}
-        </Text>,
-      );
-    } else {
-      nodes.push(<Text key={"s-" + i}>{""}</Text>);
+    if (row.kind === "more") {
+      nodes.push(renderMoreRow(row, i, listWidth));
+      consumed += MORE_ROW_HEIGHT;
+      continue;
     }
+    nodes.push(...renderChatRow(
+      row, i, isCur, noColor, listWidth, dimRows,
+      pinMarker, chatMarker, cursorPrefix, blankPrefix,
+    ));
+    consumed += CHAT_ROW_HEIGHT;
   }
 
   return <Box flexDirection="column">{nodes}</Box>;
+}
+
+function renderProjectHeader(
+  row: ProjectHeader,
+  key: number,
+  isCur: boolean,
+  listWidth: number,
+  dim: boolean,
+  marker: string,
+  cursorPrefix: string,
+  blankPrefix: string,
+): React.ReactElement[] {
+  const date = fmtDate(row.lastActivity);
+  const count = `${row.chatCount} chat${row.chatCount === 1 ? "" : "s"}`;
+  const head = `${marker}${row.projectPath}  ${count}  ${date}`;
+  const headTrunc = truncateToWidth(head, listWidth - 2);
+  const second = row.topChatTitles.length > 0
+    ? truncateToWidth(row.topChatTitles.join(" · "), listWidth - 4)
+    : "";
+  const out: React.ReactElement[] = [];
+  out.push(
+    <Text key={`p-h-${key}`} bold={isCur && !dim} dimColor={dim}>
+      {isCur ? cursorPrefix : blankPrefix}{headTrunc}
+    </Text>,
+  );
+  out.push(
+    <Text key={`p-s-${key}`} dimColor>{"    "}{second}</Text>,
+  );
+  return out;
+}
+
+function renderMoreRow(row: MoreRow, key: number, listWidth: number): React.ReactElement {
+  const text = truncateToWidth(
+    `${CHILD_INDENT}  ${row.remainingCount} more`,
+    listWidth - 2,
+  );
+  return <Text key={`m-${key}`} dimColor>{text}</Text>;
+}
+
+function renderChatRow(
+  row: ResultRow,
+  key: number,
+  isCur: boolean,
+  noColor: boolean,
+  listWidth: number,
+  dim: boolean,
+  pinMarker: string,
+  chatMarker: string,
+  cursorPrefix: string,
+  blankPrefix: string,
+): React.ReactElement[] {
+  const proj = projectDisplay(row.projectPath, row.projectName);
+  const date = fmtDate(row.lastActivity);
+  const sid = shortSession(row.sessionId);
+  const msgs = String(row.msgCount).padStart(4);
+  // In the project-grouped layout the chat's project_path is already shown by
+  // the parent project header, so we omit it from the chat row's head line.
+  // We retain it as a fallback when the chat row appears without a parent (an
+  // unlikely edge case but worth defending).
+  const headBody = row.title
+    ? `${row.title}  ${date}  ${msgs} msgs  ${sid}`
+    : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
+  const pinPart = row.isPinned ? pinMarker : chatMarker;
+  const head = pinPart + headBody;
+  const headTrunc = truncateToWidth(head, listWidth - 2 - CHILD_INDENT.length);
+
+  const snippetText = colorizeSnippet(row.snippet || "", !noColor);
+  const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4 - CHILD_INDENT.length) : "";
+
+  const metaParts: string[] = [];
+  if (row.gitBranch) metaParts.push("(" + row.gitBranch + ")");
+  if (row.skill) metaParts.push(row.skill);
+  const metaText = metaParts.length > 0
+    ? truncateToWidth(metaParts.join(" · "), listWidth - 4 - CHILD_INDENT.length)
+    : "";
+
+  const previewLine = snipTrunc ||
+    (row.recapText
+      ? truncateToWidth("recap: " + row.recapText.replace(/\n/g, " ⏎ "), listWidth - 4 - CHILD_INDENT.length)
+      : "");
+
+  const out: React.ReactElement[] = [];
+  out.push(
+    <Text key={`c-h-${key}`} bold={isCur && !dim} dimColor={dim}>
+      {CHILD_INDENT}{isCur ? cursorPrefix : blankPrefix}{headTrunc}
+    </Text>,
+  );
+  if (metaText) {
+    out.push(<Text key={`c-m-${key}`} dimColor>{CHILD_INDENT}{"    "}{metaText}</Text>);
+  } else {
+    out.push(<Text key={`c-m-${key}`}>{""}</Text>);
+  }
+  if (previewLine) {
+    out.push(<Text key={`c-s-${key}`} dimColor>{CHILD_INDENT}{"    "}{previewLine}</Text>);
+  } else {
+    out.push(<Text key={`c-s-${key}`}>{""}</Text>);
+  }
+  return out;
 }

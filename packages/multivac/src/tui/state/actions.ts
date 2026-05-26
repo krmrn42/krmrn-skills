@@ -1,10 +1,10 @@
-import type { ResultRow } from "../../core/types.js";
+import type { Selectable } from "../../core/types.js";
 
 export type PickerMode = "browse" | "rename" | "help";
 
 export type Action =
   | { type: "set-query"; query: string }
-  | { type: "set-results"; results: ResultRow[]; error?: string }
+  | { type: "set-results"; results: Selectable[]; error?: string }
   | { type: "move-cursor"; delta: number }
   | { type: "enter-rename"; initial: string }
   | { type: "rename-input"; ch: string }
