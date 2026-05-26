@@ -1,11 +1,11 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { ResultRow } from "../../core/types.js";
+import type { ResultRow, Selectable } from "../../core/types.js";
 import { projectDisplay, shortSession, fmtDate, colorizeSnippet } from "../../core/format.js";
 import { truncateToWidth } from "../lib/width.js";
 
 interface Props {
-  results: ResultRow[];
+  results: Selectable[];
   cursor: number;
   noColor: boolean;
   listWidth: number;
@@ -18,10 +18,11 @@ export function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRo
     return <Box><Text dimColor>(no results)</Text></Box>;
   }
 
-  // Pin partition: find the index of the first non-pinned row.
+  // Pin partition: find the index of the first non-pinned chat row.
   let firstUnpinnedIdx = -1;
   for (let i = 0; i < results.length; i++) {
-    if (!results[i].isPinned) {
+    const r = results[i];
+    if (r.kind === "chat" && !r.isPinned) {
       firstUnpinnedIdx = i;
       break;
     }
@@ -56,7 +57,6 @@ export function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRo
     const idx = scrollOffset + i;
     const r = visible[i];
     const isCur = idx === cursor;
-    const isPinned = !!r.isPinned;
 
     // Insert the divider between the last pinned row and the first unpinned row
     // IF both partitions are in the visible window. Matches picker.js:660-671.
@@ -73,6 +73,12 @@ export function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRo
       );
       dividerWritten = true;
     }
+
+    // Task 5 will render DirRow and SectionHeader rows properly.
+    // For now, skip non-chat rows in the rendered output.
+    if (r.kind !== "chat") continue;
+
+    const isPinned = !!r.isPinned;
 
     const proj = projectDisplay(r.projectPath, r.projectName);
     const date = fmtDate(r.lastActivity);

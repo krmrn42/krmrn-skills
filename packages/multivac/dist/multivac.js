@@ -34637,17 +34637,48 @@ var initialState = {
   renameBuffer: "",
   dims: { cols: 80, rows: 24 }
 };
+function nextSelectableIdx(results, from, dir) {
+  if (results.length === 0) return 0;
+  let i = from + dir;
+  while (i >= 0 && i < results.length) {
+    if (results[i].kind !== "section") return i;
+    i += dir;
+  }
+  return from;
+}
+function firstSelectableIdx(results) {
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].kind !== "section") return i;
+  }
+  return 0;
+}
 function reducer(state, action) {
   switch (action.type) {
     case "set-query":
       return { ...state, query: action.query, cursor: 0 };
     case "set-results": {
-      const cursor = Math.min(state.cursor, Math.max(0, action.results.length - 1));
-      return { ...state, results: action.results, resultsError: action.error ?? null, cursor };
+      const initial = Math.min(state.cursor, Math.max(0, action.results.length - 1));
+      const targetIsSection = action.results.length > 0 && action.results[initial]?.kind === "section";
+      const cursor = targetIsSection || initial === 0 ? firstSelectableIdx(action.results) : initial;
+      return {
+        ...state,
+        results: action.results,
+        resultsError: action.error ?? null,
+        cursor
+      };
     }
     case "move-cursor": {
       if (!state.results.length) return state;
-      const next = Math.max(0, Math.min(state.results.length - 1, state.cursor + action.delta));
+      if (action.delta === 0) return state;
+      const dir = action.delta > 0 ? 1 : -1;
+      let next = state.cursor;
+      const steps = Math.abs(action.delta);
+      for (let s = 0; s < steps; s++) {
+        const candidate = nextSelectableIdx(state.results, next, dir);
+        if (candidate === next) break;
+        next = candidate;
+      }
+      next = Math.max(0, Math.min(state.results.length - 1, next));
       return { ...state, cursor: next };
     }
     case "enter-rename":
@@ -34891,7 +34922,8 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
   }
   let firstUnpinnedIdx = -1;
   for (let i = 0; i < results.length; i++) {
-    if (!results[i].isPinned) {
+    const r = results[i];
+    if (r.kind === "chat" && !r.isPinned) {
       firstUnpinnedIdx = i;
       break;
     }
@@ -34915,13 +34947,14 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
     const idx = scrollOffset + i;
     const r = visible[i];
     const isCur = idx === cursor;
-    const isPinned = !!r.isPinned;
     if (hasDivider && !dividerWritten && idx === firstUnpinnedIdx && scrollOffset < firstUnpinnedIdx) {
       nodes.push(
         /* @__PURE__ */ import_react24.default.createElement(Text, { key: `div-${i}`, dimColor: true }, dividerText)
       );
       dividerWritten = true;
     }
+    if (r.kind !== "chat") continue;
+    const isPinned = !!r.isPinned;
     const proj = projectDisplay(r.projectPath, r.projectName);
     const date = fmtDate(r.lastActivity);
     const sid = shortSession(r.sessionId);
@@ -35264,6 +35297,7 @@ function App2(props) {
     onPending: (pending) => dispatch({ type: "search-pending", pending })
   });
   const selectedRow = state.results[state.cursor];
+  const chatRow = selectedRow?.kind === "chat" ? selectedRow : void 0;
   const useColor = !props.args.noColor;
   const cols = state.dims.cols;
   const showPreview = cols >= 100 && state.results.length > 0;
@@ -35273,33 +35307,33 @@ function App2(props) {
   const bodyRows = Math.max(4, state.dims.rows - reservedRows);
   const previewText = usePreview({
     db: props.db,
-    row: selectedRow,
+    row: chatRow,
     useColor,
     width: previewWidth
   });
-  const savedName = selectedRow ? props.sessionStore.names[`${selectedRow.source}:${selectedRow.sessionId}`] ?? null : null;
+  const savedName = chatRow ? props.sessionStore.names[`${chatRow.source}:${chatRow.sessionId}`] ?? null : null;
   const runResume = useResume({
     savedName,
     tmuxAvailable: props.tmuxAvailable,
     dangerouslySkipPermissions: props.dangerouslySkipPermissions
   });
   const togglePin = (0, import_react32.useCallback)(() => {
-    if (!selectedRow) return;
-    const key = `${selectedRow.source}:${selectedRow.sessionId}`;
+    if (!chatRow) return;
+    const key = `${chatRow.source}:${chatRow.sessionId}`;
     const idx = props.sessionStore.pins.indexOf(key);
     if (idx >= 0) props.sessionStore.pins.splice(idx, 1);
     else props.sessionStore.pins.unshift(key);
     saveSessionStore(props.sessionStore);
-  }, [selectedRow, props.sessionStore]);
+  }, [chatRow, props.sessionStore]);
   const commitRename = (0, import_react32.useCallback)(
     (trimmed) => {
-      if (!selectedRow) return;
-      const key = `${selectedRow.source}:${selectedRow.sessionId}`;
+      if (!chatRow) return;
+      const key = `${chatRow.source}:${chatRow.sessionId}`;
       if (trimmed.length === 0) delete props.sessionStore.names[key];
       else props.sessionStore.names[key] = trimmed;
       saveSessionStore(props.sessionStore);
     },
-    [selectedRow, props.sessionStore]
+    [chatRow, props.sessionStore]
   );
   use_input_default((input, key) => {
     if (key.ctrl && input === "c") {
@@ -35335,28 +35369,28 @@ function App2(props) {
     }
     if (key.return) {
       if (key.meta || key.shift) {
-        if (selectedRow && props.dangerouslySkipPermissions) {
-          runResume("dangerous", selectedRow);
+        if (chatRow && props.dangerouslySkipPermissions) {
+          runResume("dangerous", chatRow);
         }
-      } else if (selectedRow) {
-        runResume("resume", selectedRow);
+      } else if (chatRow) {
+        runResume("resume", chatRow);
       }
       return;
     }
     if (key.ctrl && input === "t") {
-      if (selectedRow) runResume("remote-control", selectedRow);
+      if (chatRow) runResume("remote-control", chatRow);
       return;
     }
     if (key.ctrl && input === "w") {
-      if (selectedRow && props.tmuxAvailable) runResume("tmux-window", selectedRow);
+      if (chatRow && props.tmuxAvailable) runResume("tmux-window", chatRow);
       return;
     }
     if (key.ctrl && input === "f") {
-      if (selectedRow) runResume("fork", selectedRow);
+      if (chatRow) runResume("fork", chatRow);
       return;
     }
     if (key.ctrl && input === "r") {
-      if (selectedRow) dispatch({ type: "enter-rename", initial: savedName ?? "" });
+      if (chatRow) dispatch({ type: "enter-rename", initial: savedName ?? "" });
       return;
     }
     if (key.ctrl && input === "p") {
@@ -35364,15 +35398,15 @@ function App2(props) {
       return;
     }
     if (key.ctrl && input === "o") {
-      if (selectedRow) {
-        process.stdout.write(selectedRow.sessionId + "\n");
+      if (chatRow) {
+        process.stdout.write(chatRow.sessionId + "\n");
         exit();
       }
       return;
     }
     if (key.ctrl && input === "d") {
-      if (selectedRow) {
-        process.stdout.write(selectedRow.projectPath + "\n");
+      if (chatRow) {
+        process.stdout.write(chatRow.projectPath + "\n");
         exit();
       }
       return;
@@ -35432,7 +35466,7 @@ function App2(props) {
       maxRows: bodyRows,
       noColor: props.args.noColor
     }
-  )) : null), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow, cols }));
+  )) : null), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow: chatRow, cols }));
 }
 
 // src/cli/main.ts
