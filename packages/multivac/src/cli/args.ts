@@ -93,10 +93,11 @@ export const OPTIONS: readonly OptionSpec[] = [
   },
   {
     flags: ["--format"],
-    placeholder: "text|tsv",
+    placeholder: "text|tsv|markdown",
     group: "Output",
     description:
-      "Output format. Default: text on a TTY, tsv when stdout is piped.",
+      "Output format. Default: text on a TTY, tsv when stdout is piped, " +
+      "markdown when --list is set.",
   },
   {
     flags: ["--no-color"],
@@ -205,7 +206,7 @@ export function buildHelp(): string {
     "usage: multivac [-h] [--version] [-i | -l] [--regex PAT] [--scan]",
     "                [--include-tools | --only-user]",
     "                [--project SUBSTR] [--since YYYY-MM-DD] [--limit N]",
-    "                [--format text|tsv] [--no-color]",
+    "                [--format text|tsv|markdown] [--no-color]",
     "                [--db-path PATH] [--preview SESSION_ID]",
     "                [--reindex | --index-status]",
     "                [init | query]",
@@ -394,9 +395,9 @@ export function parseArgs(argv: readonly string[]): Args {
         args.limit = Math.floor(args.limit);
         break;
       case "--format":
-        args.format = expanded[++i] as "text" | "tsv";
-        if (args.format !== "text" && args.format !== "tsv") {
-          dieUser("--format must be 'text' or 'tsv'");
+        args.format = expanded[++i] as "text" | "tsv" | "markdown";
+        if (args.format !== "text" && args.format !== "tsv" && args.format !== "markdown") {
+          dieUser("--format must be 'text', 'tsv', or 'markdown'");
         }
         break;
       case "--db-path":
