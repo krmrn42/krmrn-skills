@@ -1609,7 +1609,7 @@ const claudeSource: ChatSource = {
 export default claudeSource;
 ```
 
-- [ ] **Step 5: Add unit test for `buildClaudeArgs` (was unit-tested in JS via CCSEARCH_TEST hatch)**
+- [ ] **Step 5: Add unit test for `buildClaudeArgs` (was unit-tested in JS via MULTIVAC_TEST hatch)**
 
 ```typescript
 // test/unit/claudeSource.test.ts
@@ -2043,7 +2043,7 @@ export function PromptLine({ mode, query, renameBuffer, searchPending }: Props) 
   }
   return (
     <Box>
-      <Text color="cyan">ccsearch&gt; </Text>
+      <Text color="cyan">multivac&gt; </Text>
       <Text>{query}</Text>
       {searchPending ? <Text dimColor> …</Text> : null}
     </Box>
