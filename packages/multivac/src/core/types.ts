@@ -6,7 +6,7 @@ export type ResumeAction =
   | "dangerous"
   | "remote-control"
   | "tmux-window"
-  | "newchat";
+  | "newchat";                 // v0.8.1 — spawn `claude` in a dir without --resume
 
 export interface MessageRow {
   id: string;                 // ${source}:${sessionId}:${uuid}:${blockIdx}
@@ -37,9 +37,9 @@ export interface ResultRow {
   title?: string | null;
   isPinned?: boolean;
   // v0.8 additions:
-  recapText?: string;
-  gitBranch?: string | null;
-  skill?: string | null;
+  recapText?: string;          // from getRecapText() — used in non-FTS browse
+  gitBranch?: string | null;   // most recent git_branch seen in the conversation
+  skill?: string | null;       // most recent attribution_skill seen
 }
 
 export interface DirRow {
@@ -81,7 +81,7 @@ export interface Args {
   since: string | null;
   sinceTs: number;
   limit: number;
-  format: "text" | "tsv" | "markdown" | null;
+  format: "text" | "tsv" | "markdown" | null; // markdown: v0.8.1 default for --list
   dbPath: string;
   preview: string | null;
   noColor: boolean;

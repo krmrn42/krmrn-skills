@@ -38,7 +38,7 @@ ORDER BY bm25(messages_fts)
     if (seen.has(key)) continue;
     if (!r.content || !pattern.test(r.content)) continue;
     seen.set(key, {
-      kind: "chat" as const,
+      kind: "chat",
       source: r.source,
       sessionId: r.conversation_id,
       projectPath: r.project_path || "",
@@ -106,7 +106,7 @@ ORDER BY m.timestamp DESC
       r.content.slice(matchIdx + m[0].length, end) +
       suffix;
     seen.set(key, {
-      kind: "chat" as const,
+      kind: "chat",
       source: r.source,
       sessionId: r.conversation_id,
       projectPath: r.project_path || "",
