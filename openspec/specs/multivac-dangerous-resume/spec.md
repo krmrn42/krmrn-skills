@@ -1,28 +1,28 @@
-# ccsearch-dangerous-resume Specification
+# multivac-dangerous-resume Specification
 
 ## Purpose
 TBD - created by archiving change dangerous-resume-keybinding. Update Purpose after archive.
 ## Requirements
 ### Requirement: CLI flag arms the dangerous-resume capability
 
-`ccsearch` SHALL accept a new boolean flag `--dangerously-skip-permissions` (no short form). When the flag is present in `argv`, the picker MUST arm the dangerous-resume keybinding and update the picker's help line to reflect it. When the flag is absent, the picker's behavior MUST be byte-for-byte identical to the pre-change behavior.
+`multivac` SHALL accept a new boolean flag `--dangerously-skip-permissions` (no short form). When the flag is present in `argv`, the picker MUST arm the dangerous-resume keybinding and update the picker's help line to reflect it. When the flag is absent, the picker's behavior MUST be byte-for-byte identical to the pre-change behavior.
 
 #### Scenario: Flag accepted by parser
 
-- **WHEN** the user runs `ccsearch --dangerously-skip-permissions` on any platform
+- **WHEN** the user runs `multivac --dangerously-skip-permissions` on any platform
 - **THEN** the process does not error out at parse time
 - **AND** `args.dangerouslySkipPermissions` is `true` inside the parsed args record
 
 #### Scenario: Flag default is false
 
-- **WHEN** the user runs `ccsearch` without the flag
+- **WHEN** the user runs `multivac` without the flag
 - **THEN** `args.dangerouslySkipPermissions === false`
 - **AND** the picker's help line does NOT show the "Alt-Enter dangerous" entry
 - **AND** Alt+Enter inside the picker falls through to normal Enter behavior (still resumes the selected row with plain `claude --resume`)
 
 #### Scenario: Flag has no effect on one-shot mode
 
-- **WHEN** the user runs `ccsearch --dangerously-skip-permissions --list "foo"` (one-shot via the `interactive-by-default` change's opt-out, or with stdout piped)
+- **WHEN** the user runs `multivac --dangerously-skip-permissions --list "foo"` (one-shot via the `interactive-by-default` change's opt-out, or with stdout piped)
 - **THEN** the printed `resumeOneLiner` lines do NOT contain `--dangerously-skip-permissions`
 - **AND** the process exits exactly as it would without the flag (the flag is silently ignored in one-shot mode, on purpose — see design.md §Decision 4)
 
@@ -82,11 +82,11 @@ When the dangerous-resume capability is armed, the picker's status bar SHALL inc
 
 ### Requirement: `--help` documents the flag
 
-`ccsearch --help` SHALL include an entry for `--dangerously-skip-permissions` describing what it does (arms the picker keybinding to add `--dangerously-skip-permissions` to the `claude` spawn) and stating that the flag has no effect on one-shot text output. The entry MUST also note that Shift+Enter is a best-effort binding (terminal-dependent) and Alt+Enter is the reliable one.
+`multivac --help` SHALL include an entry for `--dangerously-skip-permissions` describing what it does (arms the picker keybinding to add `--dangerously-skip-permissions` to the `claude` spawn) and stating that the flag has no effect on one-shot text output. The entry MUST also note that Shift+Enter is a best-effort binding (terminal-dependent) and Alt+Enter is the reliable one.
 
 #### Scenario: --help describes the flag
 
-- **WHEN** the user runs `ccsearch --help`
+- **WHEN** the user runs `multivac --help`
 - **THEN** the output contains a section or line for `--dangerously-skip-permissions`
 - **AND** the description names Alt+Enter as the bound key, mentions Shift+Enter as terminal-dependent, and states the flag is picker-only
 

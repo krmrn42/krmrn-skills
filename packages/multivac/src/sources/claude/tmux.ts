@@ -50,7 +50,7 @@ export function spawnTmuxNewWindow(row: ResultRow, opts: ResumeOpts): SpawnResul
   const tmuxArgs = buildTmuxNewWindowCommand(row, opts);
   if (row.projectPath && !isExistingDir(row.projectPath)) {
     process.stderr.write(
-      `ccsearch: project path '${row.projectPath}' is not a directory; ` +
+      `multivac: project path '${row.projectPath}' is not a directory; ` +
         "tmux new-window will fall back to its own cwd.\n"
     );
   }
@@ -58,12 +58,12 @@ export function spawnTmuxNewWindow(row: ResultRow, opts: ResumeOpts): SpawnResul
   if (result.error) {
     if ((result.error as NodeJS.ErrnoException).code === "ENOENT") {
       process.stderr.write(
-        "ccsearch: `tmux` not found on PATH. " +
-          "Install tmux or run ccsearch outside a tmux session.\n"
+        "multivac: `tmux` not found on PATH. " +
+          "Install tmux or run multivac outside a tmux session.\n"
       );
       return { status: EXIT_ENV };
     }
-    process.stderr.write(`ccsearch: spawning tmux failed: ${result.error.message}\n`);
+    process.stderr.write(`multivac: spawning tmux failed: ${result.error.message}\n`);
     return { status: EXIT_INTERNAL };
   }
   return { status: result.status ?? EXIT_INTERNAL };

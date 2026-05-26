@@ -1,4 +1,4 @@
-# ccsearch-user-manual Specification
+# multivac-user-manual Specification
 
 ## Purpose
 TBD - created by archiving change ccsearch-user-manual. Update Purpose after archive.
@@ -33,7 +33,7 @@ A table of contents MUST appear at the top, linking to each `##` section.
 
 ### Requirement: The manual covers every picker keybinding and CLI flag
 
-For every keybinding accepted by the picker (those listed in the picker's BINDINGS table per the `ccsearch-picker-status-bar` capability) and every long-form CLI flag accepted by `parseArgs` (the same flags `ccsearch --help` enumerates), the manual SHALL include at least one paragraph or table row describing the user-facing behavior. The description MUST mention any preconditions (e.g., "Ctrl-W requires `$TMUX`", "Alt-Enter requires `--dangerously-skip-permissions`").
+For every keybinding accepted by the picker (those listed in the picker's BINDINGS table per the `multivac-picker-status-bar` capability) and every long-form CLI flag accepted by `parseArgs` (the same flags `multivac --help` enumerates), the manual SHALL include at least one paragraph or table row describing the user-facing behavior. The description MUST mention any preconditions (e.g., "Ctrl-W requires `$TMUX`", "Alt-Enter requires `--dangerously-skip-permissions`").
 
 #### Scenario: A keybinding without a manual entry is a defect
 
@@ -42,7 +42,7 @@ For every keybinding accepted by the picker (those listed in the picker's BINDIN
 
 #### Scenario: Flag descriptions match `--help`
 
-- **WHEN** a reader compares the manual's flag-reference table to `ccsearch --help`
+- **WHEN** a reader compares the manual's flag-reference table to `multivac --help`
 - **THEN** the same set of long-form flags appears in both (manual MAY use shorter descriptions but the flag names match)
 
 ### Requirement: Cross-references to specs are footer-style
@@ -52,7 +52,7 @@ At the end of each major section describing a feature, the manual SHALL include 
 #### Scenario: Section footer points to spec
 
 - **WHEN** a reader finishes the "Mutation actions: rename" section
-- **THEN** the section ends with a line like `> spec: openspec/specs/ccsearch-session-rename/spec.md`
+- **THEN** the section ends with a line like `> spec: openspec/specs/multivac-session-rename/spec.md`
 
 #### Scenario: Sections with no corresponding spec omit the footer
 
@@ -70,7 +70,7 @@ At the end of each major section describing a feature, the manual SHALL include 
 
 ### Requirement: Origins section credits the sibling-repo archives
 
-The manual's "Origins" section (the final `##` section) SHALL list the four archived OpenSpec changes that shaped ccsearch's foundation. Each entry MUST give the change name and a one-line description, and MUST link to the archive path in the sibling marketplace `krmrn42/skills`.
+The manual's "Origins" section (the final `##` section) SHALL list the four archived OpenSpec changes that shaped multivac's foundation. Each entry MUST give the change name and a one-line description, and MUST link to the archive path in the sibling marketplace `krmrn42/skills`.
 
 #### Scenario: Origins lists the four foundational changes
 

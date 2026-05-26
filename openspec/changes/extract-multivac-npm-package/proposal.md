@@ -26,7 +26,7 @@ This change also completes the rename captured by the in-repo naming decision re
 - `multivac-monorepo-layout`: defines the in-repo packaging — `packages/multivac/` directory, the plugin-as-shim relationship, the renamed plugin bin (`plugins/chat-search/bin/multivac`), version-sync invariants, and the boundary between plugin-owned vs package-owned files.
 
 ### Modified Capabilities
-- `ccsearch-cli-help`: program-name literal in the `usage:` synopsis line and in every `--help` example SHALL change from `ccsearch` to `multivac`. All other help-output requirements (section order, flag coverage, exit-code documentation, constraints-between-flags surfacing, stdout/zero-exit contract, parser/help drift test) remain unchanged. The capability folder name in `openspec/specs/` is preserved (`ccsearch-cli-help`) for archive continuity; a separate future change MAY rename the capability if warranted.
+- `multivac-cli-help`: program-name literal in the `usage:` synopsis line and in every `--help` example SHALL change from `ccsearch` to `multivac`. All other help-output requirements (section order, flag coverage, exit-code documentation, constraints-between-flags surfacing, stdout/zero-exit contract, parser/help drift test) remain unchanged. (This change originally preserved the capability folder name as `ccsearch-cli-help` for archive continuity; it was subsequently renamed `ccsearch-cli-help` → `multivac-cli-help`, together with the other `ccsearch-*` capabilities, to drop the legacy product name.)
 
 ## Impact
 

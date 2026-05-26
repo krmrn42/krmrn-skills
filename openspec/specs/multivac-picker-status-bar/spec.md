@@ -1,4 +1,4 @@
-# ccsearch-picker-status-bar Specification
+# multivac-picker-status-bar Specification
 
 ## Purpose
 TBD - created by archiving change picker-status-bar. Update Purpose after archive.
@@ -23,7 +23,7 @@ Each binding's `visible(deps)` predicate determines whether it appears in the st
 
 #### Scenario: Dangerous entry hidden when not armed
 
-- **WHEN** the user runs `ccsearch` without `--dangerously-skip-permissions`
+- **WHEN** the user runs `multivac` without `--dangerously-skip-permissions`
 - **THEN** the status bar does NOT include an "Alt-Enter" or "Shift-Enter" entry
 - **AND** Alt+Enter functionally falls through to plain resume (existing behavior)
 

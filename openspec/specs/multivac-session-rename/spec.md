@@ -1,4 +1,4 @@
-# ccsearch-session-rename Specification
+# multivac-session-rename Specification
 
 ## Purpose
 TBD - created by archiving change picker-rename-session. Update Purpose after archive.
@@ -78,17 +78,17 @@ Whenever the picker spawns `claude` for a row that has a saved name in `sessions
 
 ### Requirement: `--print-names` reads the config file to stdout
 
-`ccsearch --print-names` SHALL print the contents of `sessions.json` to stdout (as valid JSON) and exit `0`. If the file does not exist, prints `{}` and exits `0`. The flag MUST NOT write to the file or perform any other side effect.
+`multivac --print-names` SHALL print the contents of `sessions.json` to stdout (as valid JSON) and exit `0`. If the file does not exist, prints `{}` and exits `0`. The flag MUST NOT write to the file or perform any other side effect.
 
 #### Scenario: Prints the file contents
 
-- **WHEN** the user runs `ccsearch --print-names` and `sessions.json` contains `{"version":1,"names":{"abc":"my chat"}}`
+- **WHEN** the user runs `multivac --print-names` and `sessions.json` contains `{"version":1,"names":{"abc":"my chat"}}`
 - **THEN** stdout receives that exact JSON (whitespace normalization allowed)
 - **AND** exit code is `0`
 
 #### Scenario: Missing file → empty object
 
-- **WHEN** the user runs `ccsearch --print-names` and `sessions.json` does not exist
+- **WHEN** the user runs `multivac --print-names` and `sessions.json` does not exist
 - **THEN** stdout receives `{}` (a valid empty JSON object)
 - **AND** exit code is `0`
 

@@ -242,7 +242,7 @@ For the canonical form, run `multivac --help`. The summary:
 | `--unpin-all` | Clear every pinned session; leaves saved names untouched |
 | `--no-tmux` | Disable the picker's Ctrl-W binding even inside tmux |
 
-Mutually exclusive: `-i` / `-l`; `--only-user` / `--include-tools`; `--reindex` and `--index-status` can't be combined with `--db-path` / `$CCSEARCH_DB`.
+Mutually exclusive: `-i` / `-l`; `--only-user` / `--include-tools`; `--reindex` and `--index-status` can't be combined with `--db-path` / `$MULTIVAC_DB`.
 
 > spec: `openspec/specs/multivac-cli-help/spec.md`
 

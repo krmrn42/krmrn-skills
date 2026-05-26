@@ -110,7 +110,7 @@ export function renderIndexStatus(st: IndexStatus): string {
     lines.push(`pending:    none`);
   } else {
     lines.push(
-      `pending:    ${st.pendingFiles} file${st.pendingFiles === 1 ? "" : "s"} / ${formatBytes(st.pendingBytes)} — will be indexed on next ccsearch run`
+      `pending:    ${st.pendingFiles} file${st.pendingFiles === 1 ? "" : "s"} / ${formatBytes(st.pendingBytes)} — will be indexed on next multivac run`
     );
   }
   return lines.join("\n") + "\n";
