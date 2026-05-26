@@ -60,7 +60,7 @@ export function App(props: AppProps) {
 
   const previewText = usePreview({
     db: props.db,
-    row: chatRow,
+    row: selectedRow,
     useColor,
     width: previewWidth,
   });

@@ -192,7 +192,7 @@ var require_react_production_min = __commonJS({
     }
     var U = { current: null };
     var V = { transition: null };
-    var W = { ReactCurrentDispatcher: U, ReactCurrentBatchConfig: V, ReactCurrentOwner: K };
+    var W2 = { ReactCurrentDispatcher: U, ReactCurrentBatchConfig: V, ReactCurrentOwner: K };
     function X() {
       throw Error("act(...) is not supported in production builds of React.");
     }
@@ -220,7 +220,7 @@ var require_react_production_min = __commonJS({
     exports.PureComponent = G;
     exports.StrictMode = q;
     exports.Suspense = w;
-    exports.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = W;
+    exports.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = W2;
     exports.act = X;
     exports.cloneElement = function(a, b, e) {
       if (null === a || void 0 === a) throw Error("React.cloneElement(...): The argument must be a React element, but you passed " + a + ".");
@@ -6538,7 +6538,7 @@ var require_react_reconciler_production_min = __commonJS({
         }
         return b;
       }
-      var sh = Math.ceil, th = da.ReactCurrentDispatcher, uh = da.ReactCurrentOwner, W = da.ReactCurrentBatchConfig, H = 0, N = null, X = null, Z = 0, $f = 0, Zf = ic(0), R = 0, vh = null, le = 0, wh = 0, xh = 0, yh = null, zh = null, bh = 0, Dg = Infinity, Ah = null;
+      var sh = Math.ceil, th = da.ReactCurrentDispatcher, uh = da.ReactCurrentOwner, W2 = da.ReactCurrentBatchConfig, H = 0, N = null, X = null, Z = 0, $f = 0, Zf = ic(0), R = 0, vh = null, le = 0, wh = 0, xh = 0, yh = null, zh = null, bh = 0, Dg = Infinity, Ah = null;
       function Bh() {
         Dg = D() + 500;
       }
@@ -6752,11 +6752,11 @@ var require_react_reconciler_production_min = __commonJS({
         null !== Dh && 0 === Dh.tag && 0 === (H & 6) && Oh();
         var b = H;
         H |= 1;
-        var c = W.transition, d = C;
+        var c = W2.transition, d = C;
         try {
-          if (W.transition = null, C = 1, a) return a();
+          if (W2.transition = null, C = 1, a) return a();
         } finally {
-          C = d, W.transition = c, H = b, 0 === (H & 6) && ad();
+          C = d, W2.transition = c, H = b, 0 === (H & 6) && ad();
         }
       }
       function Eg() {
@@ -7004,11 +7004,11 @@ var require_react_reconciler_production_min = __commonJS({
         0 === R && (R = 5);
       }
       function Wh(a, b, c) {
-        var d = C, e = W.transition;
+        var d = C, e = W2.transition;
         try {
-          W.transition = null, C = 1, bi(a, b, c, d);
+          W2.transition = null, C = 1, bi(a, b, c, d);
         } finally {
-          W.transition = e, C = d;
+          W2.transition = e, C = d;
         }
         return null;
       }
@@ -7034,8 +7034,8 @@ var require_react_reconciler_production_min = __commonJS({
         }));
         f = 0 !== (c.flags & 15990);
         if (0 !== (c.subtreeFlags & 15990) || f) {
-          f = W.transition;
-          W.transition = null;
+          f = W2.transition;
+          W2.transition = null;
           var g = C;
           C = 1;
           var h = H;
@@ -7049,7 +7049,7 @@ var require_react_reconciler_production_min = __commonJS({
           Mc();
           H = h;
           C = g;
-          W.transition = f;
+          W2.transition = f;
         } else a.current = c;
         Ch && (Ch = false, Dh = a, Eh = e);
         f = a.pendingLanes;
@@ -7066,9 +7066,9 @@ var require_react_reconciler_production_min = __commonJS({
       }
       function Oh() {
         if (null !== Dh) {
-          var a = Ic(Eh), b = W.transition, c = C;
+          var a = Ic(Eh), b = W2.transition, c = C;
           try {
-            W.transition = null;
+            W2.transition = null;
             C = 16 > a ? 16 : a;
             if (null === Dh) var d = false;
             else {
@@ -7185,7 +7185,7 @@ var require_react_reconciler_production_min = __commonJS({
             }
             return d;
           } finally {
-            C = c, W.transition = b;
+            C = c, W2.transition = b;
           }
         }
         return false;
@@ -7734,19 +7734,19 @@ var require_react_reconciler_production_min = __commonJS({
         return { $$typeof: lh, value: a };
       };
       exports2.deferredUpdates = function(a) {
-        var b = C, c = W.transition;
+        var b = C, c = W2.transition;
         try {
-          return W.transition = null, C = 16, a();
+          return W2.transition = null, C = 16, a();
         } finally {
-          C = b, W.transition = c;
+          C = b, W2.transition = c;
         }
       };
       exports2.discreteUpdates = function(a, b, c, d, e) {
-        var f = C, g = W.transition;
+        var f = C, g = W2.transition;
         try {
-          return W.transition = null, C = 1, a(b, c, d, e);
+          return W2.transition = null, C = 1, a(b, c, d, e);
         } finally {
-          C = f, W.transition = g, 0 === H && Bh();
+          C = f, W2.transition = g, 0 === H && Bh();
         }
       };
       exports2.findAllNodes = rh;
@@ -7789,11 +7789,11 @@ var require_react_reconciler_production_min = __commonJS({
       exports2.flushControlled = function(a) {
         var b = H;
         H |= 1;
-        var c = W.transition, d = C;
+        var c = W2.transition, d = C;
         try {
-          W.transition = null, C = 1, a();
+          W2.transition = null, C = 1, a();
         } finally {
-          C = d, W.transition = c, H = b, 0 === H && (Bh(), ad());
+          C = d, W2.transition = c, H = b, 0 === H && (Bh(), ad());
         }
       };
       exports2.flushPassiveEffects = Oh;
@@ -28000,7 +28000,7 @@ var loadYoga = (() => {
       function d(k) {
         k = c(k);
         k.length !== a.length && Ta("Mismatched type converter count");
-        for (var m = 0; m < a.length; ++m) W(a[m], k[m]);
+        for (var m = 0; m < a.length; ++m) W2(a[m], k[m]);
       }
       a.forEach(function(k) {
         Ya[k] = b;
@@ -28029,7 +28029,7 @@ var loadYoga = (() => {
           throw new TypeError("Unknown type size: " + a);
       }
     }
-    function W(a, b, c = {}) {
+    function W2(a, b, c = {}) {
       if (!("argPackAdvance" in b)) throw new TypeError("registerType registeredInstance requires argPackAdvance");
       var d = b.name;
       a || L('type "' + d + '" must have a positive integer typeid pointer');
@@ -28502,7 +28502,7 @@ var loadYoga = (() => {
       B: function(a, b, c, d, e) {
         var f = Za(c);
         b = N(b);
-        W(a, {
+        W2(a, {
           name: b,
           fromWireType: function(g) {
             return !!g;
@@ -28626,7 +28626,7 @@ var loadYoga = (() => {
       },
       A: function(a, b) {
         b = N(b);
-        W(
+        W2(
           a,
           { name: b, fromWireType: function(c) {
             var d = M(c);
@@ -28640,7 +28640,7 @@ var loadYoga = (() => {
       n: function(a, b, c) {
         c = Za(c);
         b = N(b);
-        W(a, { name: b, fromWireType: function(d) {
+        W2(a, { name: b, fromWireType: function(d) {
           return d;
         }, toWireType: function(d, e) {
           return e;
@@ -28660,7 +28660,7 @@ var loadYoga = (() => {
         } : function(k, m) {
           return m;
         };
-        W(a, { name: b, fromWireType: f, toWireType: c, argPackAdvance: 8, readValueFromPointer: sb(b, e, 0 !== d), V: null });
+        W2(a, { name: b, fromWireType: f, toWireType: c, argPackAdvance: 8, readValueFromPointer: sb(b, e, 0 !== d), V: null });
       },
       b: function(a, b, c) {
         function d(f) {
@@ -28670,12 +28670,12 @@ var loadYoga = (() => {
         }
         var e = [Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array, Float32Array, Float64Array][b];
         c = N(c);
-        W(a, { name: c, fromWireType: d, argPackAdvance: 8, readValueFromPointer: d }, { ua: true });
+        W2(a, { name: c, fromWireType: d, argPackAdvance: 8, readValueFromPointer: d }, { ua: true });
       },
       o: function(a, b) {
         b = N(b);
         var c = "std::string" === b;
-        W(a, { name: b, fromWireType: function(d) {
+        W2(a, { name: b, fromWireType: function(d) {
           var e = E[d >> 2], f = d + 4;
           if (c) for (var g = f, k = 0; k <= e; ++k) {
             var m = f + k;
@@ -28757,7 +28757,7 @@ var loadYoga = (() => {
           var g = () => ka;
           var k = 1;
         } else 4 === b && (d = wb, e = xb, f = yb, g = () => E, k = 2);
-        W(a, { name: c, fromWireType: function(m) {
+        W2(a, { name: c, fromWireType: function(m) {
           for (var l = E[m >> 2], n = g(), p, r = m + 4, u = 0; u <= l; ++u) {
             var t = m + 4 + u * b;
             if (u == l || 0 == n[t >> k]) r = d(r, t - r), void 0 === p ? p = r : (p += String.fromCharCode(0), p += r), r = t + b;
@@ -28783,7 +28783,7 @@ var loadYoga = (() => {
       },
       C: function(a, b) {
         b = N(b);
-        W(a, {
+        W2(a, {
           va: true,
           name: b,
           argPackAdvance: 0,
@@ -34592,9 +34592,9 @@ function renderPreview(db, sessionId, source, useColor) {
   const bold = useColor ? ANSI_BOLD : "";
   const dim = useColor ? ANSI_DIM : "";
   const reset = useColor ? ANSI_RESET : "";
-  const W = 70;
+  const W2 = 70;
   const box = pickBox(!useColor);
-  const horiz = box.horizontal.repeat(W - 2);
+  const horiz = box.horizontal.repeat(W2 - 2);
   const lines = [];
   lines.push(`${dim}${box.topLeft}${horiz}${box.topRight}${reset}
 `);
@@ -35260,6 +35260,77 @@ function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
 
 // src/tui/hooks/usePreview.ts
 var import_react29 = __toESM(require_react(), 1);
+
+// src/core/render/dir-preview.ts
+var W = 70;
+var RECENT_LIMIT = 5;
+function renderDirPreview(db, dir, useColor) {
+  const bold = useColor ? ANSI_BOLD : "";
+  const dim = useColor ? ANSI_DIM : "";
+  const reset = useColor ? ANSI_RESET : "";
+  const box = pickBox(!useColor);
+  const horiz = box.horizontal.repeat(W - 2);
+  const branchRow = db.prepare(
+    "SELECT DISTINCT git_branch FROM messages WHERE project_path = ? AND git_branch IS NOT NULL ORDER BY git_branch"
+  ).all(dir.projectPath);
+  const branches = branchRow.map((r) => r.git_branch).filter(Boolean);
+  const lines = [];
+  lines.push(`${dim}${box.topLeft}${horiz}${box.topRight}${reset}
+`);
+  lines.push(`${dim}${box.vertical} ${reset}${bold}${dir.projectPath}${reset}
+`);
+  lines.push(
+    `${dim}${box.vertical} ${reset}${dim}${dir.chatCount} chat${dir.chatCount === 1 ? "" : "s"} \xB7 last ${fmtDate(dir.lastActivity)}${reset}
+`
+  );
+  if (branches.length > 0) {
+    lines.push(`${dim}${box.vertical} ${reset}${dim}branches: ${branches.join(", ")}${reset}
+`);
+  }
+  lines.push(`${dim}${box.bottomLeft}${horiz}${box.bottomRight}${reset}
+
+`);
+  const recent = db.prepare(
+    "SELECT conversation_id, MAX(timestamp) AS last_ts,        COUNT(*) AS msg_count FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') GROUP BY conversation_id ORDER BY last_ts DESC LIMIT ?"
+  ).all(dir.projectPath, RECENT_LIMIT);
+  if (recent.length > 0) {
+    lines.push(`${dim}Recent chats here:${reset}
+`);
+    const titleStmt = db.prepare(
+      "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"
+    );
+    for (const c of recent) {
+      const cands = titleStmt.all(c.conversation_id);
+      let title = c.conversation_id.slice(0, 8);
+      for (const cand of cands) {
+        if (!cand.content) continue;
+        const synth = synthesizeTitle(cand.content);
+        if (synth) {
+          title = synth;
+          break;
+        }
+      }
+      lines.push(
+        `  ${bold}${title}${reset} ${dim}${fmtDate(c.last_ts)}  ${c.msg_count} msgs${reset}
+`
+      );
+      const recap = getRecapText(db, c.conversation_id, "claude");
+      if (recap) {
+        const firstLine = recap.split("\n", 1)[0].trim();
+        if (firstLine.length > 0) {
+          lines.push(`     ${dim}recap: ${firstLine}${reset}
+`);
+        }
+      }
+    }
+    lines.push("\n");
+  }
+  lines.push(`${dim}(Enter: new chat here)${reset}
+`);
+  return lines.join("");
+}
+
+// src/tui/hooks/usePreview.ts
 function usePreview({ db, row, useColor, width }) {
   const cache3 = (0, import_react29.useRef)(/* @__PURE__ */ new Map());
   const [text, setText] = (0, import_react29.useState)("");
@@ -35267,18 +35338,18 @@ function usePreview({ db, row, useColor, width }) {
     cache3.current.clear();
   }, [width]);
   (0, import_react29.useEffect)(() => {
-    if (!row) {
+    if (!row || row.kind === "section") {
       setText("");
       return;
     }
-    const key = `${row.source}:${row.sessionId}`;
+    const key = row.kind === "chat" ? `chat:${row.source}:${row.sessionId}` : `dir:${row.projectPath}`;
     const cached = cache3.current.get(key);
     if (cached !== void 0) {
       setText(cached);
       return;
     }
     try {
-      const out = renderPreview(db, row.sessionId, row.source, useColor);
+      const out = row.kind === "chat" ? renderPreview(db, row.sessionId, row.source, useColor) : renderDirPreview(db, row, useColor);
       cache3.current.set(key, out);
       setText(out);
     } catch (e) {
@@ -35366,7 +35437,7 @@ function App2(props) {
   const bodyRows = Math.max(4, state.dims.rows - reservedRows);
   const previewText = usePreview({
     db: props.db,
-    row: chatRow,
+    row: selectedRow,
     useColor,
     width: previewWidth
   });
