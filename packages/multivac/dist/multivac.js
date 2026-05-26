@@ -34916,78 +34916,137 @@ function StatusBar({ deps, selectedRow, cols }) {
 
 // src/tui/components/ResultList.tsx
 var import_react24 = __toESM(require_react(), 1);
+var CHAT_ROW_HEIGHT = 3;
+var DIR_ROW_HEIGHT = 2;
+var SECTION_ROW_HEIGHT = 1;
+function rowHeight(row) {
+  if (row.kind === "section") return SECTION_ROW_HEIGHT;
+  if (row.kind === "dir") return DIR_ROW_HEIGHT;
+  return CHAT_ROW_HEIGHT;
+}
 function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
   if (!results.length) {
     return /* @__PURE__ */ import_react24.default.createElement(Box_default, null, /* @__PURE__ */ import_react24.default.createElement(Text, { dimColor: true }, "(no results)"));
   }
-  let firstUnpinnedIdx = -1;
+  let firstUnpinnedChatIdx = -1;
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     if (r.kind === "chat" && !r.isPinned) {
-      firstUnpinnedIdx = i;
+      firstUnpinnedChatIdx = i;
       break;
     }
   }
-  const hasDivider = results.length > 0 && firstUnpinnedIdx > 0 && firstUnpinnedIdx < results.length;
-  const dividerText = "\u2500\u2500 recent \u2500\u2500";
-  const rowsPerResult = 3;
-  const usableHeight = hasDivider ? maxRows - 1 : maxRows;
-  const maxVisible = Math.max(1, Math.floor(usableHeight / rowsPerResult));
-  let scrollOffset = 0;
-  if (cursor < scrollOffset) scrollOffset = cursor;
-  if (cursor >= scrollOffset + maxVisible) scrollOffset = cursor - maxVisible + 1;
-  scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, results.length - maxVisible)));
-  const visible = results.slice(scrollOffset, scrollOffset + maxVisible);
+  const hasPinDivider = (() => {
+    if (firstUnpinnedChatIdx <= 0) return false;
+    for (let i = 0; i < firstUnpinnedChatIdx; i++) {
+      const r = results[i];
+      if (r.kind === "chat" && r.isPinned) return true;
+    }
+    return false;
+  })();
+  let scrollOffset = Math.max(0, Math.min(cursor, results.length - 1));
+  let used = rowHeight(results[scrollOffset]);
+  while (scrollOffset > 0) {
+    const prevHeight = rowHeight(results[scrollOffset - 1]);
+    if (used + prevHeight + (hasPinDivider ? 1 : 0) > maxRows) break;
+    scrollOffset--;
+    used += prevHeight;
+  }
   const pinMarker = noColor ? "* " : "\u{1F4CC} ";
+  const dirMarker = noColor ? "[dir] " : "\u{1F4C1} ";
+  const chatMarker = noColor ? "[chat] " : "\u{1F4AC} ";
   const cursorPrefix = "\u258C ";
   const blankPrefix = "  ";
+  const dividerText = "\u2500\u2500 recent \u2500\u2500";
   const nodes = [];
-  let dividerWritten = false;
-  for (let i = 0; i < visible.length; i++) {
-    const idx = scrollOffset + i;
-    const r = visible[i];
-    const isCur = idx === cursor;
-    if (hasDivider && !dividerWritten && idx === firstUnpinnedIdx && scrollOffset < firstUnpinnedIdx) {
-      nodes.push(
-        /* @__PURE__ */ import_react24.default.createElement(Text, { key: `div-${i}`, dimColor: true }, dividerText)
-      );
-      dividerWritten = true;
+  let pinDividerWritten = false;
+  let consumed = 0;
+  for (let i = scrollOffset; i < results.length; i++) {
+    const row = results[i];
+    const isCur = i === cursor;
+    const h = rowHeight(row);
+    if (consumed + h > maxRows) break;
+    if (hasPinDivider && !pinDividerWritten && i === firstUnpinnedChatIdx && scrollOffset < firstUnpinnedChatIdx && consumed + 1 <= maxRows) {
+      nodes.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `pin-div-${i}`, dimColor: true }, dividerText));
+      pinDividerWritten = true;
+      consumed += 1;
     }
-    if (r.kind !== "chat") continue;
-    const isPinned = !!r.isPinned;
-    const proj = projectDisplay(r.projectPath, r.projectName);
-    const date = fmtDate(r.lastActivity);
-    const sid = shortSession(r.sessionId);
-    const msgs = String(r.msgCount).padStart(4);
-    const headBody = r.title ? `${r.title} \xB7 ${proj}  ${date}  ${msgs} msgs  ${sid}` : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
-    const pinPart = isPinned ? pinMarker : "";
-    const head = pinPart + headBody;
-    const headTrunc = truncateToWidth(head, listWidth - 2);
-    const snippetText = colorizeSnippet(r.snippet || "", !noColor);
-    const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4) : "";
-    const dim = dimRows;
-    nodes.push(
-      /* @__PURE__ */ import_react24.default.createElement(Text, { key: "h-" + i, bold: isCur && !dimRows, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
-    );
-    const metaParts = [];
-    if (r.gitBranch) metaParts.push("(" + r.gitBranch + ")");
-    if (r.skill) metaParts.push(r.skill);
-    if (metaParts.length > 0) {
-      const metaText = truncateToWidth(metaParts.join(" \xB7 "), listWidth - 4);
-      nodes.push(
-        /* @__PURE__ */ import_react24.default.createElement(Text, { key: "m-" + i, dimColor: true }, "    ", metaText)
-      );
+    if (row.kind === "section") {
+      nodes.push(renderSectionHeader(row, i, listWidth));
+      consumed += SECTION_ROW_HEIGHT;
+      continue;
     }
-    const previewLine = snipTrunc || (r.recapText ? truncateToWidth("recap: " + r.recapText.replace(/\n/g, " \u23CE "), listWidth - 4) : "");
-    if (previewLine) {
-      nodes.push(
-        /* @__PURE__ */ import_react24.default.createElement(Text, { key: "s-" + i, dimColor: true }, "    ", previewLine)
-      );
-    } else {
-      nodes.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: "s-" + i }, ""));
+    if (row.kind === "dir") {
+      nodes.push(...renderDirRow(row, i, isCur, listWidth, dimRows, dirMarker, cursorPrefix, blankPrefix));
+      consumed += DIR_ROW_HEIGHT;
+      continue;
     }
+    nodes.push(...renderChatRow(
+      row,
+      i,
+      isCur,
+      noColor,
+      listWidth,
+      dimRows,
+      pinMarker,
+      chatMarker,
+      cursorPrefix,
+      blankPrefix
+    ));
+    consumed += CHAT_ROW_HEIGHT;
   }
   return /* @__PURE__ */ import_react24.default.createElement(Box_default, { flexDirection: "column" }, nodes);
+}
+function renderSectionHeader(row, key, listWidth) {
+  const text = truncateToWidth(`\u2500\u2500 ${row.label} \u2500\u2500`, listWidth);
+  return /* @__PURE__ */ import_react24.default.createElement(Text, { key: `sec-${key}`, dimColor: true }, text);
+}
+function renderDirRow(row, key, isCur, listWidth, dim, marker, cursorPrefix, blankPrefix) {
+  const date = fmtDate(row.lastActivity);
+  const count = `${row.chatCount} chat${row.chatCount === 1 ? "" : "s"}`;
+  const head = `${marker}${row.projectPath}  ${count}  ${date}`;
+  const headTrunc = truncateToWidth(head, listWidth - 2);
+  const second = row.topChatTitles.length > 0 ? truncateToWidth(row.topChatTitles.join(" \xB7 "), listWidth - 4) : "";
+  const out = [];
+  out.push(
+    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `d-h-${key}`, bold: isCur && !dim, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
+  );
+  out.push(
+    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `d-s-${key}`, dimColor: true }, "    ", second)
+  );
+  return out;
+}
+function renderChatRow(row, key, isCur, noColor, listWidth, dim, pinMarker, chatMarker, cursorPrefix, blankPrefix) {
+  const proj = projectDisplay(row.projectPath, row.projectName);
+  const date = fmtDate(row.lastActivity);
+  const sid = shortSession(row.sessionId);
+  const msgs = String(row.msgCount).padStart(4);
+  const headBody = row.title ? `${row.title} \xB7 ${proj}  ${date}  ${msgs} msgs  ${sid}` : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
+  const pinPart = row.isPinned ? pinMarker : chatMarker;
+  const head = pinPart + headBody;
+  const headTrunc = truncateToWidth(head, listWidth - 2);
+  const snippetText = colorizeSnippet(row.snippet || "", !noColor);
+  const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4) : "";
+  const metaParts = [];
+  if (row.gitBranch) metaParts.push("(" + row.gitBranch + ")");
+  if (row.skill) metaParts.push(row.skill);
+  const metaText = metaParts.length > 0 ? truncateToWidth(metaParts.join(" \xB7 "), listWidth - 4) : "";
+  const previewLine = snipTrunc || (row.recapText ? truncateToWidth("recap: " + row.recapText.replace(/\n/g, " \u23CE "), listWidth - 4) : "");
+  const out = [];
+  out.push(
+    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-h-${key}`, bold: isCur && !dim, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
+  );
+  if (metaText) {
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-m-${key}`, dimColor: true }, "    ", metaText));
+  } else {
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-m-${key}` }, ""));
+  }
+  if (previewLine) {
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-s-${key}`, dimColor: true }, "    ", previewLine));
+  } else {
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-s-${key}` }, ""));
+  }
+  return out;
 }
 
 // src/tui/components/PreviewPane.tsx

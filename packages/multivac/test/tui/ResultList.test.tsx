@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { render } from "ink-testing-library";
 import { ResultList } from "../../src/tui/components/ResultList.js";
-import type { ResultRow } from "../../src/core/types.js";
+import type { ResultRow, DirRow, SectionHeader, Selectable } from "../../src/core/types.js";
 
 function row(id: string, opts: Partial<ResultRow> = {}): ResultRow {
   return {
@@ -112,4 +112,65 @@ test("ResultList: pure FTS row (no recapText) shows snippet on line 3", () => {
   const frame = lastFrame() ?? "";
   assert.ok(frame.includes("MATCH"));
   assert.ok(!frame.includes("recap:"));
+});
+
+function dir(path: string, opts: Partial<DirRow> = {}): DirRow {
+  return {
+    kind: "dir", projectPath: path, projectName: path.split("/").pop() ?? "?",
+    chatCount: 1, lastActivity: 1700000000, topChatTitles: [],
+    ...opts,
+  };
+}
+function section(label: string): SectionHeader {
+  return { kind: "section", label };
+}
+
+test("ResultList: dir row renders two lines (path/count then top chats)", () => {
+  const rows: Selectable[] = [
+    dir("/work/frontend", { chatCount: 12,
+      topChatTitles: ["react-router-fix", "oauth-debug", "deploy-staging"] }),
+  ];
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={0} noColor={true} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  const frame = lastFrame() ?? "";
+  assert.ok(frame.includes("/work/frontend"));
+  assert.ok(frame.includes("12"));
+  assert.ok(frame.includes("react-router-fix"));
+});
+
+test("ResultList: section header renders a divider line and has no cursor prefix", () => {
+  const rows: Selectable[] = [
+    section("working dirs (2)"),
+    dir("/p1"),
+    dir("/p2"),
+  ];
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={1} noColor={true} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  const frame = lastFrame() ?? "";
+  assert.ok(frame.includes("working dirs"));
+  // Cursor (`▌`) appears once (on the first dir row), not on the section header.
+  const cursorOccurrences = (frame.match(/▌/g) ?? []).length;
+  assert.equal(cursorOccurrences, 1);
+});
+
+test("ResultList: dir row noColor=false uses 📁 emoji marker", () => {
+  const rows: Selectable[] = [dir("/work/frontend")];
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={0} noColor={false} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  assert.ok((lastFrame() ?? "").includes("📁"));
+});
+
+test("ResultList: dir row noColor=true uses '[dir]' fallback", () => {
+  const rows: Selectable[] = [dir("/work/frontend")];
+  const { lastFrame } = render(
+    <ResultList results={rows} cursor={0} noColor={true} listWidth={80}
+                maxRows={20} dimRows={false} />
+  );
+  assert.ok((lastFrame() ?? "").includes("[dir]"));
 });
