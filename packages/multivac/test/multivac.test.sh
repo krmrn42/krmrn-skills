@@ -1097,7 +1097,7 @@ function check(label, cond) {
 const allActions = ["resume", "fork", "dangerous", "remote-control", "tmux-window"];
 const mockSource = { id: "claude", displayName: "Claude", resume: { actions: allActions }, discover: async () => [], parse: async function*(){} };
 function makeGetSource() { return (id) => mockSource; }
-const mockRow = { source: "claude", sessionId: "abc", projectPath: "/p", projectName: "p", lastActivity: 0, msgCount: 1, snippet: "", score: 0, title: null };
+const mockRow = { kind: "chat", source: "claude", sessionId: "abc", projectPath: "/p", projectName: "p", lastActivity: 0, msgCount: 1, snippet: "", score: 0, title: null };
 
 const wide   = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true, getSource: makeGetSource() }, mockRow, 1000);
 const mid    = buildStatusBar({ dangerouslySkipPermissions: true, tmuxAvailable: true, getSource: makeGetSource() }, mockRow, 60);
@@ -1170,6 +1170,7 @@ const PATTERNS = {
   "Ctrl-D":      /key\.ctrl && input === "d"/,
   "Up/Down":     /key\.upArrow|key\.downArrow/,
   "?":           /input === "\?"/,
+  "N":           /input === "N"/,
 };
 let ok = true;
 for (const b of BINDINGS) {
