@@ -39,6 +39,8 @@ export function searchProjects(
         "%" + projectFilter.toLowerCase() + "%",
       ]
     : [];
+  // `is_subagent = 0` excludes machine-launched JSONLs (subagent transcripts,
+  // SDK-CLI sessions, sidechains) from project aggregation — spec §D15.
   const aggSql = `
 SELECT
   project_path,
@@ -46,7 +48,7 @@ SELECT
   COUNT(DISTINCT conversation_id) AS chat_count,
   MAX(timestamp) AS last_activity
 FROM messages
-WHERE type IN ('user', 'assistant')
+WHERE type IN ('user', 'assistant') AND is_subagent = 0
 ${filterClause}
 GROUP BY project_path
 ORDER BY last_activity DESC
@@ -59,6 +61,7 @@ LIMIT ?
   const topStmt = db.prepare(
     "SELECT conversation_id FROM messages " +
       "WHERE project_path = ? AND type IN ('user', 'assistant') " +
+      "AND is_subagent = 0 " +
       "GROUP BY conversation_id " +
       "ORDER BY MAX(timestamp) DESC LIMIT 3"
   );

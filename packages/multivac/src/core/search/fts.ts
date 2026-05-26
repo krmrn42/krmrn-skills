@@ -65,6 +65,8 @@ export function ftsSearch(db: DatabaseSync, args: FtsSearchArgs): ResultRow[] {
   const { sql: whereExtraSql, params: extraParams } = buildWhereExtras(args);
   const innerLimit = Math.max(args.limit * 50, 500);
 
+  // `m.is_subagent = 0` excludes machine-launched JSONLs (subagent transcripts,
+  // SDK-CLI sessions, sidechains) from FTS results — spec §D15.
   const sql = `
 SELECT
   m.source AS source,
@@ -78,6 +80,7 @@ FROM messages_fts
 JOIN messages m ON m.id = messages_fts.id
 WHERE messages_fts MATCH ?
   AND ${typeSql}
+  AND m.is_subagent = 0
   ${whereExtraSql}
 ORDER BY bm25(messages_fts)
 LIMIT ?

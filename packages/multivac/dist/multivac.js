@@ -33769,7 +33769,7 @@ async function* parse(file) {
   const sessionId = path3.basename(file.path, ".jsonl");
   const projectDir = path3.basename(path3.dirname(file.path));
   const subagentCoercedCwd = detectSubagentParentCwd(file.path);
-  const isSubagent = subagentCoercedCwd !== null || path3.basename(path3.dirname(file.path)) === "subagents";
+  let isSubagent = subagentCoercedCwd !== null || path3.basename(path3.dirname(file.path)) === "subagents";
   let sessionProjectPath = subagentCoercedCwd;
   const rl = readline.createInterface({
     input: fs4.createReadStream(file.path, { encoding: "utf-8" }),
@@ -33782,6 +33782,13 @@ async function* parse(file) {
       rec = JSON.parse(line);
     } catch (_) {
       continue;
+    }
+    if (!isSubagent) {
+      const entrypoint = rec["entrypoint"];
+      const sidechain = rec["isSidechain"];
+      if (entrypoint === "sdk-cli" || sidechain === true) {
+        isSubagent = true;
+      }
     }
     if (sessionProjectPath === null) {
       const recCwd = rec["cwd"];
@@ -34413,6 +34420,7 @@ FROM messages_fts
 JOIN messages m ON m.id = messages_fts.id
 WHERE messages_fts MATCH ?
   AND ${typeSql}
+  AND m.is_subagent = 0
   ${whereExtraSql}
 ORDER BY bm25(messages_fts)
 LIMIT ?
@@ -34773,7 +34781,7 @@ SELECT
   MAX(timestamp) AS last_ts,
   COUNT(*) AS msg_count
 FROM messages
-WHERE type IN ('user', 'assistant')
+WHERE type IN ('user', 'assistant') AND is_subagent = 0
 ${projectExtra}
 GROUP BY conversation_id
 ORDER BY last_ts DESC
@@ -34846,7 +34854,7 @@ SELECT
   COUNT(DISTINCT conversation_id) AS chat_count,
   MAX(timestamp) AS last_activity
 FROM messages
-WHERE type IN ('user', 'assistant')
+WHERE type IN ('user', 'assistant') AND is_subagent = 0
 ${filterClause}
 GROUP BY project_path
 ORDER BY last_activity DESC
@@ -34854,7 +34862,7 @@ LIMIT ?
 `;
   const rows = db.prepare(aggSql).all(...filterParams, Math.max(1, limit | 0));
   const topStmt = db.prepare(
-    "SELECT conversation_id FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') GROUP BY conversation_id ORDER BY MAX(timestamp) DESC LIMIT 3"
+    "SELECT conversation_id FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') AND is_subagent = 0 GROUP BY conversation_id ORDER BY MAX(timestamp) DESC LIMIT 3"
   );
   const titleStmt = db.prepare(
     "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"

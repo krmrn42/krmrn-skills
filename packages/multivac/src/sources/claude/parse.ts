@@ -196,8 +196,20 @@ export async function* parse(file: SourceFile): AsyncGenerator<Omit<MessageRow, 
   //   - When no cwd is locked yet (file with no cwd records seen so far),
   //     fall back to the encoded directory name decode — lossy for paths with
   //     hyphens but a reasonable last-resort.
+  //
+  // `is_subagent` (v4 schema) flags any row whose source JSONL is machine-
+  // launched rather than user-initiated. Three signals contribute to it:
+  //   (a) subagent JSONL file path (`<conv-id>/subagents/agent-*.jsonl`),
+  //   (b) JSONL records carry `entrypoint: "sdk-cli"` — the Claude Agent SDK
+  //       launched a child Claude session programmatically (e.g., from a
+  //       plugin's skill-creator scaffolding, a user `/tmp` test script,
+  //       etc.). Real terminal-launched sessions report `entrypoint: "cli"`.
+  //   (c) records carry `isSidechain: true` (Claude internal sidechain flow).
+  // The `searchProjects` / `recentConversations` / `ftsSearch` queries all
+  // filter `is_subagent = 0` so these never manifest as projects or chats
+  // in the picker.
   const subagentCoercedCwd = detectSubagentParentCwd(file.path);
-  const isSubagent = subagentCoercedCwd !== null
+  let isSubagent = subagentCoercedCwd !== null
     || path.basename(path.dirname(file.path)) === "subagents";
   let sessionProjectPath: string | null = subagentCoercedCwd;
 
@@ -213,6 +225,18 @@ export async function* parse(file: SourceFile): AsyncGenerator<Omit<MessageRow, 
       rec = JSON.parse(line) as Record<string, unknown>;
     } catch (_) {
       continue;
+    }
+
+    // Promote isSubagent on the first record that signals machine-launched.
+    // `entrypoint: "sdk-cli"` and `isSidechain: true` are stable across the
+    // whole session in Claude Code's emit, but we keep the latch open
+    // (`if (!isSubagent)`) so a single signal anywhere in the file is enough.
+    if (!isSubagent) {
+      const entrypoint = rec["entrypoint"];
+      const sidechain = rec["isSidechain"];
+      if (entrypoint === "sdk-cli" || sidechain === true) {
+        isSubagent = true;
+      }
     }
 
     // Lock the session's project_path on the first record with a usable cwd.

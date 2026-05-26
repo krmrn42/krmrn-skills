@@ -612,11 +612,24 @@ Three independently mergeable releases. Each ships value on its own and is revie
 
 **Rationale:** Each release maps to a self-contained engineering chunk and a testable surface. Risk increases monotonically. The phasing means a regression in v0.8.2 doesn't block the value of v0.8 and v0.8.1 from already being in users' hands.
 
-### D15 — Subagent JSONL `project_path` coercion (v0.8.1)
+### D15 — Machine-launched JSONLs: `project_path` coercion and project-list filtering (v0.8.1)
 
-**Problem.** Claude Code logs subagent transcripts at `~/.claude/projects/<encoded-cwd>/<conv-id>/subagents/agent-*.jsonl`. Each message in those files carries a `cwd` field set to whatever directory the controller (the subagent's parent) had walked into when the subagent's tool call was issued. The v0.8 indexer faithfully stamps `messages.project_path` from each message's `cwd` — which, when grouped by `project_path`, manifests as phantom "projects" like `~/work/frontend/packages/multivac/` that the user never deliberately started a Claude session in.
+**Problem.** Three classes of JSONL exist in `~/.claude/projects/` that look like user projects but aren't:
 
-**Fix.** At parse time, the indexer detects subagent JSONLs by file-path pattern (`<conv-id>/subagents/agent-*.jsonl` — i.e., any JSONL whose immediate parent directory is named `subagents`) and overrides the `project_path` of every row it produces from that file to **the parent session's first-message `cwd`**.
+1. **Subagent transcripts** at `<projects-dir>/<conv-id>/subagents/agent-*.jsonl`. Each message in those files carries a `cwd` set to whatever directory the controller walked into when the subagent was invoked. The v0.8 indexer faithfully stamps `messages.project_path` from each message's `cwd` — manifesting as phantom subdirectory "projects" like `~/work/frontend/packages/multivac/`.
+2. **SDK-CLI sessions** launched via the Claude Agent SDK rather than the user's terminal. Real terminal sessions emit `entrypoint: "cli"` in their attachment records; SDK launches emit `entrypoint: "sdk-cli"`. Plugins (e.g., skill-creator scaffolding) and one-off test scripts trigger these, often with ephemeral or scaffolded `cwd` values (`/tmp/probe-*`, `~/.claude/plugins/cache/...`) the user never chose.
+3. **Sidechain sessions** with `isSidechain: true` — Claude internal flows.
+
+**Fix.** Two parts:
+
+1. **Project_path locking.** For every JSONL (subagent or not), the parser locks the `project_path` of all yielded rows to the **first** cwd-carrying record's `cwd`. Per-message cwd within a single session is transient — it shifts when the controller spawns subagents in subdirectories or runs Bash commands that change directory. The session's project is defined by where Claude was started, which the first record records. For subagent JSONLs, the lock target is the **parent session's** first-record cwd instead (read from the sibling `<conv-id>.jsonl` one level up from the `subagents/` directory).
+
+2. **`is_subagent` flag + downstream filtering.** Each row carries an `is_subagent` column (v4 schema) set to `1` when any of these signals fire:
+   - the JSONL lives under a `subagents/` directory, OR
+   - a record carries `entrypoint: "sdk-cli"`, OR
+   - a record carries `isSidechain: true`.
+
+   The `searchProjects` / `recentConversations` / `ftsSearch` queries all filter `is_subagent = 0`, so machine-launched sessions never manifest as projects, never appear in a project's recent-chat list, and never surface in FTS results. The rows remain in the index (for forensic or future use) but are invisible at the picker layer.
 
 Implementation sketch:
 
@@ -638,11 +651,13 @@ When the parent JSONL is missing (rare: a subagent file lingers after the parent
 
 **Schema bump v3 → v4.** No new columns; the bump exists to trigger the existing drop-rebuild migration so users get the corrected `project_path` values on next indexer pass. The cost is one full reindex (already measured at ~5s for typical libraries on a developer laptop) and is amortized across only the next `multivac` invocation.
 
-**Out of scope:** Surfacing subagent transcripts as a distinct row kind nested under their parent chat. The fix here is purely about preventing phantom projects; the content remains FTS-searchable as before. A richer "subagent expansion" view is tracked for Phase 2.
+**Out of scope:** Surfacing subagent transcripts as a distinct row kind nested under their parent chat (Phase 2). Surfacing SDK-CLI sessions with a `--include-machine-launched` opt-in flag (no demand yet).
 
-**Rationale:** The user's mental model of "project" is "a directory I deliberately launched Claude Code from". Subagent `cwd` values violate that model because they reflect the controller's transient working-directory shuffling, not any deliberate session-start choice. Coercing at parse time keeps the storage layer dumb and downstream queries (the `searchProjects` aggregation) automatically corrected.
+**Rationale:** The user's mental model of "project" is "a directory I deliberately launched Claude Code from". Subagent `cwd` values, SDK-CLI scaffolded paths, and sidechain spawns all violate that model — they reflect the controller's transient state or programmatic invocation, not any deliberate session-start choice. A single `is_subagent` flag captures all three and the SQL filters apply uniformly.
 
-**Alternative considered:** Excluding subagent JSONLs from the index entirely. Rejected — those rows often contain detailed implementation notes useful for FTS. The coercion preserves searchability while fixing the aggregation.
+**Alternative considered:** Excluding these JSONLs from the index entirely. Rejected — the rows stay in the index, just filtered at query time. This keeps the indexer simple and lets us re-expose machine-launched sessions behind a flag later without re-indexing.
+
+**Alternative considered:** A separate `entrypoint` column with explicit values. Rejected for v0.8.1 — `is_subagent` already captures the "machine-launched, don't surface as a project" semantic. The signal stays implementation-detail-private; future code can split it back out if richer differentiation becomes useful.
 
 ## Testing strategy
 
