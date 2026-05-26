@@ -197,21 +197,19 @@ export async function* parse(file: SourceFile): AsyncGenerator<Omit<MessageRow, 
   //     fall back to the encoded directory name decode — lossy for paths with
   //     hyphens but a reasonable last-resort.
   //
-  // `is_subagent` (v4 schema) flags any row whose source JSONL is machine-
-  // launched rather than user-initiated. Three signals contribute to it:
-  //   (a) subagent JSONL file path (`<conv-id>/subagents/agent-*.jsonl`),
-  //   (b) JSONL records carry `entrypoint: "sdk-cli"` — the Claude Agent SDK
-  //       launched a child Claude session programmatically (e.g., from a
-  //       plugin's skill-creator scaffolding, a user `/tmp` test script,
-  //       etc.). Real terminal-launched sessions report `entrypoint: "cli"`.
-  //   (c) records carry `isSidechain: true` (Claude internal sidechain flow).
-  // The `searchProjects` / `recentConversations` / `ftsSearch` queries all
-  // filter `is_subagent = 0` so these never manifest as projects or chats
-  // in the picker.
+  // Two orthogonal columns flag non-user-initiated sessions for filtering:
+  //   - `is_subagent` (v4): purely path-based — 1 when this JSONL lives under
+  //     `<conv-id>/subagents/`. A filesystem fact, not a launch attribute.
+  //   - `entrypoint` (v5): the raw `entrypoint` value from the JSONL records
+  //     ("cli" for terminal launches, "sdk-cli" for Claude Agent SDK
+  //     launches). Stored verbatim so future code can filter on it.
+  // The picker queries filter `is_subagent = 0 AND (entrypoint IS NULL OR
+  // entrypoint = 'cli')` — see §D15.
   const subagentCoercedCwd = detectSubagentParentCwd(file.path);
-  let isSubagent = subagentCoercedCwd !== null
+  const isSubagent = subagentCoercedCwd !== null
     || path.basename(path.dirname(file.path)) === "subagents";
   let sessionProjectPath: string | null = subagentCoercedCwd;
+  let sessionEntrypoint: string | null = null;
 
   const rl = readline.createInterface({
     input: fs.createReadStream(file.path, { encoding: "utf-8" }),
@@ -227,15 +225,13 @@ export async function* parse(file: SourceFile): AsyncGenerator<Omit<MessageRow, 
       continue;
     }
 
-    // Promote isSubagent on the first record that signals machine-launched.
-    // `entrypoint: "sdk-cli"` and `isSidechain: true` are stable across the
-    // whole session in Claude Code's emit, but we keep the latch open
-    // (`if (!isSubagent)`) so a single signal anywhere in the file is enough.
-    if (!isSubagent) {
-      const entrypoint = rec["entrypoint"];
-      const sidechain = rec["isSidechain"];
-      if (entrypoint === "sdk-cli" || sidechain === true) {
-        isSubagent = true;
+    // Lock the entrypoint on the first record that carries it. The field is
+    // session-stable in Claude Code's emit, so the first occurrence wins for
+    // every row in this file.
+    if (sessionEntrypoint === null) {
+      const ep = rec["entrypoint"];
+      if (typeof ep === "string" && ep.length > 0) {
+        sessionEntrypoint = ep;
       }
     }
 
@@ -270,6 +266,7 @@ export async function* parse(file: SourceFile): AsyncGenerator<Omit<MessageRow, 
         gitBranch: typeof rec["gitBranch"] === "string" ? rec["gitBranch"] : undefined,
         attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : undefined,
         isSubagent,
+        entrypoint: sessionEntrypoint ?? undefined,
       };
     }
   }

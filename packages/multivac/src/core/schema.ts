@@ -8,7 +8,8 @@ export const EXPECTED_COLUMNS = new Set([
   "timestamp", "type", "content", "message_uuid", "parent_uuid",
   "source",
   "subtype", "git_branch", "attribution_skill",  // v3 additions
-  "is_subagent",                                  // v4 addition
+  "is_subagent",                                  // v4: subagent-file detection (path-based)
+  "entrypoint",                                   // v5: raw `entrypoint` from JSONL (data-based)
 ]);
 
 export const SCHEMA_SQL = `
@@ -26,7 +27,8 @@ CREATE TABLE IF NOT EXISTS messages (
   subtype           TEXT NULL,
   git_branch        TEXT NULL,
   attribution_skill TEXT NULL,
-  is_subagent       INTEGER NOT NULL DEFAULT 0   -- v4: 1 if row came from a subagent JSONL
+  is_subagent       INTEGER NOT NULL DEFAULT 0,  -- v4: 1 if file lives under .../subagents/
+  entrypoint        TEXT NULL                    -- v5: raw entrypoint field from JSONL (cli, sdk-cli, …)
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp    ON messages(timestamp);
@@ -66,5 +68,7 @@ export function detectMigrationNeeded(db: DatabaseSync): number {
   if (!hasSubtype) return 3;       // v2 → drop+rebuild to v3 layout
   const hasIsSubagent = cols.some((c) => c.name === "is_subagent");
   if (!hasIsSubagent) return 4;    // v3 → drop+rebuild to v4 (subagent-aware project_path)
+  const hasEntrypoint = cols.some((c) => c.name === "entrypoint");
+  if (!hasEntrypoint) return 5;    // v4 → drop+rebuild to v5 (raw entrypoint column)
   return 0;                         // already current
 }

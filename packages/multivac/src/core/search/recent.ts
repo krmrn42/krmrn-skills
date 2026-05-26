@@ -88,8 +88,9 @@ export function recentConversations(db: DatabaseSync, opts: RecentConversationsO
       "%" + String(projectFilter).toLowerCase() + "%",
     ];
   }
-  // `is_subagent = 0` excludes machine-launched JSONLs (subagent transcripts,
-  // SDK-CLI sessions, sidechains) — spec §D15.
+  // Filter to user-initiated sessions only (spec §D15):
+  //   - is_subagent = 0 (path-based: not a subagent transcript)
+  //   - entrypoint IS NULL OR = 'cli' (data-based: terminal-launched or legacy)
   const recentSql = `
 SELECT
   conversation_id AS conversation_id,
@@ -99,7 +100,9 @@ SELECT
   MAX(timestamp) AS last_ts,
   COUNT(*) AS msg_count
 FROM messages
-WHERE type IN ('user', 'assistant') AND is_subagent = 0
+WHERE type IN ('user', 'assistant')
+  AND is_subagent = 0
+  AND (entrypoint IS NULL OR entrypoint = 'cli')
 ${projectExtra}
 GROUP BY conversation_id
 ORDER BY last_ts DESC

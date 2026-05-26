@@ -65,8 +65,9 @@ export function ftsSearch(db: DatabaseSync, args: FtsSearchArgs): ResultRow[] {
   const { sql: whereExtraSql, params: extraParams } = buildWhereExtras(args);
   const innerLimit = Math.max(args.limit * 50, 500);
 
-  // `m.is_subagent = 0` excludes machine-launched JSONLs (subagent transcripts,
-  // SDK-CLI sessions, sidechains) from FTS results — spec §D15.
+  // Filter to user-initiated sessions only — spec §D15:
+  //   m.is_subagent = 0                       (path-based)
+  //   m.entrypoint IS NULL OR = 'cli'         (data-based, legacy treated as cli)
   const sql = `
 SELECT
   m.source AS source,
@@ -81,6 +82,7 @@ JOIN messages m ON m.id = messages_fts.id
 WHERE messages_fts MATCH ?
   AND ${typeSql}
   AND m.is_subagent = 0
+  AND (m.entrypoint IS NULL OR m.entrypoint = 'cli')
   ${whereExtraSql}
 ORDER BY bm25(messages_fts)
 LIMIT ?

@@ -274,9 +274,11 @@ test("parse: non-subagent JSONL is unaffected (isSubagent=false, raw cwd kept)",
   } finally { fs.unlinkSync(p); }
 });
 
-test("parse: top-level JSONL with entrypoint=sdk-cli is flagged isSubagent=true", async () => {
-  // Real SDK-CLI sessions emit an `attachment` record with the entrypoint
-  // field right at session start, before any user/assistant rows.
+test("parse: yields entrypoint=sdk-cli for SDK-CLI sessions (isSubagent stays false — they're not subagent files)", async () => {
+  // SDK-CLI sessions are top-level JSONLs (not under subagents/); the
+  // attribute-level signal is entrypoint='sdk-cli', not isSubagent. The
+  // search filters gate on (entrypoint IS NULL OR entrypoint = 'cli') AND
+  // is_subagent = 0 — see spec §D15.
   const p = writeJsonl([
     { type: "attachment", sessionId: "s", uuid: "u0",
       cwd: "/tmp/probe-xyz", entrypoint: "sdk-cli",
@@ -290,27 +292,13 @@ test("parse: top-level JSONL with entrypoint=sdk-cli is flagged isSubagent=true"
   try {
     const rows = await collect(parse({ path: p, mtimeMs: 0 }));
     assert.equal(rows.length, 1);
-    assert.equal(rows[0].isSubagent, true,
-      "entrypoint=sdk-cli should flag the JSONL as machine-launched");
+    assert.equal(rows[0].entrypoint, "sdk-cli");
+    assert.equal(rows[0].isSubagent, false,
+      "isSubagent is path-based; SDK-CLI in a top-level JSONL is not a subagent file");
   } finally { fs.unlinkSync(p); }
 });
 
-test("parse: top-level JSONL with isSidechain=true is flagged isSubagent=true", async () => {
-  const p = writeJsonl([
-    { type: "user", sessionId: "s", uuid: "u1",
-      cwd: "/home/u/anywhere", isSidechain: true,
-      message: { content: "internal sidechain" },
-      timestamp: "2026-01-01T00:00:00Z" },
-  ]);
-  try {
-    const rows = await collect(parse({ path: p, mtimeMs: 0 }));
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].isSubagent, true);
-  } finally { fs.unlinkSync(p); }
-});
-
-test("parse: top-level JSONL with entrypoint=cli stays isSubagent=false", async () => {
-  // Real terminal-launched sessions report entrypoint=cli.
+test("parse: yields entrypoint=cli for real terminal sessions", async () => {
   const p = writeJsonl([
     { type: "attachment", sessionId: "s", uuid: "u0",
       cwd: "/home/u/projects/real", entrypoint: "cli",
@@ -324,6 +312,22 @@ test("parse: top-level JSONL with entrypoint=cli stays isSubagent=false", async 
   try {
     const rows = await collect(parse({ path: p, mtimeMs: 0 }));
     assert.equal(rows.length, 1);
+    assert.equal(rows[0].entrypoint, "cli");
     assert.equal(rows[0].isSubagent, false);
+  } finally { fs.unlinkSync(p); }
+});
+
+test("parse: yields entrypoint=undefined when JSONL never carries the field (legacy)", async () => {
+  const p = writeJsonl([
+    { type: "user", sessionId: "s", uuid: "u1",
+      cwd: "/home/u/projects/real",
+      message: { content: "hi" },
+      timestamp: "2026-01-01T00:00:00Z" },
+  ]);
+  try {
+    const rows = await collect(parse({ path: p, mtimeMs: 0 }));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].entrypoint, undefined,
+      "legacy rows have no entrypoint; SQL filter treats NULL as 'cli'");
   } finally { fs.unlinkSync(p); }
 });

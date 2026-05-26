@@ -22,7 +22,8 @@ export interface MessageRow {
   subtype?: string;            // v0.8: 'away_summary' for system rows; undefined otherwise
   gitBranch?: string;          // v0.8: extracted from JSONL top-level gitBranch
   attributionSkill?: string;   // v0.8: extracted from JSONL top-level attributionSkill
-  isSubagent?: boolean;        // v0.8.1: true when the source JSONL was a subagent transcript
+  isSubagent?: boolean;        // v0.8.1 (v4 schema): file-path-based — true when JSONL lives under .../subagents/
+  entrypoint?: string;         // v0.8.1 (v5 schema): raw `entrypoint` from JSONL ('cli', 'sdk-cli', …)
 }
 
 export interface ResultRow {

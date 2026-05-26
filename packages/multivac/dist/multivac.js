@@ -33009,8 +33009,10 @@ var EXPECTED_COLUMNS = /* @__PURE__ */ new Set([
   "git_branch",
   "attribution_skill",
   // v3 additions
-  "is_subagent"
-  // v4 addition
+  "is_subagent",
+  // v4: subagent-file detection (path-based)
+  "entrypoint"
+  // v5: raw `entrypoint` from JSONL (data-based)
 ]);
 var SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS messages (
@@ -33027,7 +33029,8 @@ CREATE TABLE IF NOT EXISTS messages (
   subtype           TEXT NULL,
   git_branch        TEXT NULL,
   attribution_skill TEXT NULL,
-  is_subagent       INTEGER NOT NULL DEFAULT 0   -- v4: 1 if row came from a subagent JSONL
+  is_subagent       INTEGER NOT NULL DEFAULT 0,  -- v4: 1 if file lives under .../subagents/
+  entrypoint        TEXT NULL                    -- v5: raw entrypoint field from JSONL (cli, sdk-cli, \u2026)
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp    ON messages(timestamp);
@@ -33064,6 +33067,8 @@ function detectMigrationNeeded(db) {
   if (!hasSubtype) return 3;
   const hasIsSubagent = cols.some((c) => c.name === "is_subagent");
   if (!hasIsSubagent) return 4;
+  const hasEntrypoint = cols.some((c) => c.name === "entrypoint");
+  if (!hasEntrypoint) return 5;
   return 0;
 }
 
@@ -33769,8 +33774,9 @@ async function* parse(file) {
   const sessionId = path3.basename(file.path, ".jsonl");
   const projectDir = path3.basename(path3.dirname(file.path));
   const subagentCoercedCwd = detectSubagentParentCwd(file.path);
-  let isSubagent = subagentCoercedCwd !== null || path3.basename(path3.dirname(file.path)) === "subagents";
+  const isSubagent = subagentCoercedCwd !== null || path3.basename(path3.dirname(file.path)) === "subagents";
   let sessionProjectPath = subagentCoercedCwd;
+  let sessionEntrypoint = null;
   const rl = readline.createInterface({
     input: fs4.createReadStream(file.path, { encoding: "utf-8" }),
     crlfDelay: Infinity
@@ -33783,11 +33789,10 @@ async function* parse(file) {
     } catch (_) {
       continue;
     }
-    if (!isSubagent) {
-      const entrypoint = rec["entrypoint"];
-      const sidechain = rec["isSidechain"];
-      if (entrypoint === "sdk-cli" || sidechain === true) {
-        isSubagent = true;
+    if (sessionEntrypoint === null) {
+      const ep = rec["entrypoint"];
+      if (typeof ep === "string" && ep.length > 0) {
+        sessionEntrypoint = ep;
       }
     }
     if (sessionProjectPath === null) {
@@ -33816,7 +33821,8 @@ async function* parse(file) {
         subtype: r.type === "system" && typeof rec["subtype"] === "string" ? rec["subtype"] : void 0,
         gitBranch: typeof rec["gitBranch"] === "string" ? rec["gitBranch"] : void 0,
         attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : void 0,
-        isSubagent
+        isSubagent,
+        entrypoint: sessionEntrypoint ?? void 0
       };
     }
   }
@@ -34089,7 +34095,7 @@ async function indexFile(db, source, file) {
     "DELETE FROM messages WHERE source = ? AND conversation_id = ?"
   ).run(source.id, conversationId);
   const insert = db.prepare(
-    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source, subtype, git_branch, attribution_skill, is_subagent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source, subtype, git_branch, attribution_skill, is_subagent, entrypoint) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
   const blockCounters = /* @__PURE__ */ new Map();
   let rows = 0;
@@ -34115,7 +34121,8 @@ async function indexFile(db, source, file) {
           row.subtype ?? null,
           row.gitBranch ?? null,
           row.attributionSkill ?? null,
-          row.isSubagent ? 1 : 0
+          row.isSubagent ? 1 : 0,
+          row.entrypoint ?? null
         );
         rows++;
       } catch (_) {
@@ -34421,6 +34428,7 @@ JOIN messages m ON m.id = messages_fts.id
 WHERE messages_fts MATCH ?
   AND ${typeSql}
   AND m.is_subagent = 0
+  AND (m.entrypoint IS NULL OR m.entrypoint = 'cli')
   ${whereExtraSql}
 ORDER BY bm25(messages_fts)
 LIMIT ?
@@ -34781,7 +34789,9 @@ SELECT
   MAX(timestamp) AS last_ts,
   COUNT(*) AS msg_count
 FROM messages
-WHERE type IN ('user', 'assistant') AND is_subagent = 0
+WHERE type IN ('user', 'assistant')
+  AND is_subagent = 0
+  AND (entrypoint IS NULL OR entrypoint = 'cli')
 ${projectExtra}
 GROUP BY conversation_id
 ORDER BY last_ts DESC
@@ -34847,6 +34857,7 @@ function searchProjects(db, opts) {
     "%" + projectFilter.toLowerCase() + "%",
     "%" + projectFilter.toLowerCase() + "%"
   ] : [];
+  const visibleSessionFilter = "is_subagent = 0 AND (entrypoint IS NULL OR entrypoint = 'cli')";
   const aggSql = `
 SELECT
   project_path,
@@ -34854,7 +34865,7 @@ SELECT
   COUNT(DISTINCT conversation_id) AS chat_count,
   MAX(timestamp) AS last_activity
 FROM messages
-WHERE type IN ('user', 'assistant') AND is_subagent = 0
+WHERE type IN ('user', 'assistant') AND ${visibleSessionFilter}
 ${filterClause}
 GROUP BY project_path
 ORDER BY last_activity DESC
@@ -34862,7 +34873,7 @@ LIMIT ?
 `;
   const rows = db.prepare(aggSql).all(...filterParams, Math.max(1, limit | 0));
   const topStmt = db.prepare(
-    "SELECT conversation_id FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') AND is_subagent = 0 GROUP BY conversation_id ORDER BY MAX(timestamp) DESC LIMIT 3"
+    `SELECT conversation_id FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') AND ${visibleSessionFilter} GROUP BY conversation_id ORDER BY MAX(timestamp) DESC LIMIT 3`
   );
   const titleStmt = db.prepare(
     "SELECT content FROM messages WHERE conversation_id = ? AND type = 'user' ORDER BY timestamp ASC LIMIT 5"

@@ -39,8 +39,13 @@ export function searchProjects(
         "%" + projectFilter.toLowerCase() + "%",
       ]
     : [];
-  // `is_subagent = 0` excludes machine-launched JSONLs (subagent transcripts,
-  // SDK-CLI sessions, sidechains) from project aggregation — spec §D15.
+  // The two filters that exclude non-user-initiated sessions from the project
+  // list — spec §D15:
+  //   is_subagent = 0                  → filesystem fact: not a subagent file
+  //   (entrypoint IS NULL OR = 'cli')  → data attribute: terminal-launched
+  //                                       (or legacy/unknown, treated as cli)
+  const visibleSessionFilter =
+    "is_subagent = 0 AND (entrypoint IS NULL OR entrypoint = 'cli')";
   const aggSql = `
 SELECT
   project_path,
@@ -48,7 +53,7 @@ SELECT
   COUNT(DISTINCT conversation_id) AS chat_count,
   MAX(timestamp) AS last_activity
 FROM messages
-WHERE type IN ('user', 'assistant') AND is_subagent = 0
+WHERE type IN ('user', 'assistant') AND ${visibleSessionFilter}
 ${filterClause}
 GROUP BY project_path
 ORDER BY last_activity DESC
@@ -61,7 +66,7 @@ LIMIT ?
   const topStmt = db.prepare(
     "SELECT conversation_id FROM messages " +
       "WHERE project_path = ? AND type IN ('user', 'assistant') " +
-      "AND is_subagent = 0 " +
+      `AND ${visibleSessionFilter} ` +
       "GROUP BY conversation_id " +
       "ORDER BY MAX(timestamp) DESC LIMIT 3"
   );

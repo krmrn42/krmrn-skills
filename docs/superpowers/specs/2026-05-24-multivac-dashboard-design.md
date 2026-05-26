@@ -612,52 +612,42 @@ Three independently mergeable releases. Each ships value on its own and is revie
 
 **Rationale:** Each release maps to a self-contained engineering chunk and a testable surface. Risk increases monotonically. The phasing means a regression in v0.8.2 doesn't block the value of v0.8 and v0.8.1 from already being in users' hands.
 
-### D15 — Machine-launched JSONLs: `project_path` coercion and project-list filtering (v0.8.1)
+### D15 — `project_path` locking + non-user-session filtering (v0.8.1)
 
-**Problem.** Three classes of JSONL exist in `~/.claude/projects/` that look like user projects but aren't:
+**Two problems that v0.8 manifested as "phantom projects":**
 
-1. **Subagent transcripts** at `<projects-dir>/<conv-id>/subagents/agent-*.jsonl`. Each message in those files carries a `cwd` set to whatever directory the controller walked into when the subagent was invoked. The v0.8 indexer faithfully stamps `messages.project_path` from each message's `cwd` — manifesting as phantom subdirectory "projects" like `~/work/frontend/packages/multivac/`.
-2. **SDK-CLI sessions** launched via the Claude Agent SDK rather than the user's terminal. Real terminal sessions emit `entrypoint: "cli"` in their attachment records; SDK launches emit `entrypoint: "sdk-cli"`. Plugins (e.g., skill-creator scaffolding) and one-off test scripts trigger these, often with ephemeral or scaffolded `cwd` values (`/tmp/probe-*`, `~/.claude/plugins/cache/...`) the user never chose.
-3. **Sidechain sessions** with `isSidechain: true` — Claude internal flows.
+1. **Per-message `cwd` drift in top-level JSONLs.** When the controller in an interactive Claude session invokes a tool that changes directory (e.g., `cd packages/multivac && npm test`) or spawns a nested subagent in a subdirectory, subsequent messages in the JSONL carry the changed `cwd`. The v0.8 indexer stamped `messages.project_path` from each message's `cwd` — so a SINGLE conversation could produce rows under multiple `project_path` values, manifesting as phantom subdirectory "projects". (This was the dominant cause; subagent transcripts at `<conv-id>/subagents/agent-*.jsonl` look superficially similar but `discover()` walks only two levels, so those files were never actually indexed.)
 
-**Fix.** Two parts:
+2. **Sessions started programmatically.** Real terminal sessions emit `entrypoint: "cli"` in their attachment records; the Claude Agent SDK emits `entrypoint: "sdk-cli"`. Plugins (e.g., skill-creator scaffolding) and one-off test scripts run via the SDK with ephemeral or scaffolded `cwd` values (`/tmp/probe-*`, `~/.claude/plugins/cache/...`) the user never chose — yet they appeared in the picker as real projects.
 
-1. **Project_path locking.** For every JSONL (subagent or not), the parser locks the `project_path` of all yielded rows to the **first** cwd-carrying record's `cwd`. Per-message cwd within a single session is transient — it shifts when the controller spawns subagents in subdirectories or runs Bash commands that change directory. The session's project is defined by where Claude was started, which the first record records. For subagent JSONLs, the lock target is the **parent session's** first-record cwd instead (read from the sibling `<conv-id>.jsonl` one level up from the `subagents/` directory).
+**Fix.** Two orthogonal mechanisms, both at parse time:
 
-2. **`is_subagent` flag + downstream filtering.** Each row carries an `is_subagent` column (v4 schema) set to `1` when any of these signals fire:
-   - the JSONL lives under a `subagents/` directory, OR
-   - a record carries `entrypoint: "sdk-cli"`, OR
-   - a record carries `isSidechain: true`.
+1. **`project_path` locking.** The parser locks the `project_path` of every yielded row to the **first** cwd-carrying record's `cwd`. Per-message cwd shifts inside a session are transient — the session's project is defined by where Claude was started, which the first record records. A future-proofing branch (`detectSubagentParentCwd`) handles JSONLs that live under a `subagents/` directory by reading the parent JSONL's first cwd instead; today's `discover()` doesn't reach those files but the parser is robust to a future deepening.
 
-   The `searchProjects` / `recentConversations` / `ftsSearch` queries all filter `is_subagent = 0`, so machine-launched sessions never manifest as projects, never appear in a project's recent-chat list, and never surface in FTS results. The rows remain in the index (for forensic or future use) but are invisible at the picker layer.
+2. **Two filterable columns on every row.** Both are exposed to picker queries; the default project list shows rows where **both** are user-initiated.
+   - **`is_subagent` (v4 schema, `INTEGER NOT NULL DEFAULT 0`)** — purely path-based: `1` iff this JSONL lives under a `subagents/` directory. A filesystem fact, not a launch attribute.
+   - **`entrypoint` (v5 schema, `TEXT NULL`)** — the raw value of the JSONL record's `entrypoint` field, stored verbatim. Real terminal launches yield `"cli"`; SDK launches yield `"sdk-cli"`; legacy rows that never carried the field yield `NULL`. Stored as-is so future code can filter on additional values without re-indexing.
 
-Implementation sketch:
+   The default visible-session filter, applied in `searchProjects`, `recentConversations`, and `ftsSearch`:
 
-```typescript
-// at the top of the indexer's per-file pass:
-function parentSessionCwd(jsonlPath: string): string | null {
-  // /…/projects/<encoded-cwd>/<conv-id>/subagents/agent-XXX.jsonl
-  //                                    ^^^^^^^^^^               parent dir name
-  const parts = jsonlPath.split("/");
-  if (parts[parts.length - 2] !== "subagents") return null;       // not a subagent file
-  const convId = parts[parts.length - 3];
-  const parentJsonl = path.join(path.dirname(jsonlPath), "..", `${convId}.jsonl`);
-  // read first non-meta line of parentJsonl and return its `cwd` field.
-  // Cached per parent path so we don't re-read it for every sibling subagent.
-}
-```
+   ```sql
+   is_subagent = 0
+   AND (entrypoint IS NULL OR entrypoint = 'cli')
+   ```
 
-When the parent JSONL is missing (rare: a subagent file lingers after the parent is deleted), the indexer falls back to the encoded directory name (already part of the file path) — that name is the original session cwd. The full algorithm: parent JSONL first message → encoded-dir-decode → final fallback to the unmodified `cwd` (so old-behavior remains the safety net).
+   `NULL` is treated as `'cli'` for backward compatibility with rows indexed before the v5 column existed.
 
-**Schema bump v3 → v4.** No new columns; the bump exists to trigger the existing drop-rebuild migration so users get the corrected `project_path` values on next indexer pass. The cost is one full reindex (already measured at ~5s for typical libraries on a developer laptop) and is amortized across only the next `multivac` invocation.
+   **Future filtering surface.** Because `entrypoint` is stored raw rather than synthesized into a boolean, a future CLI flag (e.g., `multivac --entrypoint=sdk-cli`) or picker keybinding can opt into showing machine-launched sessions without further schema work. Sidechain sessions (`isSidechain: true`) are not tracked separately — empirically they appear only in subagent files, which are already filtered by `is_subagent`.
 
-**Out of scope:** Surfacing subagent transcripts as a distinct row kind nested under their parent chat (Phase 2). Surfacing SDK-CLI sessions with a `--include-machine-launched` opt-in flag (no demand yet).
+**Schema bumps v3 → v4 → v5.** v4 added `is_subagent`; v5 adds `entrypoint`. Both bumps trigger the existing drop-rebuild migration so users get the corrected `project_path` values and the new attribute on the next indexer pass. The cost is one full reindex (~5s for typical libraries on a developer laptop), amortized to the next `multivac` invocation after upgrade.
 
-**Rationale:** The user's mental model of "project" is "a directory I deliberately launched Claude Code from". Subagent `cwd` values, SDK-CLI scaffolded paths, and sidechain spawns all violate that model — they reflect the controller's transient state or programmatic invocation, not any deliberate session-start choice. A single `is_subagent` flag captures all three and the SQL filters apply uniformly.
+**Out of scope:** Surfacing subagent transcripts as a distinct row kind nested under their parent chat (Phase 2 — also requires deepening `discover()`). A `--entrypoint=…` filter flag for users who want to see SDK-CLI sessions (no demand yet; schema is ready).
 
-**Alternative considered:** Excluding these JSONLs from the index entirely. Rejected — the rows stay in the index, just filtered at query time. This keeps the indexer simple and lets us re-expose machine-launched sessions behind a flag later without re-indexing.
+**Rationale:** The user's mental model of "project" is "a directory I deliberately launched Claude Code from". Per-message `cwd` drift and SDK-CLI launches both violate that model — they reflect controller-side transient state or programmatic invocation, not any deliberate session-start choice. Two orthogonal columns (filesystem fact + raw attribute) keep the storage layer dumb while letting the picker query express the policy as a single composable WHERE clause.
 
-**Alternative considered:** A separate `entrypoint` column with explicit values. Rejected for v0.8.1 — `is_subagent` already captures the "machine-launched, don't surface as a project" semantic. The signal stays implementation-detail-private; future code can split it back out if richer differentiation becomes useful.
+**Alternative considered:** Excluding non-`cli` JSONLs from the index entirely. Rejected — the rows stay in the index so future opt-in surfacing doesn't require re-indexing.
+
+**Alternative considered:** Synthesizing a single boolean column (`is_machine_launched` or similar) that ORs every signal together. Rejected — collapsing the launch attribute into a boolean throws away information. Storing `entrypoint` raw lets a future filter say "show me my SDK sessions" without needing to re-parse JSONLs.
 
 ## Testing strategy
 
