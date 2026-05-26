@@ -1,4 +1,4 @@
-# ccsearch-remote-control-resume Specification
+# multivac-remote-control-resume Specification
 
 ## Purpose
 TBD - created by archiving change picker-remote-control-launch. Update Purpose after archive.
@@ -23,9 +23,9 @@ When the picker is in browse mode and a row is selected, pressing **Ctrl+T** SHA
 
 The Ctrl+T binding SHALL be active whenever the picker is open, with no CLI flag required to arm it. The picker's status / help line MUST list Ctrl+T regardless of whether other capabilities (dangerous resume, tmux, etc.) are armed.
 
-#### Scenario: Ctrl+T works on bare ccsearch invocation
+#### Scenario: Ctrl+T works on bare multivac invocation
 
-- **WHEN** the user runs `ccsearch` and presses Ctrl+T on a row
+- **WHEN** the user runs `multivac` and presses Ctrl+T on a row
 - **THEN** the remote-control spawn happens (subject to TTY / cwd-resolution rules)
 
 #### Scenario: Help line mentions Ctrl+T

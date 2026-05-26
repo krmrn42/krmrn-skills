@@ -1,4 +1,4 @@
-# ccsearch-tmux-window-launch Specification
+# multivac-tmux-window-launch Specification
 
 ## Purpose
 TBD - created by archiving change picker-tmux-new-window. Update Purpose after archive.
@@ -65,10 +65,10 @@ When `$TMUX` is not set in the environment (or `--no-tmux` is passed), the Ctrl+
 
 ### Requirement: `--no-tmux` is documented in `--help`
 
-The `--no-tmux` flag SHALL appear in `ccsearch --help` with a description of its purpose (escape hatch for environments where `tmux new-window` is broken or undesirable).
+The `--no-tmux` flag SHALL appear in `multivac --help` with a description of its purpose (escape hatch for environments where `tmux new-window` is broken or undesirable).
 
 #### Scenario: --no-tmux entry in help
 
-- **WHEN** the user runs `ccsearch --help`
+- **WHEN** the user runs `multivac --help`
 - **THEN** the output contains an entry for `--no-tmux` with a non-empty description
 

@@ -1,4 +1,4 @@
-# ccsearch-session-pin Specification
+# multivac-session-pin Specification
 
 ## Purpose
 TBD - created by archiving change picker-pin-sessions. Update Purpose after archive.
@@ -79,23 +79,23 @@ The total visible rows in any mode (pinned + non-pinned, excluding the divider) 
 
 ### Requirement: `--unpin-all` removes every pin and exits
 
-`ccsearch --unpin-all` SHALL set `sessions.json.pins = []` and exit `0`, even if the file did not previously exist (in which case it creates an empty-pins file). The flag MUST NOT touch `names` or any other field.
+`multivac --unpin-all` SHALL set `sessions.json.pins = []` and exit `0`, even if the file did not previously exist (in which case it creates an empty-pins file). The flag MUST NOT touch `names` or any other field.
 
 #### Scenario: Unpins everything
 
-- **WHEN** the user runs `ccsearch --unpin-all` with `sessions.json.pins = ["A","B","C"]`
+- **WHEN** the user runs `multivac --unpin-all` with `sessions.json.pins = ["A","B","C"]`
 - **THEN** after the command exits, `sessions.json.pins` equals `[]`
 - **AND** `sessions.json.names` is unchanged
 - **AND** the process exits `0`
 
 #### Scenario: Idempotent on already-empty state
 
-- **WHEN** the user runs `ccsearch --unpin-all` and there are no pins
+- **WHEN** the user runs `multivac --unpin-all` and there are no pins
 - **THEN** the command exits `0` with `sessions.json.pins` still `[]`
 
 #### Scenario: Creates the file when missing
 
-- **WHEN** the user runs `ccsearch --unpin-all` and `sessions.json` does not exist
+- **WHEN** the user runs `multivac --unpin-all` and `sessions.json` does not exist
 - **THEN** the command creates `sessions.json` with `{ "version": 1, "names": {}, "pins": [] }`
 - **AND** exits `0`
 
