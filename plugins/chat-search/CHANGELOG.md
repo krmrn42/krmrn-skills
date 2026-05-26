@@ -5,27 +5,33 @@ The CLI shipped inside this plugin is also published to npm as
 [`@krmrn42/multivac`](https://www.npmjs.com/package/@krmrn42/multivac); the
 two carry the same version string.
 
-## [0.8.1] — 2026-05-25
+## [0.8.1] — 2026-05-26
 
-Unified picker — directories become first-class results alongside chats.
+Project-grouped picker — chats are listed under their project, with an optional "Y more" footer. The previous two-section layout (working dirs ↑ chats ↓) is gone.
 
 ### Added
-- **Working directories as result rows.** The picker and `--list` now show both chats and the projects that contain them. Type a substring to filter both; dir rows show chat count, last activity, and the 3 most-recent chat titles.
-- **`N` keybinding — start a new chat in the row's dir.** Works on chat rows (uses the chat's project path) and on dir rows. `Enter` on a dir row is also wired to "new chat here".
-- **Section dividers** between non-empty sections in the picker (`── working dirs (n) ──` / `── chats (n, by relevance) ──`); suppressed when only one kind matches.
-- **`--list` output is now markdown** — sectioned by kind, with embedded `(cd … && claude …)` resume one-liners as inline code.
-- **`--format=markdown`** as an explicit flag value; rejection of unknown formats is preserved.
-- **Dir-row preview pane** — rounded box with path, chat count, branches touched in the dir, and a list of the 5 most-recent chats.
+- **Project-grouped picker.** Projects (working directories that contain at least one chat) are the top-level entries. Each project's recent chats appear inline below its header, with a dim "Y more" footer when chats are elided.
+  - Home mode (no query): up to 3 chats per project, ordered by recency.
+  - Search mode, query hits the project name/path: padded to ≥3 chats (matches first, then most-recent).
+  - Search mode, query does NOT hit the project name/path: only the chats whose content matched (could be empty → project hidden).
+  - A project with zero shown chats is omitted entirely.
+- **`N` keybinding — start a new chat in the row's project dir.** Works on chat rows (uses the chat's project) and on project header rows. `Enter` on a project header is also wired to "new chat here".
+- **Project-header preview pane** — rounded box with path, chat count, branches touched, and a list of the 5 most-recent chats with their recap snippets.
+- **`--list` output is project-grouped markdown** — one `##` heading per project, the project's chats listed under it as ordered items with embedded `(cd … && claude …)` resume one-liners. `(N more)` footer when chats are elided.
+- **`--format=markdown`** as an explicit flag value; unknown formats still rejected.
+- **Subagent JSONL `project_path` coercion** (spec §D15) — subagent transcripts and per-message `cwd` shifts no longer create phantom "projects" like `~/work/frontend/packages/foo`. Each JSONL is locked to its session-start `cwd`; subagent rows are locked to their parent session's. Subagent content remains FTS-searchable. Schema bumps v3 → v4 with the new `is_subagent` column, triggering a one-time drop-rebuild on first run after upgrade.
 
 ### Changed
+- The two-section picker layout (working dirs section ↑ chats section ↓ with `── working dirs (n) ──` style dividers) is replaced by the project-grouped layout above.
 - `ResultRow` gains a required `kind: "chat"` discriminator (additive — no consumer needs to be updated unless it constructs a ResultRow literal).
-- The picker reducer now skips section headers when navigating with arrow keys, and clamps the initial cursor to the first selectable row.
+- New row kinds `ProjectHeader` (`kind: "project"`) and `MoreRow` (`kind: "more"`) join `ResultRow` in the discriminated `Selectable` union; the old `DirRow` and `SectionHeader` shapes are gone.
+- The picker reducer now skips `more` rows on ↑/↓ and clamps the initial cursor to the first selectable row (`project` or `chat`).
 
 ### Out of scope (deferred to v0.8.2)
-- Live process discovery / active-thread header strip.
-- `Tab` / `Shift-Tab` focus cycling.
+- Live process discovery / active threads inline under their project group (mapped to chat rows when possible, listed above when not).
 - `r` refresh keybinding.
 - Tmux pane correlation.
+- `Ctrl-W` (tmux new-window) on project header rows.
 
 ## [0.8.0] — 2026-05-24
 

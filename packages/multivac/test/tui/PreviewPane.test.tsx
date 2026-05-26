@@ -25,10 +25,10 @@ test("PreviewPane renders ASCII box when noColor=true", () => {
 });
 
 import { test as test2 } from "node:test";
-import { renderDirPreview } from "../../src/core/render/dir-preview.js";
+import { renderProjectPreview } from "../../src/core/render/project-preview.js";
 import { DatabaseSync } from "node:sqlite";
 import { ensureSchema } from "../../src/indexer/state.js";
-import type { DirRow } from "../../src/core/types.js";
+import type { ProjectHeader } from "../../src/core/types.js";
 
 function seedDir(db: DatabaseSync) {
   db.prepare(
@@ -43,32 +43,32 @@ function seedDir(db: DatabaseSync) {
   ).run("2", "c1", 200, "assistant", "found the bug in Router.tsx", "2");
 }
 
-test2("renderDirPreview: header lists path and chat count", () => {
+test2("renderProjectPreview: header lists path and chat count", () => {
   const db = new DatabaseSync(":memory:");
   ensureSchema(db);
   seedDir(db);
-  const dir: DirRow = {
-    kind: "dir", projectPath: "/work/frontend", projectName: "frontend",
+  const dir: ProjectHeader = {
+    kind: "project", projectPath: "/work/frontend", projectName: "frontend",
     chatCount: 1, lastActivity: 200, topChatTitles: ["investigate router crash"],
   };
-  const out = renderDirPreview(db, dir, false);
+  const out = renderProjectPreview(db, dir, false);
   assert.ok(out.includes("/work/frontend"));
   assert.ok(out.includes("1 chat"));
 });
 
-test2("renderDirPreview: lists recent chat titles", () => {
+test2("renderProjectPreview: lists recent chat titles", () => {
   const db = new DatabaseSync(":memory:");
   ensureSchema(db);
   seedDir(db);
-  const dir: DirRow = {
-    kind: "dir", projectPath: "/work/frontend", projectName: "frontend",
+  const dir: ProjectHeader = {
+    kind: "project", projectPath: "/work/frontend", projectName: "frontend",
     chatCount: 1, lastActivity: 200, topChatTitles: ["investigate router crash"],
   };
-  const out = renderDirPreview(db, dir, false);
+  const out = renderProjectPreview(db, dir, false);
   assert.ok(out.includes("investigate router crash"));
 });
 
-test2("renderDirPreview: includes per-chat recap snippets when available", () => {
+test2("renderProjectPreview: includes per-chat recap snippets when available", () => {
   const db = new DatabaseSync(":memory:");
   ensureSchema(db);
   // Seed a chat with an away_summary so getRecapText returns a real recap.
@@ -82,22 +82,22 @@ test2("renderDirPreview: includes per-chat recap snippets when available", () =>
       "timestamp, type, content, message_uuid, parent_uuid, source, subtype) " +
       "VALUES (?, ?, '/work/frontend', 'frontend', ?, ?, ?, ?, NULL, 'claude', ?)"
   ).run("s1", "c1", 200, "system", "added an error boundary", "s1", "away_summary");
-  const dir: DirRow = {
-    kind: "dir", projectPath: "/work/frontend", projectName: "frontend",
+  const dir: ProjectHeader = {
+    kind: "project", projectPath: "/work/frontend", projectName: "frontend",
     chatCount: 1, lastActivity: 200, topChatTitles: [],
   };
-  const out = renderDirPreview(db, dir, false);
+  const out = renderProjectPreview(db, dir, false);
   assert.ok(out.includes("recap: added an error boundary"));
 });
 
-test2("renderDirPreview: includes the 'new chat here' hint", () => {
+test2("renderProjectPreview: includes the 'new chat here' hint", () => {
   const db = new DatabaseSync(":memory:");
   ensureSchema(db);
   seedDir(db);
-  const dir: DirRow = {
-    kind: "dir", projectPath: "/work/frontend", projectName: "frontend",
+  const dir: ProjectHeader = {
+    kind: "project", projectPath: "/work/frontend", projectName: "frontend",
     chatCount: 0, lastActivity: 0, topChatTitles: [],
   };
-  const out = renderDirPreview(db, dir, false);
+  const out = renderProjectPreview(db, dir, false);
   assert.ok(out.includes("Enter: new chat here"));
 });

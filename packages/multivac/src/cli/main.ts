@@ -14,7 +14,7 @@ import { regexPostfilter, regexScan } from "../core/search/regex.js";
 import { renderText } from "../core/render/text.js";
 import { renderTsv } from "../core/render/tsv.js";
 import { renderMarkdown } from "../core/render/markdown.js";
-import { searchDirectories } from "../core/search/dirs.js";
+import { buildProjectGroups } from "../core/search/unified.js";
 import { renderPreview } from "../core/render/preview.js";
 import { runInit } from "../sources/claude/install.js";
 import { projectsRoot, listJsonlFiles } from "../sources/claude/discover.js";
@@ -223,6 +223,17 @@ async function main(argv: string[]): Promise<number> {
     else args.format = process.stdout.isTTY ? "text" : "tsv";
   }
 
+  // Markdown path uses the same project-grouped producer the TUI does. It
+  // tolerates an empty query (home view) and emits one project section per
+  // group with embedded resume one-liners.
+  if (args.format === "markdown") {
+    const sessionStore = loadSessionStore();
+    const rows = buildProjectGroups(db, args, sessionStore);
+    process.stdout.write(renderMarkdown({ rows, query: args.query }));
+    return EXIT_OK;
+  }
+
+  // Text / TSV paths are chat-only and need a query.
   let results;
   if (args.scan) {
     if (!args.regexCompiled) dieUser("--scan requires --regex");
@@ -230,12 +241,6 @@ async function main(argv: string[]): Promise<number> {
   } else if (args.regex) {
     if (!args.regexCompiled) dieUser("--regex pattern failed to compile");
     results = regexPostfilter(db, args, args.regexCompiled);
-  } else if (!args.query && args.format === "markdown") {
-    // Bare `multivac --list` (no query): list recent chats AND recent dirs.
-    const sessionStore = loadSessionStore();
-    results = recentConversations(db, {
-      limit: args.limit, projectFilter: args.project, sessionStore,
-    });
   } else {
     if (!args.query) {
       dieUser(
@@ -247,13 +252,7 @@ async function main(argv: string[]): Promise<number> {
     results = ftsSearch(db, args);
   }
 
-  if (args.format === "markdown") {
-    const dirs = searchDirectories(db, {
-      limit: 10,
-      projectFilter: args.query.trim() || null,
-    });
-    process.stdout.write(renderMarkdown({ dirs, chats: results, query: args.query }));
-  } else if (args.format === "tsv") {
+  if (args.format === "tsv") {
     process.stdout.write(renderTsv(results));
   } else {
     process.stdout.write(renderText(results, useColor));

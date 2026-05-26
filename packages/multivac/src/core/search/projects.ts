@@ -1,13 +1,13 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { DirRow } from "../types.js";
+import type { ProjectHeader } from "../types.js";
 import { synthesizeTitle, isWrapperContent } from "./recent.js";
 
-export interface SearchDirsOpts {
+export interface SearchProjectsOpts {
   limit: number;
   projectFilter: string | null;
 }
 
-interface DirAggRow {
+interface ProjectAggRow {
   project_path: string;
   project_name: string | null;
   chat_count: number;
@@ -19,16 +19,16 @@ interface TopChatRow {
 }
 
 /**
- * SQL-derived directory results. Aggregates by `project_path`, counting
- * distinct conversations and tracking the most recent activity timestamp.
- * Optional case-insensitive substring filter on path OR name.
+ * SQL-derived project results. Aggregates by `project_path`, counting distinct
+ * conversations and tracking the most recent activity timestamp. Optional
+ * case-insensitive substring filter on path OR name.
  *
  * Spec: docs/superpowers/specs/2026-05-24-multivac-dashboard-design.md §D8.
  */
-export function searchDirectories(
+export function searchProjects(
   db: DatabaseSync,
-  opts: SearchDirsOpts,
-): DirRow[] {
+  opts: SearchProjectsOpts,
+): ProjectHeader[] {
   const { limit, projectFilter } = opts;
   const filterClause = projectFilter
     ? "AND (LOWER(project_path) LIKE ? OR LOWER(project_name) LIKE ?)"
@@ -54,7 +54,7 @@ LIMIT ?
 `;
   const rows = db
     .prepare(aggSql)
-    .all(...filterParams, Math.max(1, limit | 0)) as unknown as DirAggRow[];
+    .all(...filterParams, Math.max(1, limit | 0)) as unknown as ProjectAggRow[];
 
   const topStmt = db.prepare(
     "SELECT conversation_id FROM messages " +
@@ -68,7 +68,7 @@ LIMIT ?
       "ORDER BY timestamp ASC LIMIT 5"
   );
 
-  const out: DirRow[] = [];
+  const out: ProjectHeader[] = [];
   for (const r of rows) {
     const tops = topStmt.all(r.project_path) as unknown as TopChatRow[];
     const titles: string[] = [];
@@ -84,7 +84,7 @@ LIMIT ?
       titles.push(title ?? t.conversation_id.slice(0, 8));
     }
     out.push({
-      kind: "dir",
+      kind: "project",
       projectPath: r.project_path,
       projectName: r.project_name ?? r.project_path.split("/").pop() ?? "?",
       chatCount: r.chat_count,

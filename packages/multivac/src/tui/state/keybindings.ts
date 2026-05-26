@@ -24,9 +24,9 @@ function hasResumeAction(
   action: string,
 ): boolean {
   if (!row) return false;
-  if (row.kind === "section") return false;
-  if (row.kind === "dir") {
-    // Only the "newchat" action is meaningful on a dir row.
+  if (row.kind === "more") return false;
+  if (row.kind === "project") {
+    // Only the "newchat" action is meaningful on a project row.
     if (action !== "newchat") return false;
     const src = deps.getSource("claude");
     return !!src?.resume?.actions.includes(action as never);
@@ -63,12 +63,12 @@ export const BINDINGS: readonly Binding[] = [
     category: "action",
     visible: (d, r) => {
       if (!r) return false;
-      if (r.kind === "section") return false;
-      // visible on chat or dir rows when the source supports newchat
+      if (r.kind === "more") return false;
+      // visible on chat or project rows when the source supports newchat
       return hasResumeAction(d, r, "newchat");
     },
     longHelp: "Spawn `claude` (no --resume) in the row's project directory. " +
-              "Works on chat rows (uses the chat's dir) and on dir rows.",
+              "Works on chat rows (uses the chat's project) and on project rows.",
   },
   {
     keys: ["Ctrl-W"],
@@ -109,7 +109,7 @@ export const BINDINGS: readonly Binding[] = [
     keys: ["Ctrl-D"],
     label: "print path",
     category: "action",
-    visible: (_d, r) => r?.kind === "chat" || r?.kind === "dir",
+    visible: (_d, r) => r?.kind === "chat" || r?.kind === "project",
     longHelp: "Print the row's project path to stdout and exit.",
   },
   {

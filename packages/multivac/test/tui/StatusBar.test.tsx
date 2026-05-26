@@ -63,8 +63,8 @@ test("StatusBar: N new-chat visible on a chat row", () => {
   assert.ok(lines.join(" ").includes("N new-chat"));
 });
 
-test("StatusBar: N new-chat visible on a dir row", () => {
-  const sel = { kind: "dir", projectPath: "/p", projectName: "p",
+test("StatusBar: N new-chat visible on a project header row", () => {
+  const sel = { kind: "project", projectPath: "/p", projectName: "p",
     chatCount: 1, lastActivity: 0, topChatTitles: [] } as const;
   const lines = buildStatusBar(
     { dangerouslySkipPermissions: false, tmuxAvailable: false, getSource: () => claudeSourceStub() },
@@ -73,8 +73,8 @@ test("StatusBar: N new-chat visible on a dir row", () => {
   assert.ok(lines.join(" ").includes("N new-chat"));
 });
 
-test("StatusBar: N new-chat hidden on a section header", () => {
-  const sel = { kind: "section", label: "working dirs" } as const;
+test("StatusBar: N new-chat hidden on a MoreRow (cursor never lands there anyway)", () => {
+  const sel = { kind: "more", projectPath: "/p", remainingCount: 4 } as const;
   const lines = buildStatusBar(
     { dangerouslySkipPermissions: false, tmuxAvailable: false, getSource: () => claudeSourceStub() },
     sel as any, 200,

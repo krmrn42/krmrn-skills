@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { DatabaseSync } from "node:sqlite";
-import { buildUnifiedResults } from "../../core/search/unified.js";
+import { buildProjectGroups } from "../../core/search/unified.js";
 import type { Args, Selectable, SessionStore } from "../../core/types.js";
 
 interface Opts {
@@ -21,7 +21,7 @@ export function useSearch({ db, args, query, sessionStore, onResults, onPending 
     timer.current = setTimeout(() => {
       onPending(false);
       try {
-        const rows = buildUnifiedResults(db, { ...args, query }, sessionStore);
+        const rows = buildProjectGroups(db, { ...args, query }, sessionStore);
         onResults(rows);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);

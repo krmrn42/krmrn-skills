@@ -135,9 +135,71 @@ function recordToRows(rec: Record<string, unknown>): ParsedRow[] | null {
   return [];
 }
 
+/**
+ * If `filePath` is a subagent JSONL (parent directory named "subagents"),
+ * return the parent session's `cwd` field — read from the first record in the
+ * sibling parent JSONL. Used to coerce subagent rows' `project_path` so
+ * subdirectories don't manifest as phantom "projects" (spec §D15).
+ *
+ * Returns null when:
+ *   - filePath is not a subagent JSONL, or
+ *   - the parent JSONL is missing / unreadable, or
+ *   - no record in the parent JSONL has a usable cwd.
+ *
+ * On null the caller falls back to the file's own cwd field, which is the
+ * legacy behavior — safe.
+ */
+export function detectSubagentParentCwd(filePath: string): string | null {
+  const dirName = path.basename(path.dirname(filePath));
+  if (dirName !== "subagents") return null;
+  // Path shape: .../projects/<encoded-cwd>/<conv-id>/subagents/agent-XXX.jsonl
+  const subagentsDir = path.dirname(filePath);
+  const convDir = path.dirname(subagentsDir);
+  const convId = path.basename(convDir);
+  const projectsDir = path.dirname(convDir);
+  const parentJsonl = path.join(projectsDir, `${convId}.jsonl`);
+  let text: string;
+  try {
+    text = fs.readFileSync(parentJsonl, "utf-8");
+  } catch (_) {
+    return null;
+  }
+  // Scan the first ~50 non-empty lines for one with a usable cwd; cap to keep
+  // pathological inputs bounded.
+  let scanned = 0;
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    if (++scanned > 50) break;
+    try {
+      const rec = JSON.parse(line) as Record<string, unknown>;
+      const cwd = rec["cwd"];
+      if (typeof cwd === "string" && cwd.length > 0) return cwd;
+    } catch (_) {
+      continue;
+    }
+  }
+  return null;
+}
+
 export async function* parse(file: SourceFile): AsyncGenerator<Omit<MessageRow, "id" | "source">> {
   const sessionId = path.basename(file.path, ".jsonl");
   const projectDir = path.basename(path.dirname(file.path));
+
+  // Project_path policy (spec §D15):
+  //   - For a subagent JSONL, lock every row to the parent session's project
+  //     path (read once from the parent's first cwd-carrying record).
+  //   - For a top-level (non-subagent) JSONL, lock every row to THIS file's
+  //     first cwd-carrying record. Per-message cwd is transient (it can shift
+  //     when the controller invokes a subagent inside a subdir, or runs Bash
+  //     commands that change directory). The session's project is defined by
+  //     where the user STARTED Claude, which the first record records.
+  //   - When no cwd is locked yet (file with no cwd records seen so far),
+  //     fall back to the encoded directory name decode — lossy for paths with
+  //     hyphens but a reasonable last-resort.
+  const subagentCoercedCwd = detectSubagentParentCwd(file.path);
+  const isSubagent = subagentCoercedCwd !== null
+    || path.basename(path.dirname(file.path)) === "subagents";
+  let sessionProjectPath: string | null = subagentCoercedCwd;
 
   const rl = readline.createInterface({
     input: fs.createReadStream(file.path, { encoding: "utf-8" }),
@@ -152,7 +214,16 @@ export async function* parse(file: SourceFile): AsyncGenerator<Omit<MessageRow, 
     } catch (_) {
       continue;
     }
-    const projectPath = decodeProjectPathFromCwd(rec["cwd"], projectDir);
+
+    // Lock the session's project_path on the first record with a usable cwd.
+    if (sessionProjectPath === null) {
+      const recCwd = rec["cwd"];
+      if (typeof recCwd === "string" && recCwd.length > 0) {
+        sessionProjectPath = recCwd;
+      }
+    }
+    const projectPath = sessionProjectPath
+      ?? decodeProjectPathFromCwd(rec["cwd"], projectDir);
     const projectName = projectNameFromPath(projectPath);
     const ts = parseTimestampMs(rec["timestamp"]);
     const out = recordToRows(rec);
@@ -174,6 +245,7 @@ export async function* parse(file: SourceFile): AsyncGenerator<Omit<MessageRow, 
           : undefined,
         gitBranch: typeof rec["gitBranch"] === "string" ? rec["gitBranch"] : undefined,
         attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : undefined,
+        isSubagent,
       };
     }
   }

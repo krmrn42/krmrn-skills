@@ -33007,8 +33007,10 @@ var EXPECTED_COLUMNS = /* @__PURE__ */ new Set([
   "source",
   "subtype",
   "git_branch",
-  "attribution_skill"
+  "attribution_skill",
   // v3 additions
+  "is_subagent"
+  // v4 addition
 ]);
 var SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS messages (
@@ -33024,7 +33026,8 @@ CREATE TABLE IF NOT EXISTS messages (
   source            TEXT NOT NULL DEFAULT 'claude',
   subtype           TEXT NULL,
   git_branch        TEXT NULL,
-  attribution_skill TEXT NULL
+  attribution_skill TEXT NULL,
+  is_subagent       INTEGER NOT NULL DEFAULT 0   -- v4: 1 if row came from a subagent JSONL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp    ON messages(timestamp);
@@ -33059,6 +33062,8 @@ function detectMigrationNeeded(db) {
   if (!hasSource) return 2;
   const hasSubtype = cols.some((c) => c.name === "subtype");
   if (!hasSubtype) return 3;
+  const hasIsSubagent = cols.some((c) => c.name === "is_subagent");
+  if (!hasIsSubagent) return 4;
   return 0;
 }
 
@@ -33732,9 +33737,40 @@ function recordToRows(rec) {
   }
   return [];
 }
+function detectSubagentParentCwd(filePath) {
+  const dirName = path3.basename(path3.dirname(filePath));
+  if (dirName !== "subagents") return null;
+  const subagentsDir = path3.dirname(filePath);
+  const convDir = path3.dirname(subagentsDir);
+  const convId = path3.basename(convDir);
+  const projectsDir = path3.dirname(convDir);
+  const parentJsonl = path3.join(projectsDir, `${convId}.jsonl`);
+  let text;
+  try {
+    text = fs4.readFileSync(parentJsonl, "utf-8");
+  } catch (_) {
+    return null;
+  }
+  let scanned = 0;
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    if (++scanned > 50) break;
+    try {
+      const rec = JSON.parse(line);
+      const cwd2 = rec["cwd"];
+      if (typeof cwd2 === "string" && cwd2.length > 0) return cwd2;
+    } catch (_) {
+      continue;
+    }
+  }
+  return null;
+}
 async function* parse(file) {
   const sessionId = path3.basename(file.path, ".jsonl");
   const projectDir = path3.basename(path3.dirname(file.path));
+  const subagentCoercedCwd = detectSubagentParentCwd(file.path);
+  const isSubagent = subagentCoercedCwd !== null || path3.basename(path3.dirname(file.path)) === "subagents";
+  let sessionProjectPath = subagentCoercedCwd;
   const rl = readline.createInterface({
     input: fs4.createReadStream(file.path, { encoding: "utf-8" }),
     crlfDelay: Infinity
@@ -33747,7 +33783,13 @@ async function* parse(file) {
     } catch (_) {
       continue;
     }
-    const projectPath = decodeProjectPathFromCwd(rec["cwd"], projectDir);
+    if (sessionProjectPath === null) {
+      const recCwd = rec["cwd"];
+      if (typeof recCwd === "string" && recCwd.length > 0) {
+        sessionProjectPath = recCwd;
+      }
+    }
+    const projectPath = sessionProjectPath ?? decodeProjectPathFromCwd(rec["cwd"], projectDir);
     const projectName = projectNameFromPath(projectPath);
     const ts = parseTimestampMs(rec["timestamp"]);
     const out = recordToRows(rec);
@@ -33766,7 +33808,8 @@ async function* parse(file) {
         parentUuid: r.parent_uuid,
         subtype: r.type === "system" && typeof rec["subtype"] === "string" ? rec["subtype"] : void 0,
         gitBranch: typeof rec["gitBranch"] === "string" ? rec["gitBranch"] : void 0,
-        attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : void 0
+        attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : void 0,
+        isSubagent
       };
     }
   }
@@ -34039,7 +34082,7 @@ async function indexFile(db, source, file) {
     "DELETE FROM messages WHERE source = ? AND conversation_id = ?"
   ).run(source.id, conversationId);
   const insert = db.prepare(
-    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source, subtype, git_branch, attribution_skill) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source, subtype, git_branch, attribution_skill, is_subagent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
   const blockCounters = /* @__PURE__ */ new Map();
   let rows = 0;
@@ -34064,7 +34107,8 @@ async function indexFile(db, source, file) {
           source.id,
           row.subtype ?? null,
           row.gitBranch ?? null,
-          row.attributionSkill ?? null
+          row.attributionSkill ?? null,
+          row.isSubagent ? 1 : 0
         );
         rows++;
       } catch (_) {
@@ -34563,46 +34607,80 @@ function renderTsv(results) {
 
 // src/core/render/markdown.ts
 function renderMarkdown(input) {
-  const { dirs, chats, query } = input;
-  if (dirs.length === 0 && chats.length === 0) {
+  const { rows, query } = input;
+  if (rows.length === 0) {
     return "no matches\n";
   }
   const out = [];
-  const labelSuffix = query.length > 0 ? ` matching "${query}"` : " (recent)";
-  if (dirs.length > 0) {
-    out.push(`## Working directories${labelSuffix}`);
-    out.push("");
-    dirs.forEach((d, i) => {
-      const date = fmtDate(d.lastActivity);
-      const count = `${d.chatCount} chat${d.chatCount === 1 ? "" : "s"}`;
-      out.push(`${i + 1}. **${d.projectPath}** \u2014 ${count}, last activity ${date}`);
-      if (d.topChatTitles.length > 0) {
-        out.push(`   - Recent: ${d.topChatTitles.join(", ")}`);
+  const suffix = query.length > 0 ? ` matching "${query}"` : "";
+  const recentTag = query.length > 0 ? "" : ", recent activity";
+  let i = 0;
+  while (i < rows.length) {
+    const row = rows[i];
+    if (row.kind !== "project") {
+      if (row.kind === "chat") {
+        const synthetic = {
+          kind: "project",
+          projectPath: row.projectPath,
+          projectName: row.projectName,
+          chatCount: 1,
+          lastActivity: row.lastActivity,
+          topChatTitles: []
+        };
+        const { rendered: rendered2, advancedBy: advancedBy2 } = renderProjectSection(synthetic, rows, i, suffix, recentTag);
+        out.push(...rendered2);
+        i += advancedBy2;
+        continue;
       }
-      out.push(`   - New chat: \`(cd ${shellQuote(d.projectPath)} && claude)\``);
-      out.push("");
-    });
-  }
-  if (chats.length > 0) {
-    out.push(`## Chats${labelSuffix}`);
-    out.push("");
-    chats.forEach((c, i) => {
-      const date = fmtDate(c.lastActivity);
-      const branch = c.gitBranch ? ` (${c.gitBranch})` : "";
-      const title = c.title ?? c.sessionId.slice(0, 8);
-      out.push(`${i + 1}. **${title}** \u2014 \`${c.projectPath}\` \xB7 ${date} \xB7 ${c.msgCount} msgs${branch}`);
-      if (c.recapText) {
-        const oneLine = c.recapText.replace(/\n+/g, " ").trim();
-        out.push(`   - recap: ${oneLine}`);
-      } else if (c.snippet) {
-        const oneLine = c.snippet.replace(/<<<|>>>/g, "").replace(/\s+/g, " ").trim();
-        if (oneLine.length > 0) out.push(`   - snippet: ${oneLine}`);
-      }
-      out.push(`   - Resume: \`${resumeOneLiner(c)}\``);
-      out.push("");
-    });
+      i++;
+      continue;
+    }
+    const { rendered, advancedBy } = renderProjectSection(row, rows, i, suffix, recentTag);
+    out.push(...rendered);
+    i += advancedBy;
   }
   return out.join("\n");
+}
+function renderProjectSection(proj, rows, startIdx, suffix, recentTag) {
+  const out = [];
+  const date = fmtDate(proj.lastActivity);
+  const count = `${proj.chatCount} chat${proj.chatCount === 1 ? "" : "s"}`;
+  const matchHint = suffix.length > 0 ? `${count}${suffix}` : count;
+  out.push(`## ${proj.projectPath} \u2014 ${matchHint}, last activity ${date}${recentTag === "" ? "" : ""}`);
+  out.push("");
+  out.push(`New chat here: \`(cd ${shellQuote(proj.projectPath)} && claude)\``);
+  out.push("");
+  let i = startIdx + 1;
+  let chatNumber = 0;
+  while (i < rows.length && rows[i].kind !== "project") {
+    const child = rows[i];
+    if (child.kind === "chat") {
+      chatNumber++;
+      out.push(...renderChatEntry(child, chatNumber));
+    } else if (child.kind === "more") {
+      out.push(`(${child.remainingCount} more)`);
+      out.push("");
+    }
+    i++;
+  }
+  return { rendered: out, advancedBy: i - startIdx };
+}
+function renderChatEntry(c, ordinal) {
+  const out = [];
+  const date = fmtDate(c.lastActivity);
+  const branch = c.gitBranch ? ` (${c.gitBranch})` : "";
+  const title = c.title ?? c.sessionId.slice(0, 8);
+  out.push(`${ordinal}. **${title}** \u2014 ${date} \xB7 ${c.msgCount} msgs${branch}`);
+  if (c.recapText) {
+    const oneLine = c.recapText.replace(/\n+/g, " ").trim();
+    out.push(`   - recap: ${oneLine}`);
+  } else if (c.snippet) {
+    const oneLine = c.snippet.replace(/<<<|>>>/g, "").replace(/\s+/g, " ").trim();
+    if (oneLine.length > 0) out.push(`   - snippet: ${oneLine}`);
+  }
+  out.push(`   - Resume: \`${resumeOneLiner(c)}\``);
+  out.push("");
+  return out;
 }
 
 // src/core/search/recap.ts
@@ -34673,12 +34751,19 @@ function normalizeTailContent(rawContent) {
   return s;
 }
 function recentConversations(db, opts) {
-  const { limit, projectFilter, sessionStore } = opts;
-  const projectExtra = projectFilter ? "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)" : "";
-  const projectParams = projectFilter ? [
-    "%" + String(projectFilter).toLowerCase() + "%",
-    "%" + String(projectFilter).toLowerCase() + "%"
-  ] : [];
+  const { limit, projectFilter, exactProjectPath, sessionStore } = opts;
+  let projectExtra = "";
+  let projectParams = [];
+  if (exactProjectPath) {
+    projectExtra = "AND project_path = ?";
+    projectParams = [exactProjectPath];
+  } else if (projectFilter) {
+    projectExtra = "AND (LOWER(project_name) LIKE ? OR LOWER(project_path) LIKE ?)";
+    projectParams = [
+      "%" + String(projectFilter).toLowerCase() + "%",
+      "%" + String(projectFilter).toLowerCase() + "%"
+    ];
+  }
   const recentSql = `
 SELECT
   conversation_id AS conversation_id,
@@ -34746,8 +34831,8 @@ LIMIT ?
   return applyPinOrdering(results, sessionStore, Math.max(1, limit | 0));
 }
 
-// src/core/search/dirs.ts
-function searchDirectories(db, opts) {
+// src/core/search/projects.ts
+function searchProjects(db, opts) {
   const { limit, projectFilter } = opts;
   const filterClause = projectFilter ? "AND (LOWER(project_path) LIKE ? OR LOWER(project_name) LIKE ?)" : "";
   const filterParams = projectFilter ? [
@@ -34790,7 +34875,7 @@ LIMIT ?
       titles.push(title ?? t.conversation_id.slice(0, 8));
     }
     out.push({
-      kind: "dir",
+      kind: "project",
       projectPath: r.project_path,
       projectName: r.project_name ?? r.project_path.split("/").pop() ?? "?",
       chatCount: r.chat_count,
@@ -34799,6 +34884,85 @@ LIMIT ?
     });
   }
   return out;
+}
+
+// src/core/search/unified.ts
+var HOME_PROJECTS_LIMIT = 30;
+var SEARCH_PROJECTS_LIMIT = 100;
+var HOME_CHATS_PER_PROJECT = 3;
+var MIN_CHATS_ON_NAME_HIT = 3;
+var PADDING_LOOKAHEAD = 10;
+function buildProjectGroups(db, args, sessionStore) {
+  const query = args.query.trim();
+  const isHome = query.length === 0;
+  const projects = searchProjects(db, {
+    limit: isHome ? HOME_PROJECTS_LIMIT : SEARCH_PROJECTS_LIMIT,
+    projectFilter: null
+  });
+  const matchingChatsByProject = /* @__PURE__ */ new Map();
+  if (!isHome) {
+    const matches = ftsSearch(db, { ...args, sessionStore });
+    for (const c of matches) {
+      let arr = matchingChatsByProject.get(c.projectPath);
+      if (!arr) {
+        arr = [];
+        matchingChatsByProject.set(c.projectPath, arr);
+      }
+      arr.push(c);
+    }
+  }
+  const out = [];
+  const lowerQuery = query.toLowerCase();
+  for (const proj of projects) {
+    const chats = chatsForProject({
+      db,
+      proj,
+      isHome,
+      query,
+      lowerQuery,
+      sessionStore,
+      matches: matchingChatsByProject.get(proj.projectPath) ?? []
+    });
+    if (chats.length === 0) continue;
+    out.push(proj);
+    out.push(...chats);
+    const remaining = proj.chatCount - chats.length;
+    if (remaining > 0) {
+      out.push({
+        kind: "more",
+        projectPath: proj.projectPath,
+        remainingCount: remaining
+      });
+    }
+  }
+  return out;
+}
+function chatsForProject(opts) {
+  const { db, proj, isHome, lowerQuery, sessionStore, matches } = opts;
+  if (isHome) {
+    return recentConversations(db, {
+      limit: HOME_CHATS_PER_PROJECT,
+      projectFilter: null,
+      exactProjectPath: proj.projectPath,
+      sessionStore
+    });
+  }
+  const nameHit = proj.projectPath.toLowerCase().includes(lowerQuery) || proj.projectName.toLowerCase().includes(lowerQuery);
+  if (!nameHit) {
+    return matches;
+  }
+  if (matches.length >= MIN_CHATS_ON_NAME_HIT) {
+    return matches;
+  }
+  const matchIds = new Set(matches.map((m) => m.sessionId));
+  const recent = recentConversations(db, {
+    limit: PADDING_LOOKAHEAD,
+    projectFilter: null,
+    exactProjectPath: proj.projectPath,
+    sessionStore
+  });
+  const padding = recent.filter((r) => !matchIds.has(r.sessionId)).slice(0, MIN_CHATS_ON_NAME_HIT - matches.length);
+  return [...matches, ...padding];
 }
 
 // src/tui/lib/box.ts
@@ -34880,18 +35044,21 @@ var initialState = {
   renameBuffer: "",
   dims: { cols: 80, rows: 24 }
 };
+function isCursorTarget(row) {
+  return row.kind === "chat" || row.kind === "project";
+}
 function nextSelectableIdx(results, from, dir) {
   if (results.length === 0) return 0;
   let i = from + dir;
   while (i >= 0 && i < results.length) {
-    if (results[i].kind !== "section") return i;
+    if (isCursorTarget(results[i])) return i;
     i += dir;
   }
   return from;
 }
 function firstSelectableIdx(results) {
   for (let i = 0; i < results.length; i++) {
-    if (results[i].kind !== "section") return i;
+    if (isCursorTarget(results[i])) return i;
   }
   return 0;
 }
@@ -34901,8 +35068,8 @@ function reducer(state, action) {
       return { ...state, query: action.query, cursor: 0 };
     case "set-results": {
       const initial = Math.min(state.cursor, Math.max(0, action.results.length - 1));
-      const targetIsSection = action.results.length > 0 && action.results[initial]?.kind === "section";
-      const cursor = targetIsSection || initial === 0 ? firstSelectableIdx(action.results) : initial;
+      const targetUnselectable = action.results.length > 0 && !isCursorTarget(action.results[initial]);
+      const cursor = targetUnselectable || initial === 0 ? firstSelectableIdx(action.results) : initial;
       return {
         ...state,
         results: action.results,
@@ -35030,8 +35197,8 @@ function wrapToWidth(s, width) {
 // src/tui/state/keybindings.ts
 function hasResumeAction(deps, row, action) {
   if (!row) return false;
-  if (row.kind === "section") return false;
-  if (row.kind === "dir") {
+  if (row.kind === "more") return false;
+  if (row.kind === "project") {
     if (action !== "newchat") return false;
     const src2 = deps.getSource("claude");
     return !!src2?.resume?.actions.includes(action);
@@ -35067,10 +35234,10 @@ var BINDINGS = [
     category: "action",
     visible: (d, r) => {
       if (!r) return false;
-      if (r.kind === "section") return false;
+      if (r.kind === "more") return false;
       return hasResumeAction(d, r, "newchat");
     },
-    longHelp: "Spawn `claude` (no --resume) in the row's project directory. Works on chat rows (uses the chat's dir) and on dir rows."
+    longHelp: "Spawn `claude` (no --resume) in the row's project directory. Works on chat rows (uses the chat's project) and on project rows."
   },
   {
     keys: ["Ctrl-W"],
@@ -35111,7 +35278,7 @@ var BINDINGS = [
     keys: ["Ctrl-D"],
     label: "print path",
     category: "action",
-    visible: (_d, r) => r?.kind === "chat" || r?.kind === "dir",
+    visible: (_d, r) => r?.kind === "chat" || r?.kind === "project",
     longHelp: "Print the row's project path to stdout and exit."
   },
   {
@@ -35177,11 +35344,12 @@ function StatusBar({ deps, selectedRow, cols }) {
 // src/tui/components/ResultList.tsx
 var import_react24 = __toESM(require_react(), 1);
 var CHAT_ROW_HEIGHT = 3;
-var DIR_ROW_HEIGHT = 2;
-var SECTION_ROW_HEIGHT = 1;
+var PROJECT_ROW_HEIGHT = 2;
+var MORE_ROW_HEIGHT = 1;
+var CHILD_INDENT = "  ";
 function rowHeight(row) {
-  if (row.kind === "section") return SECTION_ROW_HEIGHT;
-  if (row.kind === "dir") return DIR_ROW_HEIGHT;
+  if (row.kind === "project") return PROJECT_ROW_HEIGHT;
+  if (row.kind === "more") return MORE_ROW_HEIGHT;
   return CHAT_ROW_HEIGHT;
 }
 function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
@@ -35213,7 +35381,7 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
     used += prevHeight;
   }
   const pinMarker = noColor ? "* " : "\u{1F4CC} ";
-  const dirMarker = noColor ? "[dir] " : "\u{1F4C1} ";
+  const projectMarker = noColor ? "[proj] " : "\u{1F4C1} ";
   const chatMarker = noColor ? "[chat] " : "\u{1F4AC} ";
   const cursorPrefix = "\u258C ";
   const blankPrefix = "  ";
@@ -35231,14 +35399,23 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
       pinDividerWritten = true;
       consumed += 1;
     }
-    if (row.kind === "section") {
-      nodes.push(renderSectionHeader(row, i, listWidth));
-      consumed += SECTION_ROW_HEIGHT;
+    if (row.kind === "project") {
+      nodes.push(...renderProjectHeader(
+        row,
+        i,
+        isCur,
+        listWidth,
+        dimRows,
+        projectMarker,
+        cursorPrefix,
+        blankPrefix
+      ));
+      consumed += PROJECT_ROW_HEIGHT;
       continue;
     }
-    if (row.kind === "dir") {
-      nodes.push(...renderDirRow(row, i, isCur, listWidth, dimRows, dirMarker, cursorPrefix, blankPrefix));
-      consumed += DIR_ROW_HEIGHT;
+    if (row.kind === "more") {
+      nodes.push(renderMoreRow(row, i, listWidth));
+      consumed += MORE_ROW_HEIGHT;
       continue;
     }
     nodes.push(...renderChatRow(
@@ -35257,11 +35434,7 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
   }
   return /* @__PURE__ */ import_react24.default.createElement(Box_default, { flexDirection: "column" }, nodes);
 }
-function renderSectionHeader(row, key, listWidth) {
-  const text = truncateToWidth(`\u2500\u2500 ${row.label} \u2500\u2500`, listWidth);
-  return /* @__PURE__ */ import_react24.default.createElement(Text, { key: `sec-${key}`, dimColor: true }, text);
-}
-function renderDirRow(row, key, isCur, listWidth, dim, marker, cursorPrefix, blankPrefix) {
+function renderProjectHeader(row, key, isCur, listWidth, dim, marker, cursorPrefix, blankPrefix) {
   const date = fmtDate(row.lastActivity);
   const count = `${row.chatCount} chat${row.chatCount === 1 ? "" : "s"}`;
   const head = `${marker}${row.projectPath}  ${count}  ${date}`;
@@ -35269,40 +35442,47 @@ function renderDirRow(row, key, isCur, listWidth, dim, marker, cursorPrefix, bla
   const second = row.topChatTitles.length > 0 ? truncateToWidth(row.topChatTitles.join(" \xB7 "), listWidth - 4) : "";
   const out = [];
   out.push(
-    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `d-h-${key}`, bold: isCur && !dim, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
+    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `p-h-${key}`, bold: isCur && !dim, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
   );
   out.push(
-    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `d-s-${key}`, dimColor: true }, "    ", second)
+    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `p-s-${key}`, dimColor: true }, "    ", second)
   );
   return out;
+}
+function renderMoreRow(row, key, listWidth) {
+  const text = truncateToWidth(
+    `${CHILD_INDENT}  ${row.remainingCount} more`,
+    listWidth - 2
+  );
+  return /* @__PURE__ */ import_react24.default.createElement(Text, { key: `m-${key}`, dimColor: true }, text);
 }
 function renderChatRow(row, key, isCur, noColor, listWidth, dim, pinMarker, chatMarker, cursorPrefix, blankPrefix) {
   const proj = projectDisplay(row.projectPath, row.projectName);
   const date = fmtDate(row.lastActivity);
   const sid = shortSession(row.sessionId);
   const msgs = String(row.msgCount).padStart(4);
-  const headBody = row.title ? `${row.title} \xB7 ${proj}  ${date}  ${msgs} msgs  ${sid}` : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
+  const headBody = row.title ? `${row.title}  ${date}  ${msgs} msgs  ${sid}` : `${proj}  ${date}  ${msgs} msgs  ${sid}`;
   const pinPart = row.isPinned ? pinMarker : chatMarker;
   const head = pinPart + headBody;
-  const headTrunc = truncateToWidth(head, listWidth - 2);
+  const headTrunc = truncateToWidth(head, listWidth - 2 - CHILD_INDENT.length);
   const snippetText = colorizeSnippet(row.snippet || "", !noColor);
-  const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4) : "";
+  const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4 - CHILD_INDENT.length) : "";
   const metaParts = [];
   if (row.gitBranch) metaParts.push("(" + row.gitBranch + ")");
   if (row.skill) metaParts.push(row.skill);
-  const metaText = metaParts.length > 0 ? truncateToWidth(metaParts.join(" \xB7 "), listWidth - 4) : "";
-  const previewLine = snipTrunc || (row.recapText ? truncateToWidth("recap: " + row.recapText.replace(/\n/g, " \u23CE "), listWidth - 4) : "");
+  const metaText = metaParts.length > 0 ? truncateToWidth(metaParts.join(" \xB7 "), listWidth - 4 - CHILD_INDENT.length) : "";
+  const previewLine = snipTrunc || (row.recapText ? truncateToWidth("recap: " + row.recapText.replace(/\n/g, " \u23CE "), listWidth - 4 - CHILD_INDENT.length) : "");
   const out = [];
   out.push(
-    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-h-${key}`, bold: isCur && !dim, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
+    /* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-h-${key}`, bold: isCur && !dim, dimColor: dim }, CHILD_INDENT, isCur ? cursorPrefix : blankPrefix, headTrunc)
   );
   if (metaText) {
-    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-m-${key}`, dimColor: true }, "    ", metaText));
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-m-${key}`, dimColor: true }, CHILD_INDENT, "    ", metaText));
   } else {
     out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-m-${key}` }, ""));
   }
   if (previewLine) {
-    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-s-${key}`, dimColor: true }, "    ", previewLine));
+    out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-s-${key}`, dimColor: true }, CHILD_INDENT, "    ", previewLine));
   } else {
     out.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `c-s-${key}` }, ""));
   }
@@ -35342,42 +35522,6 @@ function RenameModal() {
 
 // src/tui/hooks/useSearch.ts
 var import_react28 = __toESM(require_react(), 1);
-
-// src/core/search/unified.ts
-var DIR_LIMIT = 5;
-var FILTERED_DIR_LIMIT = 10;
-function buildUnifiedResults(db, args, sessionStore) {
-  const query = args.query.trim();
-  const isFiltered = query.length > 0;
-  const dirFilter = isFiltered ? query : null;
-  const dirLimit = isFiltered ? FILTERED_DIR_LIMIT : DIR_LIMIT;
-  const dirs = searchDirectories(db, { limit: dirLimit, projectFilter: dirFilter });
-  const chats = isFiltered ? ftsSearch(db, { ...args, sessionStore }) : recentConversations(db, {
-    limit: args.limit,
-    projectFilter: args.project,
-    sessionStore
-  });
-  const nonEmptySections = (dirs.length > 0 ? 1 : 0) + (chats.length > 0 ? 1 : 0);
-  const showHeaders = nonEmptySections > 1;
-  const out = [];
-  if (dirs.length > 0) {
-    if (showHeaders) {
-      const label = isFiltered ? `working dirs (${dirs.length})` : `working dirs (recent ${dirs.length})`;
-      out.push({ kind: "section", label });
-    }
-    out.push(...dirs);
-  }
-  if (chats.length > 0) {
-    if (showHeaders) {
-      const label = isFiltered ? `chats (${chats.length}, by relevance)` : `chats (recent ${chats.length})`;
-      out.push({ kind: "section", label });
-    }
-    out.push(...chats);
-  }
-  return out;
-}
-
-// src/tui/hooks/useSearch.ts
 function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
   const timer = (0, import_react28.useRef)(null);
   (0, import_react28.useEffect)(() => {
@@ -35386,7 +35530,7 @@ function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
     timer.current = setTimeout(() => {
       onPending(false);
       try {
-        const rows = buildUnifiedResults(db, { ...args, query }, sessionStore);
+        const rows = buildProjectGroups(db, { ...args, query }, sessionStore);
         onResults(rows);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -35402,10 +35546,10 @@ function useSearch({ db, args, query, sessionStore, onResults, onPending }) {
 // src/tui/hooks/usePreview.ts
 var import_react29 = __toESM(require_react(), 1);
 
-// src/core/render/dir-preview.ts
+// src/core/render/project-preview.ts
 var W = 70;
 var RECENT_LIMIT = 5;
-function renderDirPreview(db, dir, useColor) {
+function renderProjectPreview(db, proj, useColor) {
   const bold = useColor ? ANSI_BOLD : "";
   const dim = useColor ? ANSI_DIM : "";
   const reset = useColor ? ANSI_RESET : "";
@@ -35413,15 +35557,15 @@ function renderDirPreview(db, dir, useColor) {
   const horiz = box.horizontal.repeat(W - 2);
   const branchRow = db.prepare(
     "SELECT DISTINCT git_branch FROM messages WHERE project_path = ? AND git_branch IS NOT NULL ORDER BY git_branch"
-  ).all(dir.projectPath);
+  ).all(proj.projectPath);
   const branches = branchRow.map((r) => r.git_branch).filter(Boolean);
   const lines = [];
   lines.push(`${dim}${box.topLeft}${horiz}${box.topRight}${reset}
 `);
-  lines.push(`${dim}${box.vertical} ${reset}${bold}${dir.projectPath}${reset}
+  lines.push(`${dim}${box.vertical} ${reset}${bold}${proj.projectPath}${reset}
 `);
   lines.push(
-    `${dim}${box.vertical} ${reset}${dim}${dir.chatCount} chat${dir.chatCount === 1 ? "" : "s"} \xB7 last ${fmtDate(dir.lastActivity)}${reset}
+    `${dim}${box.vertical} ${reset}${dim}${proj.chatCount} chat${proj.chatCount === 1 ? "" : "s"} \xB7 last ${fmtDate(proj.lastActivity)}${reset}
 `
   );
   if (branches.length > 0) {
@@ -35433,7 +35577,7 @@ function renderDirPreview(db, dir, useColor) {
 `);
   const recent = db.prepare(
     "SELECT conversation_id, MAX(timestamp) AS last_ts,        COUNT(*) AS msg_count FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') GROUP BY conversation_id ORDER BY last_ts DESC LIMIT ?"
-  ).all(dir.projectPath, RECENT_LIMIT);
+  ).all(proj.projectPath, RECENT_LIMIT);
   if (recent.length > 0) {
     lines.push(`${dim}Recent chats here:${reset}
 `);
@@ -35479,18 +35623,18 @@ function usePreview({ db, row, useColor, width }) {
     cache3.current.clear();
   }, [width]);
   (0, import_react29.useEffect)(() => {
-    if (!row || row.kind === "section") {
+    if (!row || row.kind === "more") {
       setText("");
       return;
     }
-    const key = row.kind === "chat" ? `chat:${row.source}:${row.sessionId}` : `dir:${row.projectPath}`;
+    const key = row.kind === "chat" ? `chat:${row.source}:${row.sessionId}` : `project:${row.projectPath}`;
     const cached = cache3.current.get(key);
     if (cached !== void 0) {
       setText(cached);
       return;
     }
     try {
-      const out = row.kind === "chat" ? renderPreview(db, row.sessionId, row.source, useColor) : renderDirPreview(db, row, useColor);
+      const out = row.kind === "chat" ? renderPreview(db, row.sessionId, row.source, useColor) : renderProjectPreview(db, row, useColor);
       cache3.current.set(key, out);
       setText(out);
     } catch (e) {
@@ -35510,14 +35654,14 @@ function getDesiredExitCode() {
 function resetDesiredExitCode() {
   desiredExitCode = null;
 }
-function dirAsRow(dir) {
+function projectAsRow(proj) {
   return {
     kind: "chat",
     source: "claude",
     sessionId: "",
-    projectPath: dir.projectPath,
-    projectName: dir.projectName,
-    lastActivity: dir.lastActivity,
+    projectPath: proj.projectPath,
+    projectName: proj.projectName,
+    lastActivity: proj.lastActivity,
     msgCount: 0,
     snippet: "",
     score: 0
@@ -35527,7 +35671,7 @@ function useResume(opts) {
   const { exit } = use_app_default();
   return (0, import_react30.useCallback)(
     (action, row) => {
-      const resolved = row.kind === "dir" ? dirAsRow(row) : row;
+      const resolved = row.kind === "project" ? projectAsRow(row) : row;
       const source = getSource(resolved.source);
       if (!source?.resume) {
         exit();
@@ -35659,13 +35803,13 @@ function App2(props) {
         }
       } else if (chatRow) {
         runResume("resume", chatRow);
-      } else if (selectedRow?.kind === "dir") {
+      } else if (selectedRow?.kind === "project") {
         runResume("newchat", selectedRow);
       }
       return;
     }
     if (input === "N" && !key.ctrl && !key.meta) {
-      if (selectedRow && selectedRow.kind !== "section") {
+      if (selectedRow && selectedRow.kind !== "more") {
         runResume("newchat", selectedRow);
       }
       return;
@@ -35701,7 +35845,7 @@ function App2(props) {
       if (chatRow) {
         process.stdout.write(chatRow.projectPath + "\n");
         exit();
-      } else if (selectedRow?.kind === "dir") {
+      } else if (selectedRow?.kind === "project") {
         process.stdout.write(selectedRow.projectPath + "\n");
         exit();
       }
@@ -35913,6 +36057,12 @@ async function main(argv) {
     if (args.list) args.format = "markdown";
     else args.format = process.stdout.isTTY ? "text" : "tsv";
   }
+  if (args.format === "markdown") {
+    const sessionStore = loadSessionStore();
+    const rows = buildProjectGroups(db, args, sessionStore);
+    process.stdout.write(renderMarkdown({ rows, query: args.query }));
+    return EXIT_OK;
+  }
   let results;
   if (args.scan) {
     if (!args.regexCompiled) dieUser("--scan requires --regex");
@@ -35920,13 +36070,6 @@ async function main(argv) {
   } else if (args.regex) {
     if (!args.regexCompiled) dieUser("--regex pattern failed to compile");
     results = regexPostfilter(db, args, args.regexCompiled);
-  } else if (!args.query && args.format === "markdown") {
-    const sessionStore = loadSessionStore();
-    results = recentConversations(db, {
-      limit: args.limit,
-      projectFilter: args.project,
-      sessionStore
-    });
   } else {
     if (!args.query) {
       dieUser(
@@ -35935,13 +36078,7 @@ async function main(argv) {
     }
     results = ftsSearch(db, args);
   }
-  if (args.format === "markdown") {
-    const dirs = searchDirectories(db, {
-      limit: 10,
-      projectFilter: args.query.trim() || null
-    });
-    process.stdout.write(renderMarkdown({ dirs, chats: results, query: args.query }));
-  } else if (args.format === "tsv") {
+  if (args.format === "tsv") {
     process.stdout.write(renderTsv(results));
   } else {
     process.stdout.write(renderText(results, useColor));

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { render } from "ink-testing-library";
 import { ResultList } from "../../src/tui/components/ResultList.js";
-import type { ResultRow, DirRow, SectionHeader, Selectable } from "../../src/core/types.js";
+import type { ResultRow, ProjectHeader, MoreRow, Selectable } from "../../src/core/types.js";
 
 function row(id: string, opts: Partial<ResultRow> = {}): ResultRow {
   return {
@@ -114,20 +114,20 @@ test("ResultList: pure FTS row (no recapText) shows snippet on line 3", () => {
   assert.ok(!frame.includes("recap:"));
 });
 
-function dir(path: string, opts: Partial<DirRow> = {}): DirRow {
+function project(path: string, opts: Partial<ProjectHeader> = {}): ProjectHeader {
   return {
-    kind: "dir", projectPath: path, projectName: path.split("/").pop() ?? "?",
+    kind: "project", projectPath: path, projectName: path.split("/").pop() ?? "?",
     chatCount: 1, lastActivity: 1700000000, topChatTitles: [],
     ...opts,
   };
 }
-function section(label: string): SectionHeader {
-  return { kind: "section", label };
+function moreRow(path: string, n: number): MoreRow {
+  return { kind: "more", projectPath: path, remainingCount: n };
 }
 
-test("ResultList: dir row renders two lines (path/count then top chats)", () => {
+test("ResultList: project header renders two lines (path/count then top chats)", () => {
   const rows: Selectable[] = [
-    dir("/work/frontend", { chatCount: 12,
+    project("/work/frontend", { chatCount: 12,
       topChatTitles: ["react-router-fix", "oauth-debug", "deploy-staging"] }),
   ];
   const { lastFrame } = render(
@@ -140,25 +140,26 @@ test("ResultList: dir row renders two lines (path/count then top chats)", () => 
   assert.ok(frame.includes("react-router-fix"));
 });
 
-test("ResultList: section header renders a divider line and has no cursor prefix", () => {
+test("ResultList: MoreRow renders '<n> more' line and is not cursor-targeted", () => {
   const rows: Selectable[] = [
-    section("working dirs (2)"),
-    dir("/p1"),
-    dir("/p2"),
+    project("/p"),
+    row("a"),
+    moreRow("/p", 7),
   ];
+  // Cursor on the chat row; MoreRow is cosmetic.
   const { lastFrame } = render(
     <ResultList results={rows} cursor={1} noColor={true} listWidth={80}
                 maxRows={20} dimRows={false} />
   );
   const frame = lastFrame() ?? "";
-  assert.ok(frame.includes("working dirs"));
-  // Cursor (`▌`) appears once (on the first dir row), not on the section header.
+  assert.ok(frame.includes("7 more"));
+  // Cursor (`▌`) appears once (on the chat row), not on the more row.
   const cursorOccurrences = (frame.match(/▌/g) ?? []).length;
   assert.equal(cursorOccurrences, 1);
 });
 
-test("ResultList: dir row noColor=false uses 📁 emoji marker", () => {
-  const rows: Selectable[] = [dir("/work/frontend")];
+test("ResultList: project row noColor=false uses 📁 emoji marker", () => {
+  const rows: Selectable[] = [project("/work/frontend")];
   const { lastFrame } = render(
     <ResultList results={rows} cursor={0} noColor={false} listWidth={80}
                 maxRows={20} dimRows={false} />
@@ -166,11 +167,11 @@ test("ResultList: dir row noColor=false uses 📁 emoji marker", () => {
   assert.ok((lastFrame() ?? "").includes("📁"));
 });
 
-test("ResultList: dir row noColor=true uses '[dir]' fallback", () => {
-  const rows: Selectable[] = [dir("/work/frontend")];
+test("ResultList: project row noColor=true uses '[proj]' fallback", () => {
+  const rows: Selectable[] = [project("/work/frontend")];
   const { lastFrame } = render(
     <ResultList results={rows} cursor={0} noColor={true} listWidth={80}
                 maxRows={20} dimRows={false} />
   );
-  assert.ok((lastFrame() ?? "").includes("[dir]"));
+  assert.ok((lastFrame() ?? "").includes("[proj]"));
 });

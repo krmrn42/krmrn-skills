@@ -24,9 +24,18 @@ export const initialState: PickerState = {
 };
 
 /**
- * Find the next index in `results` that points to a selectable row (not a
- * SectionHeader), starting from `from` and stepping by `dir` (±1). Returns
- * the original `from` when no selectable exists in the chosen direction.
+ * The cursor lands only on selectable rows. In v0.8.1, "selectable" means
+ * `kind === "chat"` or `kind === "project"` — MoreRow (`kind === "more"`) is
+ * a cosmetic footer the cursor skips over.
+ */
+function isCursorTarget(row: Selectable): boolean {
+  return row.kind === "chat" || row.kind === "project";
+}
+
+/**
+ * Find the next index in `results` that points to a selectable row, starting
+ * from `from` and stepping by `dir` (±1). Returns the original `from` when no
+ * selectable exists in the chosen direction.
  */
 function nextSelectableIdx(
   results: Selectable[],
@@ -36,7 +45,7 @@ function nextSelectableIdx(
   if (results.length === 0) return 0;
   let i = from + dir;
   while (i >= 0 && i < results.length) {
-    if (results[i].kind !== "section") return i;
+    if (isCursorTarget(results[i])) return i;
     i += dir;
   }
   return from;
@@ -45,7 +54,7 @@ function nextSelectableIdx(
 /** Return the first selectable index in `results`, or 0 if none exist. */
 function firstSelectableIdx(results: Selectable[]): number {
   for (let i = 0; i < results.length; i++) {
-    if (results[i].kind !== "section") return i;
+    if (isCursorTarget(results[i])) return i;
   }
   return 0;
 }
@@ -56,11 +65,11 @@ export function reducer(state: PickerState, action: Action): PickerState {
       return { ...state, query: action.query, cursor: 0 };
     case "set-results": {
       const initial = Math.min(state.cursor, Math.max(0, action.results.length - 1));
-      // If the row at the initial cursor is a section header, jump to the
-      // first selectable. If none exist (results all headers, or empty), 0.
-      const targetIsSection =
-        action.results.length > 0 && action.results[initial]?.kind === "section";
-      const cursor = targetIsSection || initial === 0
+      // If the row at the initial cursor isn't selectable (e.g. a MoreRow),
+      // jump to the first selectable. If none exist, fall through to 0.
+      const targetUnselectable =
+        action.results.length > 0 && !isCursorTarget(action.results[initial]);
+      const cursor = targetUnselectable || initial === 0
         ? firstSelectableIdx(action.results)
         : initial;
       return {

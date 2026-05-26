@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renderMarkdown } from "../../src/core/render/markdown.js";
-import type { ResultRow, DirRow } from "../../src/core/types.js";
+import type { ResultRow, ProjectHeader, MoreRow, Selectable } from "../../src/core/types.js";
 
 function chat(opts: Partial<ResultRow> = {}): ResultRow {
   return {
@@ -12,52 +12,84 @@ function chat(opts: Partial<ResultRow> = {}): ResultRow {
     ...opts,
   };
 }
-function dir(opts: Partial<DirRow> = {}): DirRow {
+function project(opts: Partial<ProjectHeader> = {}): ProjectHeader {
   return {
-    kind: "dir", projectPath: "/work/frontend", projectName: "frontend",
+    kind: "project", projectPath: "/work/frontend", projectName: "frontend",
     chatCount: 12, lastActivity: 1700000000,
     topChatTitles: ["react-router-fix", "oauth-debug", "deploy-staging"],
     ...opts,
   };
 }
+function more(remaining: number): MoreRow {
+  return { kind: "more", projectPath: "/work/frontend", remainingCount: remaining };
+}
 
-test("renderMarkdown: emits Working directories section heading for filtered query", () => {
-  const out = renderMarkdown({ dirs: [dir()], chats: [], query: "frontend" });
-  assert.ok(out.includes('## Working directories matching "frontend"'));
+test("renderMarkdown: empty rows emits 'no matches' message", () => {
+  const out = renderMarkdown({ rows: [], query: "router" });
+  assert.ok(out.includes("no matches"));
 });
 
-test("renderMarkdown: emits Chats section heading for filtered query", () => {
-  const out = renderMarkdown({ dirs: [], chats: [chat()], query: "router" });
-  assert.ok(out.includes('## Chats matching "router"'));
+test("renderMarkdown: project header becomes a `##` heading with path", () => {
+  const out = renderMarkdown({ rows: [project()], query: "" });
+  assert.ok(out.includes("## /work/frontend"));
+  assert.ok(out.includes("12 chats"));
 });
 
-test("renderMarkdown: empty query uses 'Recent' wording", () => {
-  const out = renderMarkdown({ dirs: [dir()], chats: [chat()], query: "" });
-  assert.ok(out.includes("## Working directories (recent)"));
-  assert.ok(out.includes("## Chats (recent)"));
+test("renderMarkdown: heading includes 'matching \"...\"' when query is non-empty", () => {
+  const out = renderMarkdown({ rows: [project()], query: "router" });
+  assert.ok(out.includes('matching "router"'));
 });
 
-test("renderMarkdown: dir entry includes 'New chat' resume one-liner", () => {
-  const out = renderMarkdown({ dirs: [dir()], chats: [], query: "" });
-  assert.ok(out.includes("`(cd /work/frontend && claude)`"));
+test("renderMarkdown: project entry includes 'New chat here' resume one-liner", () => {
+  const out = renderMarkdown({ rows: [project()], query: "" });
+  assert.ok(out.includes("New chat here: `(cd /work/frontend && claude)`"));
 });
 
-test("renderMarkdown: chat entry includes Resume one-liner with --resume", () => {
-  const out = renderMarkdown({ dirs: [], chats: [chat()], query: "" });
+test("renderMarkdown: chat entry under a project includes Resume one-liner with --resume", () => {
+  const rows: Selectable[] = [project(), chat()];
+  const out = renderMarkdown({ rows, query: "" });
   assert.ok(out.includes("`(cd /work/frontend && claude --resume abc-123)`"));
 });
 
 test("renderMarkdown: chat entry shows recap when present", () => {
-  const out = renderMarkdown({ dirs: [], chats: [chat()], query: "" });
+  const rows: Selectable[] = [project(), chat()];
+  const out = renderMarkdown({ rows, query: "" });
   assert.ok(out.includes("recap: refactored Router"));
 });
 
-test("renderMarkdown: empty input emits 'no matches' message", () => {
-  const out = renderMarkdown({ dirs: [], chats: [], query: "router" });
-  assert.ok(out.includes("no matches"));
+test("renderMarkdown: gitBranch annotated when present", () => {
+  const rows: Selectable[] = [project(), chat({ gitBranch: "feat/x" })];
+  const out = renderMarkdown({ rows, query: "" });
+  assert.ok(out.includes("(feat/x)"));
 });
 
-test("renderMarkdown: gitBranch annotated when present", () => {
-  const out = renderMarkdown({ dirs: [], chats: [chat({ gitBranch: "feat/x" })], query: "" });
-  assert.ok(out.includes("(feat/x)"));
+test("renderMarkdown: MoreRow renders as '(N more)' inside its project section", () => {
+  const rows: Selectable[] = [project({ chatCount: 5 }), chat(), more(4)];
+  const out = renderMarkdown({ rows, query: "" });
+  assert.ok(out.includes("(4 more)"));
+});
+
+test("renderMarkdown: multiple projects each get their own heading + chat list", () => {
+  const rows: Selectable[] = [
+    project({ projectPath: "/work/frontend", projectName: "frontend" }),
+    chat({ sessionId: "a1" }),
+    project({ projectPath: "/work/backend", projectName: "backend" }),
+    chat({ sessionId: "b1", projectPath: "/work/backend", projectName: "backend" }),
+  ];
+  const out = renderMarkdown({ rows, query: "" });
+  assert.ok(out.includes("## /work/frontend"));
+  assert.ok(out.includes("## /work/backend"));
+  assert.ok(out.includes("--resume a1"));
+  assert.ok(out.includes("--resume b1"));
+});
+
+test("renderMarkdown: chats are numbered within their project (1., 2., …)", () => {
+  const rows: Selectable[] = [
+    project({ chatCount: 2 }),
+    chat({ sessionId: "a", title: "first" }),
+    chat({ sessionId: "b", title: "second" }),
+  ];
+  const out = renderMarkdown({ rows, query: "" });
+  assert.ok(out.includes("1. **first**"));
+  assert.ok(out.includes("2. **second**"));
 });

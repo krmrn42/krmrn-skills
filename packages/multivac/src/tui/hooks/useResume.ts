@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { useApp } from "ink";
-import type { ResultRow, ResumeAction, DirRow } from "../../core/types.js";
+import type { ResultRow, ResumeAction, ProjectHeader } from "../../core/types.js";
 import { getSource } from "../../sources/registry.js";
 
 interface Opts {
@@ -18,19 +18,19 @@ export function resetDesiredExitCode(): void {
 }
 
 /**
- * Build a ResultRow-shaped object from a DirRow so the existing
+ * Build a ResultRow-shaped object from a ProjectHeader so the existing
  * source.resume.spawn(row, action, opts) interface keeps working for the
- * "newchat" action. The synthetic row has an empty sessionId — buildClaudeArgs
- * ignores it for newchat.
+ * "newchat" action. The synthetic row has an empty sessionId —
+ * buildClaudeArgs ignores it for newchat.
  */
-function dirAsRow(dir: DirRow): ResultRow {
+function projectAsRow(proj: ProjectHeader): ResultRow {
   return {
     kind: "chat",
     source: "claude",
     sessionId: "",
-    projectPath: dir.projectPath,
-    projectName: dir.projectName,
-    lastActivity: dir.lastActivity,
+    projectPath: proj.projectPath,
+    projectName: proj.projectName,
+    lastActivity: proj.lastActivity,
     msgCount: 0,
     snippet: "",
     score: 0,
@@ -40,8 +40,8 @@ function dirAsRow(dir: DirRow): ResultRow {
 export function useResume(opts: Opts) {
   const { exit } = useApp();
   return useCallback(
-    (action: ResumeAction, row: ResultRow | DirRow) => {
-      const resolved: ResultRow = row.kind === "dir" ? dirAsRow(row) : row;
+    (action: ResumeAction, row: ResultRow | ProjectHeader) => {
+      const resolved: ResultRow = row.kind === "project" ? projectAsRow(row) : row;
       const source = getSource(resolved.source);
       if (!source?.resume) {
         exit();

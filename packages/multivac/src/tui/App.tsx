@@ -1,7 +1,7 @@
 import React, { useReducer, useCallback } from "react";
 import { Box, useApp, useInput } from "ink";
 import type { DatabaseSync } from "node:sqlite";
-import type { Args, ResultRow, DirRow, Selectable, SessionStore } from "../core/types.js";
+import type { Args, ResultRow, ProjectHeader, Selectable, SessionStore } from "../core/types.js";
 import { reducer, initialState } from "./state/store.js";
 import { PromptLine } from "./components/PromptLine.js";
 import { StatusBar } from "./components/StatusBar.js";
@@ -138,15 +138,15 @@ export function App(props: AppProps) {
         }
       } else if (chatRow) {
         runResume("resume", chatRow);
-      } else if (selectedRow?.kind === "dir") {
-        // Enter on a dir row starts a fresh chat in that dir.
+      } else if (selectedRow?.kind === "project") {
+        // Enter on a project row starts a fresh chat in that project's dir.
         runResume("newchat", selectedRow);
       }
       return;
     }
     if (input === "N" && !key.ctrl && !key.meta) {
-      if (selectedRow && selectedRow.kind !== "section") {
-        runResume("newchat", selectedRow as ResultRow | DirRow);
+      if (selectedRow && selectedRow.kind !== "more") {
+        runResume("newchat", selectedRow as ResultRow | ProjectHeader);
       }
       return;
     }
@@ -182,7 +182,7 @@ export function App(props: AppProps) {
       if (chatRow) {
         process.stdout.write(chatRow.projectPath + "\n");
         exit();
-      } else if (selectedRow?.kind === "dir") {
+      } else if (selectedRow?.kind === "project") {
         process.stdout.write(selectedRow.projectPath + "\n");
         exit();
       }

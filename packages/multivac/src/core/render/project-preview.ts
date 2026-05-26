@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { DirRow } from "../types.js";
+import type { ProjectHeader } from "../types.js";
 import { fmtDate, ANSI_BOLD, ANSI_DIM, ANSI_RESET } from "../format.js";
 import { pickBox } from "../../tui/lib/box.js";
 import { synthesizeTitle } from "../search/recent.js";
@@ -15,14 +15,15 @@ interface RecentChatRow {
 }
 
 /**
- * Render a dir-row preview: header box (path · chat count · branches touched),
- * up to 5 most-recent chats with their recap snippets, then the "new chat" hint.
+ * Render a project-header preview: header box (path · chat count · branches
+ * touched), up to 5 most-recent chats with their recap snippets, then the
+ * "new chat" hint.
  *
  * Spec: docs/superpowers/specs/2026-05-24-multivac-dashboard-design.md §D7.
  */
-export function renderDirPreview(
+export function renderProjectPreview(
   db: DatabaseSync,
-  dir: DirRow,
+  proj: ProjectHeader,
   useColor: boolean,
 ): string {
   const bold = useColor ? ANSI_BOLD : "";
@@ -37,16 +38,16 @@ export function renderDirPreview(
         "WHERE project_path = ? AND git_branch IS NOT NULL " +
         "ORDER BY git_branch"
     )
-    .all(dir.projectPath) as unknown as Array<{ git_branch: string | null }>;
+    .all(proj.projectPath) as unknown as Array<{ git_branch: string | null }>;
   const branches = branchRow.map((r) => r.git_branch).filter(Boolean) as string[];
 
   const lines: string[] = [];
   lines.push(`${dim}${box.topLeft}${horiz}${box.topRight}${reset}\n`);
-  lines.push(`${dim}${box.vertical} ${reset}${bold}${dir.projectPath}${reset}\n`);
+  lines.push(`${dim}${box.vertical} ${reset}${bold}${proj.projectPath}${reset}\n`);
   lines.push(
     `${dim}${box.vertical} ${reset}${dim}` +
-      `${dir.chatCount} chat${dir.chatCount === 1 ? "" : "s"} · ` +
-      `last ${fmtDate(dir.lastActivity)}${reset}\n`,
+      `${proj.chatCount} chat${proj.chatCount === 1 ? "" : "s"} · ` +
+      `last ${fmtDate(proj.lastActivity)}${reset}\n`,
   );
   if (branches.length > 0) {
     lines.push(`${dim}${box.vertical} ${reset}${dim}branches: ${branches.join(", ")}${reset}\n`);
@@ -60,7 +61,7 @@ export function renderDirPreview(
         "FROM messages WHERE project_path = ? AND type IN ('user', 'assistant') " +
         "GROUP BY conversation_id ORDER BY last_ts DESC LIMIT ?"
     )
-    .all(dir.projectPath, RECENT_LIMIT) as unknown as RecentChatRow[];
+    .all(proj.projectPath, RECENT_LIMIT) as unknown as RecentChatRow[];
 
   if (recent.length > 0) {
     lines.push(`${dim}Recent chats here:${reset}\n`);

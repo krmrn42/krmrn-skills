@@ -81,8 +81,8 @@ async function indexFile(db: DatabaseSync, source: ChatSource, file: SourceFile)
   const insert = db.prepare(
     "INSERT INTO messages (id, conversation_id, project_path, project_name, " +
       "timestamp, type, content, message_uuid, parent_uuid, source, " +
-      "subtype, git_branch, attribution_skill) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "subtype, git_branch, attribution_skill, is_subagent) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
 
   // Track per-(conversationId, messageUuid) block indices to produce unique IDs
@@ -112,7 +112,8 @@ async function indexFile(db: DatabaseSync, source: ChatSource, file: SourceFile)
           source.id,
           row.subtype ?? null,
           row.gitBranch ?? null,
-          row.attributionSkill ?? null
+          row.attributionSkill ?? null,
+          row.isSubagent ? 1 : 0
         );
         rows++;
       } catch (_) {

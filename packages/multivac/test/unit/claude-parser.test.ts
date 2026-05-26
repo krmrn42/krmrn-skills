@@ -171,3 +171,105 @@ test("indexer schema: new columns accept and return NULL", () => {
   assert.equal(row.git_branch, null);
   assert.equal(row.attribution_skill, null);
 });
+
+import { detectSubagentParentCwd } from "../../src/sources/claude/parse.js";
+
+test("detectSubagentParentCwd: returns null for a non-subagent JSONL", () => {
+  // /tmp/foo/abc.jsonl — parent dir is "foo", not "subagents"
+  const cwd = detectSubagentParentCwd("/tmp/foo/abc.jsonl");
+  assert.equal(cwd, null);
+});
+
+test("detectSubagentParentCwd: returns parent JSONL's cwd when present", () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "multivac-subagent-"));
+  try {
+    const projectsDir = path.join(tmpRoot, "projects", "-home-user-frontend");
+    const convId = "conv-xyz";
+    const subagentsDir = path.join(projectsDir, convId, "subagents");
+    fs.mkdirSync(subagentsDir, { recursive: true });
+    // Parent JSONL with a cwd field on its first line.
+    fs.writeFileSync(
+      path.join(projectsDir, `${convId}.jsonl`),
+      JSON.stringify({
+        type: "user", sessionId: convId, uuid: "u1",
+        cwd: "/home/user/frontend",
+        message: { content: "hello" },
+        timestamp: "2026-01-01T00:00:00Z",
+      }) + "\n",
+    );
+    // Subagent JSONL (content irrelevant for this helper).
+    const subPath = path.join(subagentsDir, "agent-abc.jsonl");
+    fs.writeFileSync(subPath, "");
+    const cwd = detectSubagentParentCwd(subPath);
+    assert.equal(cwd, "/home/user/frontend");
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test("detectSubagentParentCwd: returns null when parent JSONL is missing", () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "multivac-subagent-"));
+  try {
+    const projectsDir = path.join(tmpRoot, "projects", "-home-user-frontend");
+    const subagentsDir = path.join(projectsDir, "conv-xyz", "subagents");
+    fs.mkdirSync(subagentsDir, { recursive: true });
+    // NOTE: no parent JSONL written.
+    const subPath = path.join(subagentsDir, "agent-abc.jsonl");
+    fs.writeFileSync(subPath, "");
+    const cwd = detectSubagentParentCwd(subPath);
+    assert.equal(cwd, null);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test("parse: subagent JSONL rows are coerced to parent's project_path", async () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "multivac-subagent-"));
+  try {
+    const projectsDir = path.join(tmpRoot, "projects", "-home-user-frontend");
+    const convId = "conv-abc";
+    const subagentsDir = path.join(projectsDir, convId, "subagents");
+    fs.mkdirSync(subagentsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(projectsDir, `${convId}.jsonl`),
+      JSON.stringify({
+        type: "user", sessionId: convId, uuid: "uparent",
+        cwd: "/home/user/frontend",
+        message: { content: "outer" },
+        timestamp: "2026-01-01T00:00:00Z",
+      }) + "\n",
+    );
+    // Subagent JSONL with a DIFFERENT cwd (a subdirectory the subagent cd'd into).
+    const subPath = path.join(subagentsDir, "agent-abc.jsonl");
+    fs.writeFileSync(
+      subPath,
+      JSON.stringify({
+        type: "user", sessionId: "agent-abc", uuid: "usub",
+        cwd: "/home/user/frontend/packages/inner",   // <-- subdirectory cwd
+        message: { content: "from inside the subagent" },
+        timestamp: "2026-01-01T00:01:00Z",
+      }) + "\n",
+    );
+    const rows = await collect(parse({ path: subPath, mtimeMs: 0 }));
+    assert.equal(rows.length, 1);
+    // Coerced to the parent session's project_path, NOT the subagent's cwd.
+    assert.equal(rows[0].projectPath, "/home/user/frontend");
+    assert.equal(rows[0].isSubagent, true);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test("parse: non-subagent JSONL is unaffected (isSubagent=false, raw cwd kept)", async () => {
+  const p = writeJsonl([
+    { type: "user", sessionId: "s", uuid: "u1",
+      cwd: "/home/user/frontend",
+      message: { content: "hi" }, timestamp: "2026-01-01T00:00:00Z" },
+  ]);
+  try {
+    const rows = await collect(parse({ path: p, mtimeMs: 0 }));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].projectPath, "/home/user/frontend");
+    assert.equal(rows[0].isSubagent, false);
+  } finally { fs.unlinkSync(p); }
+});
