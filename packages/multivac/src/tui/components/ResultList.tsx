@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import type { Selectable, ResultRow, DirRow } from "../../core/types.js";
+import type { Selectable, ResultRow, DirRow, SectionHeader } from "../../core/types.js";
 import { projectDisplay, shortSession, fmtDate, colorizeSnippet } from "../../core/format.js";
 import { truncateToWidth } from "../lib/width.js";
 
@@ -107,7 +107,7 @@ export function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRo
   return <Box flexDirection="column">{nodes}</Box>;
 }
 
-function renderSectionHeader(row: { kind: "section"; label: string }, key: number,
+function renderSectionHeader(row: SectionHeader, key: number,
                               listWidth: number): React.ReactElement {
   const text = truncateToWidth(`── ${row.label} ──`, listWidth);
   return <Text key={`sec-${key}`} dimColor>{text}</Text>;
