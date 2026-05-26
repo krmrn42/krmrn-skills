@@ -44,16 +44,14 @@ export function setState(
 export function runMigrations(db: DatabaseSync, silent: boolean): void {
   const needed = detectMigrationNeeded(db);
   if (needed === 0) return;
-  if (needed === 2) {
-    if (!silent) {
-      process.stderr.write(
-        "multivac: index schema migration v2 (adding `source` column). " +
-          "This triggers a one-time full reindex; subsequent runs are incremental.\n"
-      );
-    }
-    db["exec"]("DROP TABLE IF EXISTS messages_fts;");
-    db["exec"]("DROP TABLE IF EXISTS messages;");
-    db["exec"]("DROP TABLE IF EXISTS _indexer_state;");
-    // Schema bootstrap (next ensureSchema call) recreates with v2 layout.
+  if (!silent) {
+    process.stderr.write(
+      `multivac: index schema migration v${needed}. ` +
+        "This triggers a one-time full reindex; subsequent runs are incremental.\n"
+    );
   }
+  db["exec"]("DROP TABLE IF EXISTS messages_fts;");
+  db["exec"]("DROP TABLE IF EXISTS messages;");
+  db["exec"]("DROP TABLE IF EXISTS _indexer_state;");
+  // Schema bootstrap (next ensureSchema call) recreates with current layout.
 }

@@ -30,9 +30,9 @@ export function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRo
     results.length > 0 && firstUnpinnedIdx > 0 && firstUnpinnedIdx < results.length;
   const dividerText = "── recent ──";
 
-  // Two lines per result. Reserve one row for divider when it exists (conservative,
-  // matches picker.js:625 which reserves even when scrolled past the divider).
-  const rowsPerResult = 2;
+  // v0.8: header + optional meta strip + snippet/recap line. Conservative size:
+  // assume all 3 are present so layout never overflows when metadata is rich.
+  const rowsPerResult = 3;
   const usableHeight = hasDivider ? maxRows - 1 : maxRows;
   const maxVisible = Math.max(1, Math.floor(usableHeight / rowsPerResult));
 
@@ -86,28 +86,45 @@ export function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRo
     const head = pinPart + headBody;
     const headTrunc = truncateToWidth(head, listWidth - 2);
 
-    const snippet = colorizeSnippet(r.snippet || "", !noColor);
-    const snipTrunc = snippet ? truncateToWidth(snippet, listWidth - 4) : "";
+    const snippetText = colorizeSnippet(r.snippet || "", !noColor);
+    const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4) : "";
 
     const dim = dimRows;
 
+    // Line 1 — header (unchanged from v0.7)
     nodes.push(
-      <Text key={`h-${i}`} bold={isCur && !dimRows} dimColor={dim}>
+      <Text key={"h-" + i} bold={isCur && !dimRows} dimColor={dim}>
         {isCur ? cursorPrefix : blankPrefix}
         {headTrunc}
       </Text>,
     );
 
-    if (snipTrunc) {
+    // Line 2 — metadata strip (branch · skill); skipped when both empty
+    const metaParts: string[] = [];
+    if (r.gitBranch) metaParts.push("(" + r.gitBranch + ")");
+    if (r.skill) metaParts.push(r.skill);
+    if (metaParts.length > 0) {
+      const metaText = truncateToWidth(metaParts.join(" · "), listWidth - 4);
       nodes.push(
-        <Text key={`s-${i}`} dimColor>
+        <Text key={"m-" + i} dimColor>
           {"    "}
-          {snipTrunc}
+          {metaText}
+        </Text>,
+      );
+    }
+
+    // Line 3 — FTS snippet (preferred when matched) or recap text
+    const previewLine = snipTrunc ||
+      (r.recapText ? truncateToWidth("recap: " + r.recapText.replace(/\n/g, " ⏎ "), listWidth - 4) : "");
+    if (previewLine) {
+      nodes.push(
+        <Text key={"s-" + i} dimColor>
+          {"    "}
+          {previewLine}
         </Text>,
       );
     } else {
-      // Always emit two lines per row to keep layout stable.
-      nodes.push(<Text key={`s-${i}`}>{""}</Text>);
+      nodes.push(<Text key={"s-" + i}>{""}</Text>);
     }
   }
 

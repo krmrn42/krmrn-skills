@@ -7,6 +7,7 @@ import {
   ANSI_DIM,
   ANSI_RESET,
 } from "../format.js";
+import { pickBox } from "../../tui/lib/box.js";
 
 export function renderPreview(
   db: DatabaseSync,
@@ -39,11 +40,18 @@ export function renderPreview(
   const dim = useColor ? ANSI_DIM : "";
   const reset = useColor ? ANSI_RESET : "";
 
+  // v0.8: rounded box header. Width 70 is the historical default for --preview
+  // output (which humans typically pipe into a pager). Degrades to ASCII when
+  // useColor is false (e.g., --no-color or non-TTY pipe).
+  const W = 70;
+  const box = pickBox(!useColor);
+  const horiz = box.horizontal.repeat(W - 2);
   const lines: string[] = [];
-  lines.push(
-    `${bold}${proj}${reset}  ${dim}(${fmtDate(head.first_ts)} → ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}\n`
-  );
-  lines.push(`${dim}session ${sessionId}${reset}\n\n`);
+  lines.push(`${dim}${box.topLeft}${horiz}${box.topRight}${reset}\n`);
+  lines.push(`${dim}${box.vertical} ${reset}${bold}${proj}${reset}\n`);
+  lines.push(`${dim}${box.vertical} ${reset}${dim}(${fmtDate(head.first_ts)} → ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}\n`);
+  lines.push(`${dim}${box.vertical} ${reset}${dim}session ${sessionId}${reset}\n`);
+  lines.push(`${dim}${box.bottomLeft}${horiz}${box.bottomRight}${reset}\n\n`);
 
   const rows = db
     .prepare(

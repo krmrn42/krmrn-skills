@@ -33004,20 +33004,27 @@ var EXPECTED_COLUMNS = /* @__PURE__ */ new Set([
   "content",
   "message_uuid",
   "parent_uuid",
-  "source"
+  "source",
+  "subtype",
+  "git_branch",
+  "attribution_skill"
+  // v3 additions
 ]);
 var SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS messages (
-  id              TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL,
-  project_path    TEXT NOT NULL,
-  project_name    TEXT NOT NULL,
-  timestamp       INTEGER NOT NULL,
-  type            TEXT NOT NULL,
-  content         TEXT,
-  message_uuid    TEXT NOT NULL,
-  parent_uuid     TEXT,
-  source          TEXT NOT NULL DEFAULT 'claude'
+  id                TEXT PRIMARY KEY,
+  conversation_id   TEXT NOT NULL,
+  project_path      TEXT NOT NULL,
+  project_name      TEXT NOT NULL,
+  timestamp         INTEGER NOT NULL,
+  type              TEXT NOT NULL,
+  content           TEXT,
+  message_uuid      TEXT NOT NULL,
+  parent_uuid       TEXT,
+  source            TEXT NOT NULL DEFAULT 'claude',
+  subtype           TEXT NULL,
+  git_branch        TEXT NULL,
+  attribution_skill TEXT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp    ON messages(timestamp);
@@ -33049,7 +33056,10 @@ function detectMigrationNeeded(db) {
   if (tables.length === 0) return 0;
   const cols = db.prepare("PRAGMA table_info(messages)").all();
   const hasSource = cols.some((c) => c.name === "source");
-  return hasSource ? 0 : 2;
+  if (!hasSource) return 2;
+  const hasSubtype = cols.some((c) => c.name === "subtype");
+  if (!hasSubtype) return 3;
+  return 0;
 }
 
 // src/core/db.ts
@@ -33404,7 +33414,7 @@ function parseArgs(argv) {
         args.help = true;
         break;
       case "--version":
-        process.stdout.write("0.7.0\n");
+        process.stdout.write("0.8.0\n");
         process.exit(EXIT_OK);
         break;
       case "-i":
@@ -33560,16 +33570,15 @@ function setState(db, sourceId, jsonlPath, mtimeMs, rows) {
 function runMigrations(db, silent) {
   const needed = detectMigrationNeeded(db);
   if (needed === 0) return;
-  if (needed === 2) {
-    if (!silent) {
-      process.stderr.write(
-        "multivac: index schema migration v2 (adding `source` column). This triggers a one-time full reindex; subsequent runs are incremental.\n"
-      );
-    }
-    db["exec"]("DROP TABLE IF EXISTS messages_fts;");
-    db["exec"]("DROP TABLE IF EXISTS messages;");
-    db["exec"]("DROP TABLE IF EXISTS _indexer_state;");
+  if (!silent) {
+    process.stderr.write(
+      `multivac: index schema migration v${needed}. This triggers a one-time full reindex; subsequent runs are incremental.
+`
+    );
   }
+  db["exec"]("DROP TABLE IF EXISTS messages_fts;");
+  db["exec"]("DROP TABLE IF EXISTS messages;");
+  db["exec"]("DROP TABLE IF EXISTS _indexer_state;");
 }
 
 // src/indexer/runner.ts
@@ -33622,7 +33631,7 @@ import * as fs4 from "node:fs";
 import * as path3 from "node:path";
 import * as readline from "node:readline";
 var TOOL_USE_INPUT_CAP = 8 * 1024;
-var INDEXABLE_TYPES = /* @__PURE__ */ new Set(["user", "assistant", "tool_result", "tool_use"]);
+var INDEXABLE_TYPES = /* @__PURE__ */ new Set(["user", "assistant", "tool_result", "tool_use", "system"]);
 function decodeProjectPathFromCwd(cwd2, fallbackDirName) {
   if (cwd2 && typeof cwd2 === "string") return cwd2;
   if (!fallbackDirName) return "";
@@ -33715,6 +33724,12 @@ function recordToRows(rec) {
     if (!content) return [];
     return [{ type: "tool_result", content, message_uuid: baseUuid, parent_uuid: parentUuid, block_idx: 0 }];
   }
+  if (type === "system") {
+    if (rec["subtype"] !== "away_summary") return [];
+    const content = typeof rec["content"] === "string" ? rec["content"] : "";
+    if (!content) return [];
+    return [{ type: "system", content, message_uuid: baseUuid, parent_uuid: parentUuid, block_idx: 0 }];
+  }
   return [];
 }
 async function* parse(file) {
@@ -33748,7 +33763,10 @@ async function* parse(file) {
         type: r.type,
         content: r.content,
         messageUuid: r.message_uuid,
-        parentUuid: r.parent_uuid
+        parentUuid: r.parent_uuid,
+        subtype: r.type === "system" && typeof rec["subtype"] === "string" ? rec["subtype"] : void 0,
+        gitBranch: typeof rec["gitBranch"] === "string" ? rec["gitBranch"] : void 0,
+        attributionSkill: typeof rec["attributionSkill"] === "string" ? rec["attributionSkill"] : void 0
       };
     }
   }
@@ -34018,7 +34036,7 @@ async function indexFile(db, source, file) {
     "DELETE FROM messages WHERE source = ? AND conversation_id = ?"
   ).run(source.id, conversationId);
   const insert = db.prepare(
-    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO messages (id, conversation_id, project_path, project_name, timestamp, type, content, message_uuid, parent_uuid, source, subtype, git_branch, attribution_skill) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   );
   const blockCounters = /* @__PURE__ */ new Map();
   let rows = 0;
@@ -34040,7 +34058,10 @@ async function indexFile(db, source, file) {
           row.content,
           row.messageUuid,
           row.parentUuid,
-          source.id
+          source.id,
+          row.subtype ?? null,
+          row.gitBranch ?? null,
+          row.attributionSkill ?? null
         );
         rows++;
       } catch (_) {
@@ -34534,6 +34555,27 @@ function renderTsv(results) {
   return out.length ? out.join("\n") + "\n" : "";
 }
 
+// src/tui/lib/box.ts
+var ROUNDED = {
+  topLeft: "\u256D",
+  topRight: "\u256E",
+  bottomLeft: "\u2570",
+  bottomRight: "\u256F",
+  horizontal: "\u2500",
+  vertical: "\u2502"
+};
+var ASCII = {
+  topLeft: "+",
+  topRight: "+",
+  bottomLeft: "+",
+  bottomRight: "+",
+  horizontal: "-",
+  vertical: "|"
+};
+function pickBox(noColor) {
+  return noColor ? ASCII : ROUNDED;
+}
+
 // src/core/render/preview.ts
 function renderPreview(db, sessionId, source, useColor) {
   const head = db.prepare(
@@ -34547,12 +34589,19 @@ function renderPreview(db, sessionId, source, useColor) {
   const bold = useColor ? ANSI_BOLD : "";
   const dim = useColor ? ANSI_DIM : "";
   const reset = useColor ? ANSI_RESET : "";
+  const W = 70;
+  const box = pickBox(!useColor);
+  const horiz = box.horizontal.repeat(W - 2);
   const lines = [];
-  lines.push(
-    `${bold}${proj}${reset}  ${dim}(${fmtDate(head.first_ts)} \u2192 ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}
-`
-  );
-  lines.push(`${dim}session ${sessionId}${reset}
+  lines.push(`${dim}${box.topLeft}${horiz}${box.topRight}${reset}
+`);
+  lines.push(`${dim}${box.vertical} ${reset}${bold}${proj}${reset}
+`);
+  lines.push(`${dim}${box.vertical} ${reset}${dim}(${fmtDate(head.first_ts)} \u2192 ${fmtDate(head.last_ts)}, ${head.msg_count} msgs)${reset}
+`);
+  lines.push(`${dim}${box.vertical} ${reset}${dim}session ${sessionId}${reset}
+`);
+  lines.push(`${dim}${box.bottomLeft}${horiz}${box.bottomRight}${reset}
 
 `);
   const rows = db.prepare(
@@ -34846,7 +34895,7 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
   }
   const hasDivider = results.length > 0 && firstUnpinnedIdx > 0 && firstUnpinnedIdx < results.length;
   const dividerText = "\u2500\u2500 recent \u2500\u2500";
-  const rowsPerResult = 2;
+  const rowsPerResult = 3;
   const usableHeight = hasDivider ? maxRows - 1 : maxRows;
   const maxVisible = Math.max(1, Math.floor(usableHeight / rowsPerResult));
   let scrollOffset = 0;
@@ -34878,18 +34927,28 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
     const pinPart = isPinned ? pinMarker : "";
     const head = pinPart + headBody;
     const headTrunc = truncateToWidth(head, listWidth - 2);
-    const snippet = colorizeSnippet(r.snippet || "", !noColor);
-    const snipTrunc = snippet ? truncateToWidth(snippet, listWidth - 4) : "";
+    const snippetText = colorizeSnippet(r.snippet || "", !noColor);
+    const snipTrunc = snippetText ? truncateToWidth(snippetText, listWidth - 4) : "";
     const dim = dimRows;
     nodes.push(
-      /* @__PURE__ */ import_react24.default.createElement(Text, { key: `h-${i}`, bold: isCur && !dimRows, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
+      /* @__PURE__ */ import_react24.default.createElement(Text, { key: "h-" + i, bold: isCur && !dimRows, dimColor: dim }, isCur ? cursorPrefix : blankPrefix, headTrunc)
     );
-    if (snipTrunc) {
+    const metaParts = [];
+    if (r.gitBranch) metaParts.push("(" + r.gitBranch + ")");
+    if (r.skill) metaParts.push(r.skill);
+    if (metaParts.length > 0) {
+      const metaText = truncateToWidth(metaParts.join(" \xB7 "), listWidth - 4);
       nodes.push(
-        /* @__PURE__ */ import_react24.default.createElement(Text, { key: `s-${i}`, dimColor: true }, "    ", snipTrunc)
+        /* @__PURE__ */ import_react24.default.createElement(Text, { key: "m-" + i, dimColor: true }, "    ", metaText)
+      );
+    }
+    const previewLine = snipTrunc || (r.recapText ? truncateToWidth("recap: " + r.recapText.replace(/\n/g, " \u23CE "), listWidth - 4) : "");
+    if (previewLine) {
+      nodes.push(
+        /* @__PURE__ */ import_react24.default.createElement(Text, { key: "s-" + i, dimColor: true }, "    ", previewLine)
       );
     } else {
-      nodes.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: `s-${i}` }, ""));
+      nodes.push(/* @__PURE__ */ import_react24.default.createElement(Text, { key: "s-" + i }, ""));
     }
   }
   return /* @__PURE__ */ import_react24.default.createElement(Box_default, { flexDirection: "column" }, nodes);
@@ -34897,10 +34956,15 @@ function ResultList({ results, cursor, noColor, listWidth, maxRows, dimRows }) {
 
 // src/tui/components/PreviewPane.tsx
 var import_react25 = __toESM(require_react(), 1);
-function PreviewPane({ previewText, width, maxRows }) {
+function PreviewPane({ previewText, width, maxRows, noColor = false }) {
+  const box = pickBox(noColor);
+  const horiz = box.horizontal.repeat(Math.max(0, width - 2));
+  const top = box.topLeft + horiz + box.topRight;
+  const bottom = box.bottomLeft + horiz + box.bottomRight;
   const wrapped = previewText.split("\n").flatMap((l) => wrapToWidth(l, Math.max(1, width - 2)));
-  const lines = wrapped.slice(0, Math.max(0, maxRows));
-  return /* @__PURE__ */ import_react25.default.createElement(Box_default, { flexDirection: "column", width, height: maxRows }, lines.map((line, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, "\u2502 "), line)));
+  const bodyRows = Math.max(0, maxRows - 2);
+  const lines = wrapped.slice(0, bodyRows);
+  return /* @__PURE__ */ import_react25.default.createElement(Box_default, { flexDirection: "column", width, height: maxRows }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, top), lines.map((line, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, box.vertical, " "), line)), Array.from({ length: Math.max(0, bodyRows - lines.length) }).map((_, i) => /* @__PURE__ */ import_react25.default.createElement(Text, { key: "pad-" + i }, /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, box.vertical, " "))), /* @__PURE__ */ import_react25.default.createElement(Text, { dimColor: true }, bottom));
 }
 
 // src/tui/components/HelpOverlay.tsx
@@ -34923,6 +34987,35 @@ function RenameModal() {
 
 // src/tui/hooks/useSearch.ts
 var import_react28 = __toESM(require_react(), 1);
+
+// src/core/search/recap.ts
+var RECAP_MAX_LINES = 5;
+var ANSI_RE = new RegExp(String.fromCharCode(27) + "\\[[0-?]*[ -/]*[@-~]", "g");
+function getRecapText(db, conversationId, source) {
+  const lastUserTs = db.prepare(
+    "SELECT COALESCE(MAX(timestamp), 0) AS ts FROM messages WHERE conversation_id = ? AND source = ? AND type = 'user'"
+  ).get(conversationId, source);
+  const summary = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'system' AND subtype = 'away_summary' AND timestamp > ? ORDER BY timestamp DESC LIMIT 1"
+  ).get(conversationId, source, lastUserTs?.ts ?? 0);
+  if (summary?.content) return summary.content;
+  const assistant = db.prepare(
+    "SELECT content FROM messages WHERE conversation_id = ? AND source = ? AND type = 'assistant' ORDER BY timestamp DESC LIMIT 1"
+  ).get(conversationId, source);
+  if (!assistant?.content) return "";
+  return headLines(assistant.content, RECAP_MAX_LINES);
+}
+function headLines(text, n) {
+  const cleaned = text.replace(ANSI_RE, "");
+  const out = [];
+  for (const raw of cleaned.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    out.push(line);
+    if (out.length >= n) break;
+  }
+  return out.join("\n");
+}
 
 // src/core/search/recent.ts
 var WRAPPER_TAGS = /* @__PURE__ */ new Set([
@@ -34992,6 +35085,9 @@ LIMIT ?
   const tailStmt = db.prepare(
     "SELECT content FROM messages WHERE conversation_id = ? AND type IN ('user', 'assistant') ORDER BY timestamp DESC LIMIT 1"
   );
+  const metaStmt = db.prepare(
+    "SELECT git_branch, attribution_skill FROM messages WHERE conversation_id = ? ORDER BY timestamp DESC LIMIT 1"
+  );
   const namesMap = sessionStore && sessionStore.names || {};
   const results = [];
   for (const conv of recent) {
@@ -35012,6 +35108,8 @@ LIMIT ?
     }
     const tailRow = tailStmt.get(conv.conversation_id);
     const tail = tailRow ? normalizeTailContent(tailRow.content) : "";
+    const recapText = getRecapText(db, conv.conversation_id, source);
+    const metaRow = metaStmt.get(conv.conversation_id);
     results.push({
       source,
       sessionId: conv.conversation_id,
@@ -35021,7 +35119,10 @@ LIMIT ?
       msgCount: conv.msg_count || 0,
       snippet: tail,
       score: 0,
-      title
+      title,
+      recapText,
+      gitBranch: metaRow?.git_branch ?? null,
+      skill: metaRow?.attribution_skill ?? null
     });
   }
   return applyPinOrdering(results, sessionStore, Math.max(1, limit | 0));
@@ -35319,7 +35420,15 @@ function App2(props) {
       maxRows: bodyRows,
       dimRows: state.mode === "rename"
     }
-  )), showPreview ? /* @__PURE__ */ import_react32.default.createElement(Box_default, { width: previewWidth, height: bodyRows }, /* @__PURE__ */ import_react32.default.createElement(PreviewPane, { previewText, width: previewWidth, maxRows: bodyRows })) : null), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow, cols }));
+  )), showPreview ? /* @__PURE__ */ import_react32.default.createElement(Box_default, { width: previewWidth, height: bodyRows }, /* @__PURE__ */ import_react32.default.createElement(
+    PreviewPane,
+    {
+      previewText,
+      width: previewWidth,
+      maxRows: bodyRows,
+      noColor: props.args.noColor
+    }
+  )) : null), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow, cols }));
 }
 
 // src/cli/main.ts

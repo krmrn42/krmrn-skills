@@ -7,20 +7,24 @@ export const EXPECTED_COLUMNS = new Set([
   "id", "conversation_id", "project_path", "project_name",
   "timestamp", "type", "content", "message_uuid", "parent_uuid",
   "source",
+  "subtype", "git_branch", "attribution_skill",  // v3 additions
 ]);
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS messages (
-  id              TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL,
-  project_path    TEXT NOT NULL,
-  project_name    TEXT NOT NULL,
-  timestamp       INTEGER NOT NULL,
-  type            TEXT NOT NULL,
-  content         TEXT,
-  message_uuid    TEXT NOT NULL,
-  parent_uuid     TEXT,
-  source          TEXT NOT NULL DEFAULT 'claude'
+  id                TEXT PRIMARY KEY,
+  conversation_id   TEXT NOT NULL,
+  project_path      TEXT NOT NULL,
+  project_name      TEXT NOT NULL,
+  timestamp         INTEGER NOT NULL,
+  type              TEXT NOT NULL,
+  content           TEXT,
+  message_uuid      TEXT NOT NULL,
+  parent_uuid       TEXT,
+  source            TEXT NOT NULL DEFAULT 'claude',
+  subtype           TEXT NULL,
+  git_branch        TEXT NULL,
+  attribution_skill TEXT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp    ON messages(timestamp);
@@ -47,14 +51,16 @@ CREATE TABLE IF NOT EXISTS _indexer_state (
 `;
 
 // detectMigrationNeeded returns the migration version we need to run, or 0 if
-// the schema is current. The only check P1 cares about is the presence of the
-// `source` column on `messages`.
+// the schema is current.
 export function detectMigrationNeeded(db: DatabaseSync): number {
   const tables = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='messages'"
   ).all();
-  if (tables.length === 0) return 0; // fresh DB, schema bootstrap will create it
+  if (tables.length === 0) return 0; // fresh DB; schema bootstrap will create v3
   const cols = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
   const hasSource = cols.some((c) => c.name === "source");
-  return hasSource ? 0 : 2; // 2 = "add source column" migration
+  if (!hasSource) return 2;        // legacy → drop+rebuild to v2 layout
+  const hasSubtype = cols.some((c) => c.name === "subtype");
+  if (!hasSubtype) return 3;       // v2 → drop+rebuild to v3 layout
+  return 0;                         // already v3
 }
