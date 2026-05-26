@@ -5,6 +5,28 @@ The CLI shipped inside this plugin is also published to npm as
 [`@krmrn42/multivac`](https://www.npmjs.com/package/@krmrn42/multivac); the
 two carry the same version string.
 
+## [0.8.1] — 2026-05-25
+
+Unified picker — directories become first-class results alongside chats.
+
+### Added
+- **Working directories as result rows.** The picker and `--list` now show both chats and the projects that contain them. Type a substring to filter both; dir rows show chat count, last activity, and the 3 most-recent chat titles.
+- **`N` keybinding — start a new chat in the row's dir.** Works on chat rows (uses the chat's project path) and on dir rows. `Enter` on a dir row is also wired to "new chat here".
+- **Section dividers** between non-empty sections in the picker (`── working dirs (n) ──` / `── chats (n, by relevance) ──`); suppressed when only one kind matches.
+- **`--list` output is now markdown** — sectioned by kind, with embedded `(cd … && claude …)` resume one-liners as inline code.
+- **`--format=markdown`** as an explicit flag value; rejection of unknown formats is preserved.
+- **Dir-row preview pane** — rounded box with path, chat count, branches touched in the dir, and a list of the 5 most-recent chats.
+
+### Changed
+- `ResultRow` gains a required `kind: "chat"` discriminator (additive — no consumer needs to be updated unless it constructs a ResultRow literal).
+- The picker reducer now skips section headers when navigating with arrow keys, and clamps the initial cursor to the first selectable row.
+
+### Out of scope (deferred to v0.8.2)
+- Live process discovery / active-thread header strip.
+- `Tab` / `Shift-Tab` focus cycling.
+- `r` refresh keybinding.
+- Tmux pane correlation.
+
 ## [0.8.0] — 2026-05-24
 
 ### Added
