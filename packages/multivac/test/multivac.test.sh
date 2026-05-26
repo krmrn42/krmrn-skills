@@ -152,6 +152,15 @@ INSERT INTO messages VALUES
     1735948800000, 'user', 'unrelated query about deployment', NULL, NULL, 'u5', NULL, 'claude', 0, NULL, NULL, NULL),
   ('m11', 'conv-eeee-5555-5555-5555-555555555555', '/home/u/projects/alpha', 'alpha',
     1735948810000, 'tool_result', 'output: PROCESS_KILLED_OOM', NULL, NULL, 't5', 'u5', 'claude', 0, NULL, NULL, NULL);
+
+-- Conversation F: in project frontend — added to support v0.8.1 --list markdown tests.
+-- The path and content both contain "frontend" so both searchDirectories and
+-- ftsSearch return results for `--list "frontend"`.
+INSERT INTO messages VALUES
+  ('m12', 'conv-ffff-6666-6666-6666-666666666666', '/work/frontend', 'frontend',
+    1736035200000, 'user', 'how do I scaffold a new frontend component with vite?', NULL, NULL, 'u6', NULL, 'claude', 0, NULL, NULL, NULL),
+  ('m13', 'conv-ffff-6666-6666-6666-666666666666', '/work/frontend', 'frontend',
+    1736035210000, 'assistant', 'run: npm create vite@latest my-frontend -- --template react', NULL, NULL, 'a6', 'u6', 'claude', 0, NULL, NULL, NULL);
 SQL
 
 # All output below is captured for assertion. Run multivac with --no-color and explicit --format text.
@@ -1305,6 +1314,33 @@ else
   FAIL=$((FAIL+1)); echo "  FAIL  T26.no_phantom_help_flags — flags in help but not parsed:" >&2
   echo "$EXTRA_IN_HELP" | sed 's/^/         /' >&2
 fi
+
+# --- v0.8.1: --list markdown output, --format=markdown, --format rejection ---
+
+echo
+echo "Test 60: --list emits markdown by default (Working directories + Chats headings)"
+# Conversation F has project_path='/work/frontend' and content containing "frontend".
+# searchDirectories matches on the path; ftsSearch matches on content.
+OUT="$(MULTIVAC_DB="$DB" "$MULTIVAC" --list "frontend" 2>&1 || true)"
+assert_contains "T60.working_dirs_heading"  "## Working directories"  "$OUT"
+assert_contains "T60.chats_heading"         "## Chats"                "$OUT"
+assert_contains "T60.dir_new_chat_oneliner" 'New chat: `(cd '         "$OUT"
+assert_contains "T60.chat_resume_oneliner"  'Resume: `(cd '           "$OUT"
+
+echo
+echo "Test 61: bare --list (no query) emits (recent) label"
+OUT="$(MULTIVAC_DB="$DB" "$MULTIVAC" --list 2>&1 || true)"
+assert_contains "T61.recent_label" "(recent)" "$OUT"
+
+echo
+echo "Test 62: --format=markdown emits markdown headings"
+OUT="$(MULTIVAC_DB="$DB" "$MULTIVAC" --format=markdown "frontend" 2>&1 || true)"
+assert_contains "T62.markdown_heading" "## " "$OUT"
+
+echo
+echo "Test 63: --format=banana is rejected with helpful message"
+OUT="$(MULTIVAC_DB="$DB" "$MULTIVAC" --format=banana "x" 2>&1 || true)"
+assert_contains "T63.format_rejected" "must be" "$OUT"
 
 # --- Summary ------------------------------------------------------------
 
