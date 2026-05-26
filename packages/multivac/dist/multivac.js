@@ -33809,13 +33809,13 @@ function spawnClaude(row, action, opts) {
       cwd2 = projectPath;
     } else {
       process.stderr.write(
-        `ccsearch: project path '${projectPath}' is not a directory; resuming in current cwd. claude --resume may fail to find the session.
+        `multivac: project path '${projectPath}' is not a directory; resuming in current cwd. claude --resume may fail to find the session.
 `
       );
     }
   } else {
     process.stderr.write(
-      "ccsearch: this conversation has no recorded project path; resuming in current cwd. claude --resume may fail.\n"
+      "multivac: this conversation has no recorded project path; resuming in current cwd. claude --resume may fail.\n"
     );
   }
   const claudeArgs = buildClaudeArgs(action, row, opts.savedName);
@@ -33826,11 +33826,11 @@ function spawnClaude(row, action, opts) {
   if (result.error) {
     if (result.error.code === "ENOENT") {
       process.stderr.write(
-        "ccsearch: `claude` not found on PATH. Install Claude Code or ensure `claude` is on your PATH.\n"
+        "multivac: `claude` not found on PATH. Install Claude Code or ensure `claude` is on your PATH.\n"
       );
       return { status: EXIT_ENV };
     }
-    process.stderr.write(`ccsearch: spawning claude failed: ${result.error.message}
+    process.stderr.write(`multivac: spawning claude failed: ${result.error.message}
 `);
     return { status: EXIT_INTERNAL };
   }
@@ -33863,7 +33863,7 @@ function spawnTmuxNewWindow(row, opts) {
   const tmuxArgs = buildTmuxNewWindowCommand(row, opts);
   if (row.projectPath && !isExistingDir(row.projectPath)) {
     process.stderr.write(
-      `ccsearch: project path '${row.projectPath}' is not a directory; tmux new-window will fall back to its own cwd.
+      `multivac: project path '${row.projectPath}' is not a directory; tmux new-window will fall back to its own cwd.
 `
     );
   }
@@ -33871,11 +33871,11 @@ function spawnTmuxNewWindow(row, opts) {
   if (result.error) {
     if (result.error.code === "ENOENT") {
       process.stderr.write(
-        "ccsearch: `tmux` not found on PATH. Install tmux or run ccsearch outside a tmux session.\n"
+        "multivac: `tmux` not found on PATH. Install tmux or run multivac outside a tmux session.\n"
       );
       return { status: EXIT_ENV };
     }
-    process.stderr.write(`ccsearch: spawning tmux failed: ${result.error.message}
+    process.stderr.write(`multivac: spawning tmux failed: ${result.error.message}
 `);
     return { status: EXIT_INTERNAL };
   }
@@ -34159,7 +34159,7 @@ function renderIndexStatus(st) {
     lines.push(`pending:    none`);
   } else {
     lines.push(
-      `pending:    ${st.pendingFiles} file${st.pendingFiles === 1 ? "" : "s"} / ${formatBytes(st.pendingBytes)} \u2014 will be indexed on next ccsearch run`
+      `pending:    ${st.pendingFiles} file${st.pendingFiles === 1 ? "" : "s"} / ${formatBytes(st.pendingBytes)} \u2014 will be indexed on next multivac run`
     );
   }
   return lines.join("\n") + "\n";
@@ -34678,7 +34678,7 @@ function PromptLine({ mode, query, renameBuffer, searchPending }) {
   if (mode === "help") {
     return /* @__PURE__ */ import_react22.default.createElement(Box_default, null, /* @__PURE__ */ import_react22.default.createElement(Text, { color: "cyan" }, "help> "), /* @__PURE__ */ import_react22.default.createElement(Text, { dimColor: true }, "press any key to dismiss"));
   }
-  return /* @__PURE__ */ import_react22.default.createElement(Box_default, null, /* @__PURE__ */ import_react22.default.createElement(Text, { color: "cyan" }, "ccsearch> "), /* @__PURE__ */ import_react22.default.createElement(Text, null, query), searchPending ? /* @__PURE__ */ import_react22.default.createElement(Text, { dimColor: true }, " \u2026") : null);
+  return /* @__PURE__ */ import_react22.default.createElement(Box_default, null, /* @__PURE__ */ import_react22.default.createElement(Text, { color: "cyan" }, "multivac> "), /* @__PURE__ */ import_react22.default.createElement(Text, null, query), searchPending ? /* @__PURE__ */ import_react22.default.createElement(Text, { dimColor: true }, " \u2026") : null);
 }
 
 // src/tui/components/StatusBar.tsx

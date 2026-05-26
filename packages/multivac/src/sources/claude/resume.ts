@@ -71,13 +71,13 @@ export function spawnClaude(row: ResultRow, action: ResumeAction, opts: ResumeOp
       cwd = projectPath;
     } else {
       process.stderr.write(
-        `ccsearch: project path '${projectPath}' is not a directory; resuming in current cwd. ` +
+        `multivac: project path '${projectPath}' is not a directory; resuming in current cwd. ` +
           `claude --resume may fail to find the session.\n`
       );
     }
   } else {
     process.stderr.write(
-      "ccsearch: this conversation has no recorded project path; " +
+      "multivac: this conversation has no recorded project path; " +
         "resuming in current cwd. claude --resume may fail.\n"
     );
   }
@@ -89,12 +89,12 @@ export function spawnClaude(row: ResultRow, action: ResumeAction, opts: ResumeOp
   if (result.error) {
     if ((result.error as NodeJS.ErrnoException).code === "ENOENT") {
       process.stderr.write(
-        "ccsearch: `claude` not found on PATH. " +
+        "multivac: `claude` not found on PATH. " +
           "Install Claude Code or ensure `claude` is on your PATH.\n"
       );
       return { status: EXIT_ENV };
     }
-    process.stderr.write(`ccsearch: spawning claude failed: ${result.error.message}\n`);
+    process.stderr.write(`multivac: spawning claude failed: ${result.error.message}\n`);
     return { status: EXIT_INTERNAL };
   }
   return { status: result.status ?? EXIT_INTERNAL };
