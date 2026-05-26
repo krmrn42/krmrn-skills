@@ -1,5 +1,5 @@
 import type { ChatSource } from "../../sources/types.js";
-import type { ResultRow } from "../../core/types.js";
+import type { Selectable } from "../../core/types.js";
 import { visibleLen } from "../lib/width.js";
 
 export type BindingCategory = "resume" | "action" | "dangerous" | "navigation";
@@ -14,16 +14,23 @@ export interface Binding {
   keys: string[];
   label: string;
   category: BindingCategory;
-  visible: (deps: KeybindingDeps, selectedRow?: ResultRow) => boolean;
+  visible: (deps: KeybindingDeps, selectedRow?: Selectable) => boolean;
   longHelp: string;
 }
 
 function hasResumeAction(
   deps: KeybindingDeps,
-  row: ResultRow | undefined,
+  row: Selectable | undefined,
   action: string,
 ): boolean {
   if (!row) return false;
+  if (row.kind === "section") return false;
+  if (row.kind === "dir") {
+    // Only the "newchat" action is meaningful on a dir row.
+    if (action !== "newchat") return false;
+    const src = deps.getSource("claude");
+    return !!src?.resume?.actions.includes(action as never);
+  }
   const src = deps.getSource(row.source);
   return !!src?.resume?.actions.includes(action as never);
 }
@@ -51,6 +58,19 @@ export const BINDINGS: readonly Binding[] = [
     longHelp: "Spawn `claude --remote-control [name] --resume <id>` for the selected row.",
   },
   {
+    keys: ["N"],
+    label: "new-chat",
+    category: "action",
+    visible: (d, r) => {
+      if (!r) return false;
+      if (r.kind === "section") return false;
+      // visible on chat or dir rows when the source supports newchat
+      return hasResumeAction(d, r, "newchat");
+    },
+    longHelp: "Spawn `claude` (no --resume) in the row's project directory. " +
+              "Works on chat rows (uses the chat's dir) and on dir rows.",
+  },
+  {
     keys: ["Ctrl-W"],
     label: "tmux-window",
     category: "action",
@@ -61,14 +81,14 @@ export const BINDINGS: readonly Binding[] = [
     keys: ["Ctrl-R"],
     label: "rename",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat",
     longHelp: "Rename the selected conversation. Saved in ~/.config/krmrn42-skills/chat-search/sessions.json.",
   },
   {
     keys: ["Ctrl-P"],
     label: "pin",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat",
     longHelp: "Pin/unpin the selected conversation to the top of the picker list.",
   },
   {
@@ -82,14 +102,14 @@ export const BINDINGS: readonly Binding[] = [
     keys: ["Ctrl-O"],
     label: "print id",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat",
     longHelp: "Print the row's session id to stdout and exit. Useful for piping.",
   },
   {
     keys: ["Ctrl-D"],
     label: "print path",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat" || r?.kind === "dir",
     longHelp: "Print the row's project path to stdout and exit.",
   },
   {
@@ -151,7 +171,7 @@ function formatBar(grouped: GroupedBindings, omit: BindingCategory[]): string {
  */
 export function buildStatusBar(
   deps: KeybindingDeps,
-  selectedRow: ResultRow | undefined,
+  selectedRow: Selectable | undefined,
   cols: number,
 ): string[] {
   const visible = BINDINGS.filter((b) => b.visible(deps, selectedRow));

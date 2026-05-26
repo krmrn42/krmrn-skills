@@ -1,7 +1,7 @@
 import React, { useReducer, useCallback } from "react";
 import { Box, useApp, useInput } from "ink";
 import type { DatabaseSync } from "node:sqlite";
-import type { Args, ResultRow, Selectable, SessionStore } from "../core/types.js";
+import type { Args, ResultRow, DirRow, Selectable, SessionStore } from "../core/types.js";
 import { reducer, initialState } from "./state/store.js";
 import { PromptLine } from "./components/PromptLine.js";
 import { StatusBar } from "./components/StatusBar.js";
@@ -138,6 +138,15 @@ export function App(props: AppProps) {
         }
       } else if (chatRow) {
         runResume("resume", chatRow);
+      } else if (selectedRow?.kind === "dir") {
+        // Enter on a dir row starts a fresh chat in that dir.
+        runResume("newchat", selectedRow);
+      }
+      return;
+    }
+    if (input === "N" && !key.ctrl && !key.meta) {
+      if (selectedRow && selectedRow.kind !== "section") {
+        runResume("newchat", selectedRow as ResultRow | DirRow);
       }
       return;
     }
@@ -147,6 +156,7 @@ export function App(props: AppProps) {
     }
     if (key.ctrl && input === "w") {
       if (chatRow && props.tmuxAvailable) runResume("tmux-window", chatRow);
+      // Dir-row tmux-window deferred to v0.8.2 (see CHANGELOG "Out of scope").
       return;
     }
     if (key.ctrl && input === "f") {
@@ -171,6 +181,9 @@ export function App(props: AppProps) {
     if (key.ctrl && input === "d") {
       if (chatRow) {
         process.stdout.write(chatRow.projectPath + "\n");
+        exit();
+      } else if (selectedRow?.kind === "dir") {
+        process.stdout.write(selectedRow.projectPath + "\n");
         exit();
       }
       return;
@@ -237,7 +250,7 @@ export function App(props: AppProps) {
           ) : null}
         </Box>
       )}
-      <StatusBar deps={deps} selectedRow={chatRow} cols={cols} />
+      <StatusBar deps={deps} selectedRow={selectedRow} cols={cols} />
     </Box>
   );
 }

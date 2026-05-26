@@ -1,11 +1,11 @@
 import React from "react";
 import { Box, Text } from "ink";
 import { buildStatusBar, type KeybindingDeps } from "../state/keybindings.js";
-import type { ResultRow } from "../../core/types.js";
+import type { Selectable } from "../../core/types.js";
 
 interface Props {
   deps: KeybindingDeps;
-  selectedRow: ResultRow | undefined;
+  selectedRow: Selectable | undefined;
   cols: number;
 }
 

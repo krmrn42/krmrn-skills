@@ -34790,6 +34790,12 @@ function wrapToWidth(s, width) {
 // src/tui/state/keybindings.ts
 function hasResumeAction(deps, row, action) {
   if (!row) return false;
+  if (row.kind === "section") return false;
+  if (row.kind === "dir") {
+    if (action !== "newchat") return false;
+    const src2 = deps.getSource("claude");
+    return !!src2?.resume?.actions.includes(action);
+  }
   const src = deps.getSource(row.source);
   return !!src?.resume?.actions.includes(action);
 }
@@ -34816,6 +34822,17 @@ var BINDINGS = [
     longHelp: "Spawn `claude --remote-control [name] --resume <id>` for the selected row."
   },
   {
+    keys: ["N"],
+    label: "new-chat",
+    category: "action",
+    visible: (d, r) => {
+      if (!r) return false;
+      if (r.kind === "section") return false;
+      return hasResumeAction(d, r, "newchat");
+    },
+    longHelp: "Spawn `claude` (no --resume) in the row's project directory. Works on chat rows (uses the chat's dir) and on dir rows."
+  },
+  {
     keys: ["Ctrl-W"],
     label: "tmux-window",
     category: "action",
@@ -34826,14 +34843,14 @@ var BINDINGS = [
     keys: ["Ctrl-R"],
     label: "rename",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat",
     longHelp: "Rename the selected conversation. Saved in ~/.config/krmrn42-skills/chat-search/sessions.json."
   },
   {
     keys: ["Ctrl-P"],
     label: "pin",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat",
     longHelp: "Pin/unpin the selected conversation to the top of the picker list."
   },
   {
@@ -34847,14 +34864,14 @@ var BINDINGS = [
     keys: ["Ctrl-O"],
     label: "print id",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat",
     longHelp: "Print the row's session id to stdout and exit. Useful for piping."
   },
   {
     keys: ["Ctrl-D"],
     label: "print path",
     category: "action",
-    visible: () => true,
+    visible: (_d, r) => r?.kind === "chat" || r?.kind === "dir",
     longHelp: "Print the row's project path to stdout and exit."
   },
   {
@@ -35372,16 +35389,30 @@ function getDesiredExitCode() {
 function resetDesiredExitCode() {
   desiredExitCode = null;
 }
+function dirAsRow(dir) {
+  return {
+    kind: "chat",
+    source: "claude",
+    sessionId: "",
+    projectPath: dir.projectPath,
+    projectName: dir.projectName,
+    lastActivity: dir.lastActivity,
+    msgCount: 0,
+    snippet: "",
+    score: 0
+  };
+}
 function useResume(opts) {
   const { exit } = use_app_default();
   return (0, import_react30.useCallback)(
     (action, row) => {
-      const source = getSource(row.source);
+      const resolved = row.kind === "dir" ? dirAsRow(row) : row;
+      const source = getSource(resolved.source);
       if (!source?.resume) {
         exit();
         return;
       }
-      const result = source.resume.spawn(row, action, {
+      const result = source.resume.spawn(resolved, action, {
         savedName: opts.savedName,
         tmuxAvailable: opts.tmuxAvailable,
         dangerouslySkipPermissions: opts.dangerouslySkipPermissions
@@ -35507,6 +35538,14 @@ function App2(props) {
         }
       } else if (chatRow) {
         runResume("resume", chatRow);
+      } else if (selectedRow?.kind === "dir") {
+        runResume("newchat", selectedRow);
+      }
+      return;
+    }
+    if (input === "N" && !key.ctrl && !key.meta) {
+      if (selectedRow && selectedRow.kind !== "section") {
+        runResume("newchat", selectedRow);
       }
       return;
     }
@@ -35540,6 +35579,9 @@ function App2(props) {
     if (key.ctrl && input === "d") {
       if (chatRow) {
         process.stdout.write(chatRow.projectPath + "\n");
+        exit();
+      } else if (selectedRow?.kind === "dir") {
+        process.stdout.write(selectedRow.projectPath + "\n");
         exit();
       }
       return;
@@ -35599,7 +35641,7 @@ function App2(props) {
       maxRows: bodyRows,
       noColor: props.args.noColor
     }
-  )) : null), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow: chatRow, cols }));
+  )) : null), /* @__PURE__ */ import_react32.default.createElement(StatusBar, { deps, selectedRow, cols }));
 }
 
 // src/cli/main.ts
