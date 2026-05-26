@@ -5,7 +5,8 @@ export type ResumeAction =
   | "fork"
   | "dangerous"
   | "remote-control"
-  | "tmux-window";
+  | "tmux-window"
+  | "newchat";
 
 export interface MessageRow {
   id: string;                 // ${source}:${sessionId}:${uuid}:${blockIdx}
@@ -24,6 +25,7 @@ export interface MessageRow {
 }
 
 export interface ResultRow {
+  kind: "chat";                 // v0.8.1 — discriminator for the Selectable union
   source: SourceId;
   sessionId: string;
   projectPath: string;
@@ -35,9 +37,29 @@ export interface ResultRow {
   title?: string | null;
   isPinned?: boolean;
   // v0.8 additions:
-  recapText?: string;          // from getRecapText() — used in non-FTS browse
-  gitBranch?: string | null;   // most recent git_branch seen in the conversation
-  skill?: string | null;       // most recent attribution_skill seen
+  recapText?: string;
+  gitBranch?: string | null;
+  skill?: string | null;
+}
+
+export interface DirRow {
+  kind: "dir";
+  projectPath: string;
+  projectName: string;
+  chatCount: number;
+  lastActivity: number;
+  topChatTitles: string[];      // first 3 most-recent conversations in this dir
+}
+
+export interface SectionHeader {
+  kind: "section";
+  label: string;                 // e.g. "working dirs (2)", "chats (10, by relevance)"
+}
+
+export type Selectable = ResultRow | DirRow | SectionHeader;
+
+export function isSelectable(row: Selectable): row is ResultRow | DirRow {
+  return row.kind !== "section";
 }
 
 export interface SessionStore {
@@ -59,7 +81,7 @@ export interface Args {
   since: string | null;
   sinceTs: number;
   limit: number;
-  format: "text" | "tsv" | null;
+  format: "text" | "tsv" | "markdown" | null;
   dbPath: string;
   preview: string | null;
   noColor: boolean;

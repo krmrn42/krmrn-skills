@@ -4,6 +4,7 @@ import { buildClaudeArgs } from "../../src/sources/claude/resume.js";
 import type { ResultRow } from "../../src/core/types.js";
 
 const row: ResultRow = {
+  kind: "chat",
   source: "claude", sessionId: "abc-123", projectPath: "/p",
   projectName: "p", lastActivity: 0, msgCount: 0, snippet: "", score: 0,
 };

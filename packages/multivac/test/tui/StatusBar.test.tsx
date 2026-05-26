@@ -13,6 +13,7 @@ const deps = {
 
 test("StatusBar shows resume + nav bindings for Claude row", () => {
   const row = {
+    kind: "chat" as const,
     source: "claude", sessionId: "x", projectPath: "/p",
     projectName: "p", lastActivity: 0, msgCount: 0, snippet: "", score: 0,
   };
@@ -24,6 +25,7 @@ test("StatusBar shows resume + nav bindings for Claude row", () => {
 
 test("StatusBar hides Ctrl-W when tmux unavailable", () => {
   const row = {
+    kind: "chat" as const,
     source: "claude", sessionId: "x", projectPath: "/p",
     projectName: "p", lastActivity: 0, msgCount: 0, snippet: "", score: 0,
   };
@@ -33,6 +35,7 @@ test("StatusBar hides Ctrl-W when tmux unavailable", () => {
 
 test("StatusBar shows Ctrl-W when tmux available", () => {
   const row = {
+    kind: "chat" as const,
     source: "claude", sessionId: "x", projectPath: "/p",
     projectName: "p", lastActivity: 0, msgCount: 0, snippet: "", score: 0,
   };

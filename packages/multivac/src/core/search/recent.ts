@@ -155,6 +155,7 @@ LIMIT ?
       { git_branch: string | null; attribution_skill: string | null } | undefined;
 
     results.push({
+      kind: "chat" as const,
       source,
       sessionId: conv.conversation_id,
       projectPath: conv.project_path || "",

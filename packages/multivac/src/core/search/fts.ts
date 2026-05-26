@@ -92,6 +92,7 @@ LIMIT ?
     const key = `${r.source}:${r.conversation_id}`;
     if (seen.has(key)) continue;
     seen.set(key, {
+      kind: "chat" as const,
       source: r.source,
       sessionId: r.conversation_id,
       projectPath: r.project_path || "",

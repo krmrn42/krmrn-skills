@@ -7,6 +7,7 @@ import type { ResultRow } from "../../src/core/types.js";
 
 function row(id: string, opts: Partial<ResultRow> = {}): ResultRow {
   return {
+    kind: "chat",
     source: "claude", sessionId: id, projectPath: "/p", projectName: "p",
     lastActivity: 1700000000, msgCount: 1, snippet: "hello world", score: 0,
     ...opts,

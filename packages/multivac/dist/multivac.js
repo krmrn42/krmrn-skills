@@ -34382,6 +34382,7 @@ LIMIT ?
     const key = `${r.source}:${r.conversation_id}`;
     if (seen.has(key)) continue;
     seen.set(key, {
+      kind: "chat",
       source: r.source,
       sessionId: r.conversation_id,
       projectPath: r.project_path || "",
@@ -34431,6 +34432,7 @@ ORDER BY bm25(messages_fts)
     if (seen.has(key)) continue;
     if (!r.content || !pattern.test(r.content)) continue;
     seen.set(key, {
+      kind: "chat",
       source: r.source,
       sessionId: r.conversation_id,
       projectPath: r.project_path || "",
@@ -34485,6 +34487,7 @@ ORDER BY m.timestamp DESC
     const suffix = end < r.content.length ? "\u2026" : "";
     const snippet = prefix + r.content.slice(start, matchIdx) + SNIPPET_OPEN + r.content.slice(matchIdx, matchIdx + m[0].length) + SNIPPET_CLOSE + r.content.slice(matchIdx + m[0].length, end) + suffix;
     seen.set(key, {
+      kind: "chat",
       source: r.source,
       sessionId: r.conversation_id,
       projectPath: r.project_path || "",
@@ -35111,6 +35114,7 @@ LIMIT ?
     const recapText = getRecapText(db, conv.conversation_id, source);
     const metaRow = metaStmt.get(conv.conversation_id);
     results.push({
+      kind: "chat",
       source,
       sessionId: conv.conversation_id,
       projectPath: conv.project_path || "",
