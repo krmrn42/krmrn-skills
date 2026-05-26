@@ -33778,6 +33778,9 @@ import * as childProc from "node:child_process";
 function buildClaudeArgs(action, row, savedName) {
   const id = row.sessionId;
   const name = typeof savedName === "string" && savedName.length > 0 ? savedName : null;
+  if (action === "newchat") {
+    return name ? ["--name", name] : [];
+  }
   if (action === "remote-control") {
     return name ? ["--remote-control", name, "--resume", id] : ["--remote-control", "--resume", id];
   }
@@ -33968,7 +33971,7 @@ var claudeSource = {
   discover,
   parse,
   resume: {
-    actions: ["resume", "fork", "dangerous", "remote-control", "tmux-window"],
+    actions: ["resume", "fork", "dangerous", "remote-control", "tmux-window", "newchat"],
     spawn(row, action, opts) {
       if (action === "tmux-window") return spawnTmuxNewWindow(row, opts);
       return spawnClaude(row, action, opts);

@@ -27,6 +27,7 @@ export function resumeOneLiner(row: ResultRow): string {
 // own positional argument.
 //
 // Actions:
+//   - "newchat"        → [] or ["--name", name]  (NO --resume; opens a fresh session)
 //   - "resume"         → ["--resume", id] (+ --name when set)
 //   - "fork"           → ["--fork-session", "--resume", id] (+ --name)
 //   - "dangerous"      → ["--dangerously-skip-permissions", "--resume", id] (+ --name)
@@ -34,6 +35,11 @@ export function resumeOneLiner(row: ResultRow): string {
 export function buildClaudeArgs(action: ResumeAction, row: ResultRow, savedName: string | null): string[] {
   const id = row.sessionId;
   const name = typeof savedName === "string" && savedName.length > 0 ? savedName : null;
+  if (action === "newchat") {
+    // Fresh session in the row's project dir. No --resume; savedName flows
+    // via --name only when supplied.
+    return name ? ["--name", name] : [];
+  }
   if (action === "remote-control") {
     // --remote-control consumes the name semantically; --name is suppressed.
     return name

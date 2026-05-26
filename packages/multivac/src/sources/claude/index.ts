@@ -11,7 +11,7 @@ const claudeSource: ChatSource = {
   discover,
   parse,
   resume: {
-    actions: ["resume", "fork", "dangerous", "remote-control", "tmux-window"],
+    actions: ["resume", "fork", "dangerous", "remote-control", "tmux-window", "newchat"],
     spawn(row, action, opts) {
       if (action === "tmux-window") return spawnTmuxNewWindow(row, opts);
       return spawnClaude(row, action, opts);
